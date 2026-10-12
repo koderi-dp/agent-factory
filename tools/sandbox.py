@@ -84,7 +84,8 @@ def new(sandbox):
     shutil.copytree(FIXTURE, sandbox, dirs_exist_ok=True)
     # The factory exactly as it is in this repo now.
     shutil.copytree(ROOT / "claude" / "agents", sandbox / ".claude" / "agents")
-    shutil.copytree(ROOT / "claude" / "skills" / "factory", sandbox / ".claude" / "skills" / "factory")
+    for skill in (ROOT / "claude" / "skills").glob("factory*"):
+        shutil.copytree(skill, sandbox / ".claude" / "skills" / skill.name)
     shutil.copytree(ROOT / "factory", sandbox / "factory",
                     ignore=shutil.ignore_patterns("jobs", "__pycache__", "*.tmp", ".lock"))
     (sandbox / "factory" / "config.json").write_text(json.dumps(LIGHT_CONFIG, indent=2) + "\n", encoding="utf-8")

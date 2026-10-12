@@ -41,7 +41,7 @@ The factory is generic: nothing in it is specific to one project. It learns your
 $repo = 'C:\code\my-app'
 New-Item -ItemType Directory -Force "$repo\.claude\skills", "$repo\factory" | Out-Null
 Copy-Item -Recurse -Force claude\agents "$repo\.claude\"
-Copy-Item -Recurse -Force claude\skills\factory "$repo\.claude\skills\"
+Copy-Item -Recurse -Force claude\skills\factory* "$repo\.claude\skills\"
 Copy-Item -Recurse -Force factory\* "$repo\factory\"
 ```
 
@@ -49,7 +49,7 @@ Copy-Item -Recurse -Force factory\* "$repo\factory\"
 repo=~/code/my-app
 mkdir -p "$repo/.claude/skills" "$repo/factory"
 cp -r claude/agents "$repo/.claude/"
-cp -r claude/skills/factory "$repo/.claude/skills/"
+cp -r claude/skills/factory* "$repo/.claude/skills/"
 cp -r factory/. "$repo/factory/"
 ```
 
@@ -82,7 +82,7 @@ npm run build
 
 The agents never touch your running app, database, containers or real accounts. Anything they need running, they start themselves from the job's worktree on the job's ports, so the dev server and backing services must be runnable that way.
 
-**4. Commit** `.claude/agents/`, `.claude/skills/factory/`, `factory/` and the `.gitignore` change.
+**4. Commit** `.claude/agents/`, `.claude/skills/factory*/`, `factory/` and the `.gitignore` change.
 
 **5. Choose your settings** in the dashboard (below), or edit `factory/config.json`.
 
@@ -99,6 +99,8 @@ Open Claude Code in your repo and type one of these:
 | `/factory rework <job-id> <note>` | Sends a waiting job back to a fresh builder with your note. |
 | `/factory resume <job-id>` | Picks up a job whose Claude Code session ended mid-run. |
 | `/factory dashboard` | Starts the board at `http://127.0.0.1:5099/`. |
+
+`/factory-next`, `/factory-watch` and `/factory-dashboard` are the same commands as their own entries in the `/` menu, and typing `/factory ` shows the rest as a hint.
 
 The session you type the command in becomes the job's orchestrator: it spawns the agents, keeps the job's state, and reports one line per step. Keep it open until the job finishes.
 

@@ -1,5 +1,6 @@
 ---
 name: factory
+argument-hint: "<feature> | next | watch | approve <job-id> | rework <job-id> <note> | resume <job-id> | dashboard"
 description: Run the software factory. Use when the user types /factory <feature>, /factory next, /factory watch, /factory approve <job-id>, /factory rework <job-id> <note>, /factory resume <job-id> or /factory dashboard. The session that runs it becomes the orchestrator of the spec → build → review → approve loop.
 ---
 
