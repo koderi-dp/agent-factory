@@ -10,8 +10,9 @@ drive it. Without it, `python -m http.server` still serves a read-only board.
   PUT  /api/config                 replace the settings
   POST /api/jobs/<job-id>/merge    merge an approved or waiting job
   POST /api/jobs/<job-id>/delete   remove a job's worktree, branch and folder ({"force": true} for a live one)
-  POST /api/backlog                {"action": "add", "text": ...}, {"action": "remove", "index": n}
-                                   or {"action": "move", "index": n, "to": m}; n and m count unchecked items
+  POST /api/backlog                {"action": "add", "items": [{"text": title, "details": markdown}, ...]},
+                                   {"action": "remove", "index": n} or {"action": "move", "index": n, "to": m};
+                                   n and m count unchecked items. Details are stored indented under the item.
 """
 
 import argparse
@@ -23,7 +24,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import job  # factory/job.py; Python puts this script's folder on the path
 
 BACKLOG = job.FACTORY / "backlog.md"
-UNCHECKED = re.compile(r"^\s*[-*]\s+\[ \]\s+\S")
+ITEM = re.compile(r"^[-*]\s+\[[ xX]\]\s+\S")
+UNCHECKED = re.compile(r"^[-*]\s+\[ \]\s+\S")
 
 
 def agent_defaults(field, absent):
@@ -41,35 +43,76 @@ def agent_defaults(field, absent):
     return out
 
 
+def backlog_blocks(lines):
+    """Split backlog.md into blocks: each item with the indented details under it, and everything else."""
+    blocks = []
+    i = 0
+    while i < len(lines):
+        if not ITEM.match(lines[i]):
+            blocks.append({"open": False, "lines": [lines[i]]})
+            i += 1
+            continue
+        block = [lines[i]]
+        i += 1
+        while i < len(lines) and (not lines[i].strip() or lines[i].startswith("  ")):
+            block.append(lines[i])
+            i += 1
+        # Blank lines after the details separate items; they aren't part of one.
+        tail = []
+        while len(block) > 1 and not block[-1].strip():
+            tail.insert(0, block.pop())
+        blocks.append({"open": bool(UNCHECKED.match(block[0])), "lines": block})
+        blocks.extend({"open": False, "lines": [l]} for l in tail)
+    return blocks
+
+
+def new_items(body):
+    items = body.get("items")
+    if items is None and "text" in body:
+        items = [{"text": body["text"]}]
+    if not isinstance(items, list) or not 1 <= len(items) <= 50:
+        raise job.JobError("items must be a list of 1 to 50 features")
+    out = []
+    for item in items:
+        title = item.get("text") if isinstance(item, dict) else None
+        details = item.get("details", "") if isinstance(item, dict) else None
+        if not isinstance(title, str) or not title.strip() or "\n" in title.strip() or len(title) > 300:
+            raise job.JobError("each item needs a one-line title of at most 300 characters")
+        if not isinstance(details, str) or len(details) > 20_000:
+            raise job.JobError("details must be text of at most 20,000 characters")
+        lines = [f"- [ ] {title.strip()}"]
+        # Details sit under the item, indented, so the backlog stays one Markdown list.
+        lines += [f"  {l}".rstrip() if l.strip() else "" for l in details.strip("\n").splitlines()]
+        out.append({"open": True, "lines": lines})
+    return out
+
+
 def edit_backlog(body):
     text = BACKLOG.read_text(encoding="utf-8") if BACKLOG.exists() else "# Backlog\n\n"
-    lines = text.splitlines()
-    items = [i for i, l in enumerate(lines) if UNCHECKED.match(l)]
+    blocks = backlog_blocks(text.splitlines())
+    slots = [i for i, b in enumerate(blocks) if b["open"]]
     action = body.get("action")
 
     def item_at(key):
         n = body.get(key)
-        if not isinstance(n, int) or isinstance(n, bool) or not 0 <= n < len(items):
-            raise job.JobError(f"{key} must name one of the {len(items)} queued items")
+        if not isinstance(n, int) or isinstance(n, bool) or not 0 <= n < len(slots):
+            raise job.JobError(f"{key} must name one of the {len(slots)} queued items")
         return n
 
     if action == "add":
-        item = body.get("text")
-        if not isinstance(item, str) or not item.strip() or "\n" in item or len(item) > 300:
-            raise job.JobError("text must be one non-empty line of at most 300 characters")
-        lines.append(f"- [ ] {item.strip()}")
+        blocks.extend(new_items(body))
     elif action == "remove":
-        del lines[items[item_at("index")]]
+        del blocks[slots[item_at("index")]]
     elif action == "move":
         src, dst = item_at("index"), item_at("to")
-        moved = [lines[i] for i in items]
+        moved = [blocks[i] for i in slots]
         moved.insert(dst, moved.pop(src))
-        for i, line in zip(items, moved):
-            lines[i] = line
+        for i, block in zip(slots, moved):
+            blocks[i] = block
     else:
         raise job.JobError("action must be add, remove or move")
     tmp = BACKLOG.with_name("backlog.md.tmp")
-    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    tmp.write_text("\n".join(l for b in blocks for l in b["lines"]) + "\n", encoding="utf-8")
     os.replace(tmp, BACKLOG)
 
 
@@ -108,9 +151,10 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if not self.host_ok():
             return self.send_error(403, "wrong host")
-        if self.path.split("?")[0] == "/":
+        # The board lives in dashboard/; / and the old /dashboard.html both lead there.
+        if self.path.split("?")[0] in ("/", "/dashboard.html"):
             self.send_response(302)
-            self.send_header("Location", "/dashboard.html")
+            self.send_header("Location", "/dashboard/")
             self.send_header("Content-Length", "0")
             return self.end_headers()
         if self.path.split("?")[0] == "/api/config":

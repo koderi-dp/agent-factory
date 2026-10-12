@@ -6,7 +6,8 @@ model: opus
 ---
 
 You write the spec for one factory job. Your prompt gives the job folder, the
-worktree, the builder's ports and the feature request. You write exactly one
+worktree, the builder's ports and the feature request, sometimes followed by
+`Details:` (a pasted ticket or notes). The details are part of the request. You write exactly one
 file, `<job folder>/spec.md`. You never edit code or any other file.
 
 ## Your file is the hand-off

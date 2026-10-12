@@ -120,7 +120,7 @@ async function pastRounds(job) {
       const verdicts = {}
       await Promise.all(REVIEWERS.map(async ([k]) => {
         try {
-          verdicts[k] = verdictOf(await fetchText(`jobs/${job.id}/round-${n}/review-${k}.md`))
+          verdicts[k] = verdictOf(await fetchText(`/jobs/${job.id}/round-${n}/review-${k}.md`))
         } catch {
           verdicts[k] = 'missing'
         }
@@ -155,7 +155,7 @@ async function decisionOf(job) {
   if (!['merged', 'needs-human', 'approved'].includes(job.stage)) return none
   const cached = decisions.get(job.id)
   if (cached && cached.updated === job.updated) return cached
-  const text = await fetchOptional(`jobs/${job.id}/decision.md`).catch(() => null)
+  const text = await fetchOptional(`/jobs/${job.id}/decision.md`).catch(() => null)
   const d = text
     ? { updated: job.updated, verdict: text.split('\n')[0].trim(), followUps: countFollowUps(text) }
     : { updated: job.updated, ...none }
@@ -224,26 +224,33 @@ function card(job, past, decision, now) {
 }
 
 let lastQueue = ''
+const openDetails = new Set() // titles whose details are expanded
+let dragFrom = null
 
 function renderQueue() {
   const edit = !!backend
   const shown = edit ? backlog : backlog.slice(0, 8)
   const rest = backlog.length - shown.length
   const last = backlog.length - 1
-  const items = shown.map((b, i) => `
-    <li class="qcard">
-      <span class="qn">${i + 1}</span><span class="qtext">${esc(b)}</span>
+  const items = shown.map(({ text, details }, i) => `
+    <li class="qcard${edit ? ' movable' : ''}" data-index="${i}">
+      <span class="qn">${i + 1}</span><span class="qtext">${esc(text)}</span>
       ${i === 0 ? '<span class="qnext">next</span>' : ''}
+      ${details ? `<details class="qdetails" data-title="${esc(text)}" ${openDetails.has(text) ? 'open' : ''}>
+        <summary>Details</summary><div class="md">${markdown(details)}</div></details>` : ''}
       ${edit ? `<span class="qtools">
-        ${i > 0 ? `<button class="qbtn" data-queue-move="${i}" data-to="${i - 1}" aria-label="Move up: ${esc(b)}">↑</button>` : ''}
-        ${i < last ? `<button class="qbtn" data-queue-move="${i}" data-to="${i + 1}" aria-label="Move down: ${esc(b)}">↓</button>` : ''}
-        <button class="qbtn remove" data-queue-remove="${i}" aria-label="Remove: ${esc(b)}">×</button>
+        ${sorter ? '<span class="grip" aria-hidden="true" title="Drag to reorder">⠿</span>' : ''}
+        ${i > 0 ? `<button class="qbtn" data-queue-move="${i}" data-to="${i - 1}" aria-label="Move up: ${esc(text)}">↑</button>` : ''}
+        ${i < last ? `<button class="qbtn" data-queue-move="${i}" data-to="${i + 1}" aria-label="Move down: ${esc(text)}">↓</button>` : ''}
+        <button class="qbtn remove" data-queue-remove="${i}" aria-label="Remove: ${esc(text)}">×</button>
       </span>` : ''}
     </li>`).join('')
   const html = (items || '<li class="empty">Nothing queued.</li>') + (rest > 0 ? `<li class="queue-more">+${rest} more</li>` : '')
-  $('queue-add').hidden = !edit
+  $('open-add').hidden = !edit
+  sorter?.option('disabled', !edit)
   $('queue-count').textContent = backlog.length || ''
-  if (html !== lastQueue) {
+  // Don't swap the cards out from under a drag.
+  if (html !== lastQueue && dragFrom === null) {
     const focused = document.activeElement?.closest?.('.qbtn') ? document.activeElement.getAttribute('aria-label') : null
     lastQueue = html
     $('queue-list').innerHTML = html
@@ -251,9 +258,45 @@ function renderQueue() {
   }
 }
 
+// ---- Backlog drag and drop -------------------------------------------------
+
+// factory/sortable.min.js (SortableJS) handles mouse and touch dragging; the order is the priority.
+const sorter = window.Sortable && Sortable.create($('queue-list'), {
+  draggable: '.qcard',
+  // Buttons, the details toggle and links inside a card stay clickable.
+  filter: 'button, summary, a, .md',
+  preventOnFilter: false,
+  animation: 160,
+  delay: 120,
+  delayOnTouchOnly: true,
+  ghostClass: 'qghost',
+  chosenClass: 'qchosen',
+  dragClass: 'qdrag',
+  disabled: true,
+  onStart(e) {
+    dragFrom = e.oldDraggableIndex
+  },
+  onEnd(e) {
+    const from = e.oldDraggableIndex
+    const to = e.newDraggableIndex
+    dragFrom = null
+    lastQueue = '' // the cards were moved by hand; let the next render put the server's order back
+    if (to !== from) editQueue({ action: 'move', index: from, to })
+    else renderQueue()
+  },
+})
+
+// 'toggle' doesn't bubble, so listen while capturing to remember which details are open.
+$('queue-list').addEventListener('toggle', (e) => {
+  const d = e.target
+  if (!d.matches?.('.qdetails')) return
+  if (d.open) openDetails.add(d.dataset.title)
+  else openDetails.delete(d.dataset.title)
+}, true)
+
 async function editQueue(body) {
   try {
-    await api('POST', 'api/backlog', body)
+    await api('POST', '/api/backlog', body)
   } catch (err) {
     $('status').className = 'status error'
     $('status').textContent = `backlog: ${err.message}`
@@ -343,14 +386,14 @@ async function listDir(dir) {
 async function loadJobs() {
   let hrefs
   try {
-    hrefs = await listDir('jobs/')
+    hrefs = await listDir('/jobs/')
   } catch (err) {
     if (/HTTP 404/.test(err.message)) return []
     throw err
   }
   const ids = hrefs.filter((h) => h.endsWith('/')).map((h) => h.slice(0, -1)).sort()
   return Promise.all(ids.map(async (id) => {
-    const text = await fetchOptional(`jobs/${id}/job.json`)
+    const text = await fetchOptional(`/jobs/${id}/job.json`)
     if (text === null) return { id, problem: 'Starting: no job.json yet.' }
     try {
       const job = JSON.parse(text)
@@ -362,19 +405,26 @@ async function loadJobs() {
   }))
 }
 
+// Each open item, with the indented lines under it as its details (the same blocks server.py edits).
 async function loadBacklog() {
-  const text = await fetchOptional('backlog.md').catch(() => null)
+  const text = await fetchOptional('/backlog.md').catch(() => null)
   if (!text) return []
-  return text.replace(/\r/g, '').split('\n')
-    .map((l) => l.match(/^\s*[-*]\s+\[ \]\s+(.*\S)\s*$/))
-    .filter(Boolean)
-    .map((m) => m[1])
+  const lines = text.replace(/\r/g, '').split('\n')
+  const items = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^[-*]\s+\[([ xX])\]\s+(.*\S)\s*$/)
+    if (!m) continue
+    const body = []
+    while (i + 1 < lines.length && (!lines[i + 1].trim() || lines[i + 1].startsWith('  '))) body.push(lines[++i].slice(2))
+    if (m[1] === ' ') items.push({ text: m[2], details: body.join('\n').trim() })
+  }
+  return items
 }
 
 // A plain static server answers 404 here, and the board stays read-only.
 async function loadBackend() {
   try {
-    const res = await fetch('api/config', { cache: 'no-store' })
+    const res = await fetch('/api/config', { cache: 'no-store' })
     backend = res.ok ? await res.json() : null
   } catch {
     backend = null
@@ -418,7 +468,7 @@ async function act(action) {
   showMsg('d-msg', action === 'merge' ? 'Merging…' : 'Deleting…')
   lastActions = ''
   try {
-    const { message } = await api('POST', `api/jobs/${encodeURIComponent(job.id)}/${action}`, {})
+    const { message } = await api('POST', `/api/jobs/${encodeURIComponent(job.id)}/${action}`, {})
     if (action === 'delete') {
       closeDrawer()
       showMsg('d-msg', '')
@@ -466,7 +516,7 @@ async function saveSettings(e) {
   const form = $('settings-form')
   const pick = (attr) => Object.fromEntries([...form.querySelectorAll(`[data-${attr}]`)].map((s) => [s.dataset[attr], s.value]))
   try {
-    await api('PUT', 'api/config', {
+    await api('PUT', '/api/config', {
       models: pick('model'),
       efforts: pick('effort'),
       merge: form.elements.merge.value,
@@ -483,20 +533,89 @@ async function saveSettings(e) {
 $('open-settings').addEventListener('click', openSettings)
 $('settings-form').addEventListener('submit', saveSettings)
 document.querySelector('[data-settings-cancel]').addEventListener('click', () => $('settings').close())
-$('queue-add').addEventListener('submit', async (e) => {
-  e.preventDefault()
-  const input = $('queue-text')
-  const text = input.value.replace(/\s+/g, ' ').trim()
-  if (!text) return
-  input.value = ''
-  await editQueue({ action: 'add', text })
-  input.focus()
+// ---- Add to backlog --------------------------------------------------------
+
+const LIST_ITEM = /^\s?(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/
+
+function cleanTitle(line) {
+  return line.replace(/^#{1,6}\s+/, '').replace(LIST_ITEM, '').replace(/\*\*|__/g, '').trim()
+}
+
+// The whole paste as one feature: the first line is the title, everything else the details.
+function oneFeature(text) {
+  const lines = text.replace(/\r/g, '').split('\n')
+  const first = lines.findIndex((l) => l.trim())
+  if (first < 0) return []
+  let title = cleanTitle(lines[first])
+  let details = lines.slice(first + 1).join('\n').trim()
+  if (title.length > 200) {
+    details = [title, details].filter(Boolean).join('\n\n')
+    title = `${title.slice(0, 200).replace(/\s+\S*$/, '')}…`
+  }
+  return title ? [{ text: title, details }] : []
+}
+
+// A list: every unindented line or list item is a feature; lines indented under one are its details.
+function listOfFeatures(text) {
+  const items = []
+  for (const line of text.replace(/\r/g, '').split('\n')) {
+    if (!line.trim()) continue
+    if (/^\s{2,}/.test(line) && items.length) {
+      const it = items.at(-1)
+      it.details += (it.details ? '\n' : '') + line.replace(/^\s{2}/, '')
+      continue
+    }
+    const title = cleanTitle(line)
+    if (title) items.push({ text: title.slice(0, 300), details: '' })
+  }
+  return items
+}
+
+function parsePaste() {
+  const text = $('a-text').value
+  return $('add-form').elements.mode.value === 'list' ? listOfFeatures(text) : oneFeature(text)
+}
+
+function renderPreview() {
+  const items = parsePaste()
+  $('a-submit').disabled = !items.length
+  $('a-submit').textContent = items.length > 1 ? `Add ${items.length} features` : 'Add'
+  const lines = (d) => d.split('\n').length
+  $('a-preview').innerHTML = items.length
+    ? `<div class="preview-head">${items.length === 1 ? 'Will add' : `Will add ${items.length} features`}</div>
+       <ol>${items.slice(0, 12).map((it) => `<li>${esc(it.text)}${it.details
+         ? ` <span class="has-details">+ ${lines(it.details)} line${lines(it.details) === 1 ? '' : 's'} of details</span>` : ''}</li>`).join('')}</ol>
+       ${items.length > 12 ? `<div class="note">…and ${items.length - 12} more</div>` : ''}`
+    : ''
+}
+
+$('open-add').addEventListener('click', () => {
+  showMsg('a-msg', '')
+  renderPreview()
+  $('add-dialog').showModal()
+  $('a-text').focus()
 })
-// A backlog item is one line, so Enter adds it.
-$('queue-text').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
+$('a-text').addEventListener('input', renderPreview)
+$('add-form').addEventListener('change', renderPreview)
+document.querySelector('[data-add-cancel]').addEventListener('click', () => $('add-dialog').close())
+$('add-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const items = parsePaste()
+  if (!items.length) return
+  try {
+    await api('POST', '/api/backlog', { action: 'add', items })
+  } catch (err) {
+    return showMsg('a-msg', err.message, 'error')
+  }
+  $('a-text').value = ''
+  $('add-dialog').close()
+  await poll()
+})
+// Ctrl+Enter (or Cmd+Enter) adds from the text box.
+$('a-text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !$('a-submit').disabled) {
     e.preventDefault()
-    $('queue-add').requestSubmit()
+    $('add-form').requestSubmit()
   }
 })
 
@@ -561,7 +680,7 @@ async function refreshDrawer() {
     $('d-actions').innerHTML = actions
   }
 
-  const base = `jobs/${job.id}/`
+  const base = `/jobs/${job.id}/`
   const files = sortFiles(await listFiles(base))
   if (!openPath || !files.includes(openPath)) openPath = files[0] || null
   writeHash()

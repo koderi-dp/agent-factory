@@ -25,7 +25,7 @@ has its own worktree, branch, ports and `job.json`.
 - `backlog.md`: the queue for `/factory next`.
 - `config.json`: settings: the model and effort for each step, review rounds, and whether
   an approved job merges straight away (`auto`) or waits for you (`verify`).
-- `dashboard.html`, `dashboard.css`, `dashboard.js`: the board.
+- `dashboard/`: the board (`index.html`, its CSS and JS, and SortableJS for dragging backlog cards).
 - `server.py`: serves the board on 127.0.0.1 and lets it change settings, merge
   or delete jobs and edit the backlog. `python factory/server.py [--port 5099]`.
   Any static server that lists directories also works, read-only.

@@ -70,12 +70,35 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
 .qbtn.remove:hover { color: var(--human); }
 .qbtn:focus-visible { outline: 2px solid var(--active); outline-offset: 1px; }
 .queue-more { font-family: var(--mono); font-size: 11px; color: var(--faint); padding: 2px; list-style: none; }
-.queue-add { display: grid; gap: 6px; margin-bottom: 10px; }
-.queue-add textarea {
-  font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); resize: vertical;
-  border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; min-height: 52px;
+.qcard.movable { cursor: grab; }
+.qcard .grip { color: var(--faint); font-size: 13px; line-height: 1; padding: 3px 4px; margin-right: auto; cursor: grab; }
+.qghost { opacity: .35; border-style: dashed; }
+.qchosen { border-color: var(--active); }
+.qdrag { cursor: grabbing; box-shadow: 0 10px 24px -10px rgba(0, 0, 0, .7); }
+.qdetails { grid-column: 2; margin-top: 2px; }
+.qdetails summary {
+  cursor: pointer; font-family: var(--mono); font-size: 10.5px; color: var(--muted); width: fit-content;
+  border-radius: 4px;
 }
-.queue-add textarea:focus-visible { outline: 2px solid var(--active); outline-offset: 1px; }
+.qdetails summary:hover { color: var(--text); }
+.qdetails summary:focus-visible { outline: 2px solid var(--active); outline-offset: 1px; }
+.qdetails .md { font-size: 12px; line-height: 1.55; margin-top: 6px; max-height: 220px; overflow-y: auto; cursor: auto; }
+.qdetails .md h1, .qdetails .md h2, .qdetails .md h3 { font-size: 12.5px; margin: .8em 0 .3em; }
+.btn.small { padding: 2px 9px; font-size: 11px; margin-left: 6px; }
+
+/* Add to backlog */
+dialog.wide { width: min(720px, calc(100vw - 32px)); }
+textarea.paste {
+  width: 100%; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; resize: vertical;
+}
+textarea.paste:focus-visible { outline: 2px solid var(--active); outline-offset: 1px; }
+.preview { margin-top: 10px; font-size: 13px; }
+.preview:empty { display: none; }
+.preview-head { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.preview ol { margin: 0; padding-left: 1.4em; max-height: 160px; overflow-y: auto; }
+.preview li { margin: 2px 0; }
+.preview .has-details { font-family: var(--mono); font-size: 11px; color: var(--faint); }
 
 /* Controls */
 .head-right { display: flex; align-items: center; gap: 14px; }

@@ -42,7 +42,7 @@ $repo = 'C:\code\my-app'
 New-Item -ItemType Directory -Force "$repo\.claude\skills", "$repo\factory" | Out-Null
 Copy-Item -Recurse -Force claude\agents "$repo\.claude\"
 Copy-Item -Recurse -Force claude\skills\factory "$repo\.claude\skills\"
-Copy-Item -Force factory\*.* "$repo\factory\"
+Copy-Item -Recurse -Force factory\* "$repo\factory\"
 ```
 
 ```bash
@@ -50,7 +50,7 @@ repo=~/code/my-app
 mkdir -p "$repo/.claude/skills" "$repo/factory"
 cp -r claude/agents "$repo/.claude/"
 cp -r claude/skills/factory "$repo/.claude/skills/"
-cp factory/*.* "$repo/factory/"
+cp -r factory/. "$repo/factory/"
 ```
 
 Agents also read any skill under your repo's `.claude/skills/` that covers the area they work in, so adding your own is how you teach them your project's traps.
@@ -144,9 +144,9 @@ And it lets you change things:
 
 - **Settings**: the model and effort level (low to max) for each step, how many review rounds a job gets, and what happens after APPROVE: merge straight away, or wait for you to check it first. Saved to `factory/config.json`; running jobs pick changes up at their next step.
 - **Merge** and **Delete job** buttons on a job's card.
-- **Backlog**: add, reorder and remove queued features.
+- **Backlog**: paste a feature (plain text or Markdown, with its details) or a whole list of them, drag cards to set the order (the top card is built next), and remove them.
 
-The server listens on 127.0.0.1 only and refuses requests from other sites. Served by any plain static server instead (`python -m http.server --directory factory`), the board still works but is read-only.
+The server listens on 127.0.0.1 only and refuses requests from other sites. Served by any plain static server instead (`python -m http.server --directory factory`, then open `/dashboard/`), the board still works but is read-only.
 
 ## What a job leaves behind
 

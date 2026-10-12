@@ -22,14 +22,10 @@
   <!-- Rendered once, so typing in the add box survives the board's refreshes. -->
   <section class="col backlog-col" aria-labelledby="queue-title">
     <div class="col-head">
-      <h2 id="queue-title">Backlog</h2><span class="who">/factory next</span>
+      <h2 id="queue-title">Backlog</h2><span class="who">top is next</span>
       <span class="count" id="queue-count"></span>
+      <button class="btn small" id="open-add" hidden>+ Add</button>
     </div>
-    <form id="queue-add" class="queue-add" hidden>
-      <label for="queue-text" class="visually-hidden">New backlog item</label>
-      <textarea id="queue-text" rows="2" maxlength="300" placeholder="Add a feature…" required></textarea>
-      <button class="btn" type="submit">Add to backlog</button>
-    </form>
     <ol class="queue-list" id="queue-list"></ol>
   </section>
   <div class="stage-cols" id="board"></div>
@@ -61,6 +57,26 @@
   </aside>
 </div>
 
+<dialog id="add-dialog" class="wide" aria-labelledby="a-title">
+  <form id="add-form" method="dialog">
+    <h3 id="a-title">Add to backlog</h3>
+    <p class="note">Paste plain text or Markdown: a ticket, a few notes, or a list of features.</p>
+    <fieldset>
+      <legend>What you're pasting</legend>
+      <label class="radio"><input type="radio" name="mode" value="one" checked> One feature: the first line is its title, the rest are details for the spec</label>
+      <label class="radio"><input type="radio" name="mode" value="list"> A list: each line or list item becomes its own feature</label>
+    </fieldset>
+    <label for="a-text" class="visually-hidden">Feature text</label>
+    <textarea id="a-text" class="paste" rows="12" placeholder="Add a dark mode toggle to settings&#10;&#10;Users work at night and the white page is too bright.&#10;- remember the choice&#10;- follow the system setting by default"></textarea>
+    <div class="preview" id="a-preview" aria-live="polite"></div>
+    <p class="action-msg" id="a-msg" role="status"></p>
+    <div class="dialog-actions">
+      <button class="btn" type="button" data-add-cancel>Cancel</button>
+      <button class="btn primary" type="submit" id="a-submit" disabled>Add</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="settings" aria-labelledby="s-title">
   <form id="settings-form" method="dialog">
     <h3 id="s-title">Settings</h3>
@@ -88,6 +104,7 @@
   </form>
 </dialog>
 
+<script src="sortable.min.js"></script>
 <script src="dashboard.js"></script>
 </body>
 </html>

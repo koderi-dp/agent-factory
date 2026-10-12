@@ -94,7 +94,7 @@ in a commit.
 ```
 <repo>/factory/backlog.md                      queue for /factory next
 <repo>/factory/config.json                     settings; see Settings
-<repo>/factory/dashboard.html, .css, .js       the board; see /factory dashboard
+<repo>/factory/dashboard/                      the board; see /factory dashboard
 <repo>/factory/server.py                       serves the board and its controls
 <repo>/factory/job.py                          the only way to change a job.json, merge or delete a job
 <repo>/factory/jobs/<job-id>/job.json          the job's state (written through job.py, read by the dashboard)
@@ -192,7 +192,10 @@ name real ports.
    (installing dependencies, for example). If any of it fails, go to
    **Needs human** with what failed.
 3. **Spec.** Spawn `spec-writer` with the prompt
-   `<paths> Builder ports: <B>-<B+2>. Feature: <feature, verbatim>`.
+   `<paths> Builder ports: <B>-<B+2>. Feature: <feature, verbatim>`. When the
+   feature has details (a backlog item's indented lines, or everything after the
+   first line of a multi-line `/factory` request), add them after it as
+   `Details:` and the text verbatim on the following lines.
    Wait for it to finish, then check that `spec.md` exists and starts with `# `.
    If it doesn't, go to **Needs human**.
 4. **Build.** Set `stage=build`. Spawn `builder` with the prompt
@@ -283,13 +286,17 @@ inspect. Tell the user which job is waiting, give the worktree path, and quote
 
 ## /factory next
 
-Read `factory/backlog.md` and take the first `- [ ]` item. Claim it with one
-Edit that replaces its exact line with `- [x] <item> → claimed`. If the Edit
-fails because the line changed, another session claimed it: re-read the backlog
-and try the next `- [ ]` item. If none is left, say so and stop.
+Read `factory/backlog.md` and take the first `- [ ]` item. Its line is the
+feature's title; the indented lines under it, if any, are its details (the
+dashboard stores pasted tickets there). The order is the user's priority, so
+always take the top one. Claim it with one Edit that replaces its exact first
+line with `- [x] <item> → claimed`, leaving the details as they are. If the
+Edit fails because the line changed, another session claimed it: re-read the
+backlog and try the next `- [ ]` item. If none is left, say so and stop.
 
-Run `/factory <item>`, and once step 1 has given it a job id, replace `claimed`
-on its backlog line with the job id.
+Run `/factory <title>` with the details, and once step 1 has given it a job id,
+replace `claimed` on its backlog line with the job id. `feature` in `job.json`
+is the title alone.
 
 ## /factory approve <job-id>
 
@@ -331,13 +338,14 @@ Your session becomes the job's orchestrator. Pick up from the stage in
 
 ## /factory dashboard
 
-The board is `factory/dashboard.html`, served by `python factory/server.py`
+The board is `factory/dashboard/`, served by `python factory/server.py`
 (port 5099; `--port` to change it). Start it in the background from `<repo>` if
 nothing answers on that port yet, and give the user
 `http://127.0.0.1:5099/`. Every job is on it, whichever session
 runs it. Through the server the user can change the settings, merge or delete a
 job and edit the backlog. Served by a plain static server instead
-(`python -m http.server --directory factory`), the board is read-only.
+(`python -m http.server --directory factory`, at `/dashboard/`), the board is
+read-only.
 
 ## Reporting
 
