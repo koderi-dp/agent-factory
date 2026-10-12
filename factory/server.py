@@ -6,7 +6,7 @@ It listens on 127.0.0.1 only. Every request must name this server in its Host
 header, and every change must send `X-Factory: 1`, so other web pages can't
 drive it. Without it, `python -m http.server` still serves a read-only board.
 
-  GET  /api/config                 settings, the models each agent file names, and the choices
+  GET  /api/config                 settings, the model and effort each agent file names, and the choices
   PUT  /api/config                 replace the settings
   POST /api/jobs/<job-id>/merge    merge an approved or waiting job
   POST /api/jobs/<job-id>/delete   remove a job's worktree, branch and folder ({"force": true} for a live one)
@@ -26,8 +26,8 @@ BACKLOG = job.FACTORY / "backlog.md"
 UNCHECKED = re.compile(r"^\s*[-*]\s+\[ \]\s+\S")
 
 
-def agent_defaults():
-    """The model each agent file's frontmatter names, for the settings panel."""
+def agent_defaults(field, absent):
+    """What each agent file's frontmatter says for a field, for the settings panel."""
     out = {}
     try:
         agents = job.repo_root() / ".claude" / "agents"
@@ -36,8 +36,8 @@ def agent_defaults():
     for name in job.AGENTS:
         path = agents / f"{name}.md"
         if path.exists():
-            m = re.search(r"^model:\s*(\S+)", path.read_text(encoding="utf-8"), re.M)
-            out[name] = m.group(1) if m else "inherit"
+            m = re.search(rf"^{field}:\s*(\S+)", path.read_text(encoding="utf-8"), re.M)
+            out[name] = m.group(1) if m else absent
     return out
 
 
@@ -108,12 +108,19 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if not self.host_ok():
             return self.send_error(403, "wrong host")
+        if self.path.split("?")[0] == "/":
+            self.send_response(302)
+            self.send_header("Location", "/dashboard.html")
+            self.send_header("Content-Length", "0")
+            return self.end_headers()
         if self.path.split("?")[0] == "/api/config":
             try:
                 return self.send_json(200, {
                     "config": job.load_config(),
-                    "agentDefaults": agent_defaults(),
+                    "agentDefaults": agent_defaults("model", "inherit"),
+                    "agentEfforts": agent_defaults("effort", "session"),
                     "models": sorted(job.MODELS - {"default"}),
+                    "efforts": [e for e in job.EFFORTS if e != "default"],
                     "agents": list(job.AGENTS),
                 })
             except job.JobError as err:
@@ -154,7 +161,7 @@ def main():
     parser.add_argument("--port", type=int, default=5099)
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"factory dashboard: http://127.0.0.1:{args.port}/dashboard.html", flush=True)
+    print(f"factory dashboard: http://127.0.0.1:{args.port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

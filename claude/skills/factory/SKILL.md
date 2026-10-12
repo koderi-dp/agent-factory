@@ -42,6 +42,9 @@ before each step, so a change applies from the next step.
 - `models`: the model for each agent. When it isn't `default`, pass it as the
   Agent tool's `model` when you spawn that agent. `default` means the model in
   the agent's file: pass no `model`.
+- `efforts`: the reasoning effort for each agent (`low`, `medium`, `high`,
+  `xhigh` or `max`). The user chose it, so when it isn't `default`, pass it as
+  the Agent tool's `effort`. `default` means the agent file's: pass no `effort`.
 - `maxRounds`: review rounds before the job comes to the user (1 to 5, default 3).
   `MAX_RESUMES` is `maxRounds - 1`: how many times the builder can be resumed
   after round 1.
@@ -331,7 +334,7 @@ Your session becomes the job's orchestrator. Pick up from the stage in
 The board is `factory/dashboard.html`, served by `python factory/server.py`
 (port 5099; `--port` to change it). Start it in the background from `<repo>` if
 nothing answers on that port yet, and give the user
-`http://127.0.0.1:5099/dashboard.html`. Every job is on it, whichever session
+`http://127.0.0.1:5099/`. Every job is on it, whichever session
 runs it. Through the server the user can change the settings, merge or delete a
 job and edit the backlog. Served by a plain static server instead
 (`python -m http.server --directory factory`), the board is read-only.

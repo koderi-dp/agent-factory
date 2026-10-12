@@ -41,8 +41,14 @@ INTS = {"round", "resumes"}
 STRINGS = {"stage", "builder", "feature", "note"}
 AGENTS = ("spec-writer", "builder", "reviewer-security", "reviewer-ux", "reviewer-ui", "reviewer-code", "approver")
 MODELS = {"default", "opus", "sonnet", "haiku", "fable"}
+EFFORTS = ("default", "low", "medium", "high", "xhigh", "max")
 MERGE_POLICIES = {"auto", "verify"}
-DEFAULT_CONFIG = {"models": {a: "default" for a in AGENTS}, "merge": "auto", "maxRounds": 3}
+DEFAULT_CONFIG = {
+    "models": {a: "default" for a in AGENTS},
+    "efforts": {a: "default" for a in AGENTS},
+    "merge": "auto",
+    "maxRounds": 3,
+}
 
 
 class JobError(Exception):
@@ -273,6 +279,15 @@ def check_config(cfg):
         if model not in MODELS:
             raise JobError(f"unknown model for {agent}: {model}")
         out["models"][agent] = model
+    efforts = cfg.get("efforts", {})
+    if not isinstance(efforts, dict):
+        raise JobError("efforts must be an object")
+    for agent, effort in efforts.items():
+        if agent not in AGENTS:
+            raise JobError(f"unknown agent: {agent}")
+        if effort not in EFFORTS:
+            raise JobError(f"unknown effort for {agent}: {effort}")
+        out["efforts"][agent] = effort
     if "merge" in cfg:
         if cfg["merge"] not in MERGE_POLICIES:
             raise JobError(f"merge must be one of {sorted(MERGE_POLICIES)}")

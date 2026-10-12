@@ -35,9 +35,15 @@ function modelOf(agent) {
   return set && set !== 'default' ? set : backend.agentDefaults[agent] || 'default'
 }
 
+// The effort only shows when the settings change it from the agent file's.
+function effortOf(agent) {
+  const set = backend?.config.efforts?.[agent]
+  return set && set !== 'default' ? set : null
+}
+
 function whoOf(stage) {
   if (!backend) return stage.who
-  if (stage.agent) return `${stage.agent} · ${modelOf(stage.agent)}`
+  if (stage.agent) return [stage.agent, modelOf(stage.agent), effortOf(stage.agent)].filter(Boolean).join(' · ')
   if (stage.key === 'review') {
     const models = new Set(REVIEWERS.map(([k]) => modelOf(`reviewer-${k}`)))
     return `sec · ux · ui · code · ${[...models].join('/')}`
@@ -430,16 +436,26 @@ async function act(action) {
 
 // ---- Settings ------------------------------------------------------------
 
+function options(choices, current, fileValue) {
+  // An agent file without an effort line runs at the session's effort.
+  const label = fileValue === 'session' ? 'session default' : `agent file (${esc(fileValue || 'default')})`
+  return `<option value="default">${label}</option>` +
+    choices.map((c) => `<option value="${esc(c)}" ${current === c ? 'selected' : ''}>${esc(c)}</option>`).join('')
+}
+
 function openSettings() {
-  const { config, agents, models, agentDefaults } = backend
+  const { config, agents, models, efforts, agentDefaults, agentEfforts } = backend
   const form = $('settings-form')
   form.elements.merge.value = config.merge
   form.elements.maxRounds.value = String(config.maxRounds)
-  $('s-models').innerHTML = agents.map((a) => `
-    <label for="s-model-${a}">${esc(a)}</label>
-    <select id="s-model-${a}" data-agent="${esc(a)}">
-      <option value="default">agent file (${esc(agentDefaults[a] || 'default')})</option>
-      ${models.map((m) => `<option value="${esc(m)}" ${config.models[a] === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+  $('s-models').innerHTML = '<span class="mh">Step</span><span class="mh">Model</span><span class="mh">Effort</span>' +
+    agents.map((a) => `
+    <span class="agent" id="s-agent-${a}">${esc(a)}</span>
+    <select data-model="${esc(a)}" aria-label="${esc(a)} model">
+      ${options(models, config.models[a], agentDefaults[a])}
+    </select>
+    <select data-effort="${esc(a)}" aria-label="${esc(a)} effort">
+      ${options(efforts, config.efforts[a], agentEfforts[a])}
     </select>`).join('')
   showMsg('s-msg', '')
   $('settings').showModal()
@@ -448,9 +464,14 @@ function openSettings() {
 async function saveSettings(e) {
   e.preventDefault()
   const form = $('settings-form')
-  const models = Object.fromEntries([...form.querySelectorAll('[data-agent]')].map((s) => [s.dataset.agent, s.value]))
+  const pick = (attr) => Object.fromEntries([...form.querySelectorAll(`[data-${attr}]`)].map((s) => [s.dataset[attr], s.value]))
   try {
-    await api('PUT', 'api/config', { models, merge: form.elements.merge.value, maxRounds: Number(form.elements.maxRounds.value) })
+    await api('PUT', 'api/config', {
+      models: pick('model'),
+      efforts: pick('effort'),
+      merge: form.elements.merge.value,
+      maxRounds: Number(form.elements.maxRounds.value),
+    })
     $('settings').close()
     lastRender = ''
     await poll()

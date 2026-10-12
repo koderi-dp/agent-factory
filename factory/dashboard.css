@@ -114,8 +114,9 @@ fieldset { border: 1px solid var(--line); border-radius: 9px; margin: 0 0 12px; 
 legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
 legend label { color: inherit; }
 .radio { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 3px 0; cursor: pointer; }
-.models { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; align-items: center; font-size: 13px; }
-.models label { font-family: var(--mono); font-size: 12px; }
+.models { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+.models .agent { font-family: var(--mono); font-size: 12px; }
+.models .mh { font-size: 11px; color: var(--faint); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
 /* Board */

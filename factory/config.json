@@ -8,6 +8,15 @@
     "reviewer-code": "default",
     "approver": "default"
   },
+  "efforts": {
+    "spec-writer": "default",
+    "builder": "default",
+    "reviewer-security": "default",
+    "reviewer-ux": "default",
+    "reviewer-ui": "default",
+    "reviewer-code": "default",
+    "approver": "default"
+  },
   "merge": "auto",
   "maxRounds": 3
 }

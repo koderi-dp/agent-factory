@@ -97,7 +97,7 @@ Open Claude Code in your repo and type one of these:
 | `/factory approve <job-id>` | Merges a job that is waiting for you (or use the dashboard's Merge button). |
 | `/factory rework <job-id> <note>` | Sends a waiting job back to a fresh builder with your note. |
 | `/factory resume <job-id>` | Picks up a job whose Claude Code session ended mid-run. |
-| `/factory dashboard` | Starts the board at `http://127.0.0.1:5099/dashboard.html`. |
+| `/factory dashboard` | Starts the board at `http://127.0.0.1:5099/`. |
 
 The session you type the command in becomes the job's orchestrator: it spawns the agents, keeps the job's state, and reports one line per step. Keep it open until the job finishes.
 
@@ -133,7 +133,7 @@ The factory never pushes. Merges land in your local `main`.
 python factory/server.py
 ```
 
-Then open `http://127.0.0.1:5099/dashboard.html` (`--port` picks another port). It shows every job from every session, live:
+Then open `http://127.0.0.1:5099/` (`--port` picks another port). It shows every job from every session, live:
 
 - a column per stage, with each review round's verdicts as chips, and the model each step uses;
 - how long a job has been in its stage, and a **quiet** warning with the resume command when a running job hasn't moved for three hours;
@@ -142,7 +142,7 @@ Then open `http://127.0.0.1:5099/dashboard.html` (`--port` picks another port). 
 
 And it lets you change things:
 
-- **Settings**: the model for each step, how many review rounds a job gets, and what happens after APPROVE: merge straight away, or wait for you to check it first. Saved to `factory/config.json`; running jobs pick changes up at their next step.
+- **Settings**: the model and effort level (low to max) for each step, how many review rounds a job gets, and what happens after APPROVE: merge straight away, or wait for you to check it first. Saved to `factory/config.json`; running jobs pick changes up at their next step.
 - **Merge** and **Delete job** buttons on a job's card.
 - **Backlog**: add, reorder and remove queued features.
 
@@ -164,7 +164,7 @@ Job `n` uses ports `5100 + 10n` to `5108 + 10n`: three each for the builder and 
 
 ## Customising
 
-- **Models, review rounds and merge policy:** the dashboard's Settings, or `factory/config.json`. A model set to `default` uses the `model:` line in the agent's file under `.claude/agents/`.
+- **Models, effort, review rounds and merge policy:** the dashboard's Settings, or `factory/config.json`. `default` uses what the agent's file under `.claude/agents/` says. Fast mode is a setting of your whole Claude Code session (`/fast`), not of one step.
 - **What each reviewer checks, and what the approver escalates:** the agent files are plain Markdown instructions; edit them.
 - **Project knowledge:** add a skill under `.claude/skills/<name>/SKILL.md`. Agents read the ones whose description covers their area.
 

@@ -15,7 +15,7 @@ See the agent-factory repo's README for setup.
 | `/factory approve <job-id>` | Merges a job waiting for you. |
 | `/factory rework <job-id> <note>` | Sends a waiting job back to a fresh builder with your note. |
 | `/factory resume <job-id>` | Picks up a job whose session ended mid-run. |
-| `/factory dashboard` | Starts the board at `http://127.0.0.1:5099/dashboard.html`. |
+| `/factory dashboard` | Starts the board at `http://127.0.0.1:5099/`. |
 
 Run several jobs at once by starting `/factory` in several sessions. Each job
 has its own worktree, branch, ports and `job.json`.
@@ -23,7 +23,7 @@ has its own worktree, branch, ports and `job.json`.
 ## Files
 
 - `backlog.md`: the queue for `/factory next`.
-- `config.json`: settings: the model for each step, review rounds, and whether
+- `config.json`: settings: the model and effort for each step, review rounds, and whether
   an approved job merges straight away (`auto`) or waits for you (`verify`).
 - `dashboard.html`, `dashboard.css`, `dashboard.js`: the board.
 - `server.py`: serves the board on 127.0.0.1 and lets it change settings, merge
