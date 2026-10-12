@@ -179,6 +179,29 @@ Claude Code picks up edits to agent files in a running session; no restart neede
 .\sync-claude.ps1 -DryRun   # list what would change
 ```
 
+### Testing the factory
+
+Two layers, fastest first.
+
+**Unit tests** for `job.py` and `server.py`: job state, merging (including the busy and conflict cases), deleting, settings, the API's security checks and backlog editing. No Claude involved; about 20 seconds.
+
+```bash
+python -m unittest discover -s tests
+```
+
+**A sandbox** for the whole flow with real agents. `tools/sandbox.py` builds a throwaway repo from a small todo app (`tools/sandbox-fixture/`) with this repo's current agents, skill and `factory/`, light settings (haiku, low effort, one review round, auto merge) and the same three tiny features every time. It lives in your temp folder, never inside this repo.
+
+```bash
+python tools/sandbox.py new       # build it
+python tools/sandbox.py serve     # its dashboard at http://127.0.0.1:5097/
+python tools/sandbox.py run       # how to run the backlog (see below)
+python tools/sandbox.py status    # jobs, backlog, branches, and whether main's tests pass
+python tools/sandbox.py reset     # throw it all away and build it again
+python tools/sandbox.py clean     # throw it away
+```
+
+To run the backlog, open Claude Code in the sandbox folder and type `/factory next` once per feature. Or let the script do it headless: `python tools/sandbox.py run --skip-permissions` runs `claude -p "/factory next"` for each feature. A headless session can't answer permission prompts, so that flag starts it with permission prompts bypassed: only use it on the sandbox. Stop `serve` before `reset` or `clean`, since Windows won't delete a folder a running server is using.
+
 ## License
 
 See [LICENSE](LICENSE).

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Todos</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <main class="app">
+    <h1>Todos</h1>
+    <form id="new-todo" class="new-todo">
+      <label for="title" class="visually-hidden">New todo</label>
+      <input id="title" name="title" placeholder="What needs doing?" autocomplete="off" required>
+      <button type="submit">Add</button>
+    </form>
+    <ul id="list" class="list"></ul>
+    <p id="empty" class="empty">Nothing to do yet.</p>
+    <footer class="summary" id="summary"></footer>
+  </main>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
