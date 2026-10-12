@@ -13,8 +13,9 @@ history entry (with the round on review entries) and clears note unless the same
 call sets it. Every write sets updated, holds the job's lock, and replaces the
 file in one step, so the dashboard never reads half of it.
 
-merge exits 0 when merged, 3 when the main checkout is busy (nothing changed) and
-1 when the merge failed (aborted, nothing changed).
+merge exits 0 when merged, 3 when the main checkout is busy (not on main, something
+staged, or uncommitted edits in files the branch changes; nothing changed) and 1
+when the merge failed (aborted, nothing changed).
 """
 
 import argparse
@@ -199,12 +200,16 @@ def merge(job_id):
     current = git("branch", "--show-current", cwd=repo).stdout.strip()
     if current != "main":
         raise Busy(f"the main checkout is on {current or 'a detached HEAD'}, not main")
-    # The backlog and settings change outside job branches, so they can't conflict with a merge.
-    factory = FACTORY.relative_to(repo).as_posix()
-    dirty = git("status", "--porcelain", "--untracked-files=no", "--", ".",
-                f":!{factory}/backlog.md", f":!{factory}/config.json", cwd=repo).stdout.splitlines()
-    if dirty:
-        raise Busy("the main checkout has uncommitted changes: " + ", ".join(l[3:] for l in dirty[:5]))
+    # git merge refuses to run with anything staged, so a merge commit never picks up unrelated work.
+    if git("diff", "--cached", "--quiet", cwd=repo).returncode:
+        raise Busy("the main checkout has staged changes; commit or unstage them first")
+    # Uncommitted edits elsewhere are safe: the merge and an abort only touch the files the branch changes.
+    ours = set(git("diff", "--name-only", cwd=repo).stdout.splitlines())
+    theirs = set(git("diff", "--name-only", f"main...{branch}", cwd=repo).stdout.splitlines())
+    clash = sorted(ours & theirs)
+    if clash:
+        raise Busy("you have uncommitted changes in files this job also changes: " + ", ".join(clash[:5])
+                   + ("…" if len(clash) > 5 else "") + ". Commit or stash them first")
     r = git("merge", "--no-ff", branch, "-m", f"Merge {branch}", cwd=repo)
     if r.returncode:
         if git("rev-parse", "-q", "--verify", "MERGE_HEAD", cwd=repo).returncode == 0:

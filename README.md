@@ -117,7 +117,7 @@ A job stops in **Needs human** when:
 - the approver approved it and the merge setting is **verify**: check the branch, then merge it;
 - the approver escalates: the change touches auth, payments, permissions, deploy or CI config, a schema migration or a new dependency, or rests on a product decision. `decision.md` says exactly what it needs from you;
 - the builder is blocked (`STATUS: BLOCKED` in `build.md`), or the review rounds ran out;
-- the job was approved but your main checkout had uncommitted changes or was on another branch at merge time.
+- the job was approved but couldn't merge yet: your main checkout was on another branch, had something staged, or had uncommitted edits in files the job also changes. Uncommitted edits to other files don't get in the way.
 
 The branch and its worktree stay for you to inspect, at `<repo>/../<repo-name>-factory/<job-id>/`. Then merge it with the dashboard's **Merge** button or `/factory approve <job-id>`, or send it back with `/factory rework <job-id> <what to change>`. **Delete job** on the dashboard throws a job away: its worktree, its branch and its folder.
 

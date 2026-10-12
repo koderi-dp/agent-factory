@@ -263,9 +263,9 @@ happened:
 
 - `0`: merged. It prints what it did, including any worktree or branch it
   couldn't remove; pass that on to the user.
-- `3`: the main checkout is busy (not on `main`, or tracked files are changed;
-  untracked files, `factory/backlog.md` and `factory/config.json` don't count).
-  Nothing changed. Set `stage=approved note="<what it printed>"` and tell the
+- `3`: the main checkout is busy: not on `main`, something is staged, or the
+  user has uncommitted edits in files the job also changes. Edits to other files
+  don't block a merge and are left alone. Nothing changed. Set `stage=approved note="<what it printed>"` and tell the
   user the job is approved and waits for a clean checkout.
 - `1`: the merge failed and was undone. Set
   `stage=needs-human note="<what it printed>"` and tell the user why.
