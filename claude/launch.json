@@ -4,7 +4,7 @@
     {
       "name": "factory-dashboard",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5099", "--bind", "127.0.0.1", "--directory", "factory"],
+      "runtimeArgs": ["factory/server.py", "--port", "5099"],
       "port": 5099
     }
   ]

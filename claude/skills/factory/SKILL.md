@@ -6,9 +6,9 @@ description: Run the software factory. Use when the user types /factory <feature
 # Factory
 
 You are the orchestrator for one job. You run the loop below, spawn every agent,
-and are the only writer of your job's `job.json`. You never write code, specs,
-reviews or decisions yourself. Agents do the work and each writes one file; you
-move the job along and keep `job.json` current.
+and keep your job's `job.json` current through `factory/job.py`. You never write
+code, specs, reviews or decisions yourself. Agents do the work and each writes
+one file; you move the job along.
 
 ## The loop
 
@@ -17,7 +17,8 @@ feature → spec-writer → builder → [security, ux, ui, code] → WAIT FOR AL
                            ▲                                      │
                            └──── any CHANGES: resume builder ◄────┤
                                                                   ▼ all PASS
-                                     merge to main ◄─ APPROVE ─ approver ─ ESCALATE → needs-human
+            merge to main ◄─ auto ─ APPROVE ─ approver ─ ESCALATE → needs-human
+                                      └─ verify → approved: the user checks it, then merges
 ```
 
 | Step         | Agent (`subagent_type`) | Writes                                      |
@@ -30,9 +31,23 @@ feature → spec-writer → builder → [security, ux, ui, code] → WAIT FOR AL
 |              | `reviewer-code`         | `round-N/review-code.md`                    |
 | approve      | `approver`              | `decision.md`                               |
 
-`MAX_RESUMES = 2`: after round 1 the builder can be resumed at most twice, so a
-run has at most 3 review rounds. To change the factory, edit this file and the
-agent files in `.claude/agents/`.
+To change the factory, edit this file and the agent files in `.claude/agents/`.
+
+## Settings
+
+The user sets these on the dashboard, which saves them to `factory/config.json`.
+Read them with `python factory/job.py config` when the job starts and again
+before each step, so a change applies from the next step.
+
+- `models`: the model for each agent. When it isn't `default`, pass it as the
+  Agent tool's `model` when you spawn that agent. `default` means the model in
+  the agent's file: pass no `model`.
+- `maxRounds`: review rounds before the job comes to the user (1 to 5, default 3).
+  `MAX_RESUMES` is `maxRounds - 1`: how many times the builder can be resumed
+  after round 1.
+- `merge`: what an APPROVE leads to. `auto` merges straight away; `verify`
+  parks the job in `approved` until the user merges it from the dashboard or
+  with `/factory approve`.
 
 Every agent reads `AGENTS.md` (or `CLAUDE.md`) for the repo's setup, dev server,
 validation commands and conventions, and may load the repo's own skills for the
@@ -75,9 +90,11 @@ in a commit.
 
 ```
 <repo>/factory/backlog.md                      queue for /factory next
-<repo>/factory/dashboard.html                  the board; see /factory dashboard
-<repo>/factory/job.py                          the only way to change a job.json
-<repo>/factory/jobs/<job-id>/job.json          the job's state (you write it, the dashboard reads it)
+<repo>/factory/config.json                     settings; see Settings
+<repo>/factory/dashboard.html, .css, .js       the board; see /factory dashboard
+<repo>/factory/server.py                       serves the board and its controls
+<repo>/factory/job.py                          the only way to change a job.json, merge or delete a job
+<repo>/factory/jobs/<job-id>/job.json          the job's state (written through job.py, read by the dashboard)
 <repo>/factory/jobs/<job-id>/spec.md
 <repo>/factory/jobs/<job-id>/build.md
 <repo>/factory/jobs/<job-id>/rework-<k>.md     written by you, from /factory rework
@@ -104,8 +121,11 @@ in a commit.
     { "stage": "review", "round": 2, "at": "2026-10-12T10:01:02Z" } ] }
 ```
 
-- `stage` is one of `spec`, `build`, `review`, `approve`, `merged`,
-  `needs-human`. Worktree setup counts as `spec`.
+- `stage` is one of `spec`, `build`, `review`, `approve`, `approved`, `merged`,
+  `needs-human`. Worktree setup counts as `spec`. `approved` means the approver
+  said APPROVE and the job waits for the user to merge it.
+- `note` is a one-line reason shown on the dashboard, such as why a merge
+  didn't happen. A change of stage clears it unless the same call sets it.
 - `round` is the current review round (0 until the first round starts).
 - `resumes` is how many times the builder has been resumed since the last fresh
   build. It starts at 0 and goes back to 0 on `/factory rework`.
@@ -132,7 +152,7 @@ python factory/job.py set <job-id> reviews.ux=PASS
 python factory/job.py show <job-id>
 ```
 
-`set` takes `stage`, `round`, `resumes`, `builder`, `feature`,
+`set` takes `stage`, `round`, `resumes`, `builder`, `feature`, `note`,
 `reviews.<lens>`, `heads.<round>`, and `reviews=pending` to reset all four.
 Below, "set" means one `job.py set` call with every change of that step.
 
@@ -226,32 +246,31 @@ Read the first line of `build.md`.
 Set `stage=approve`. Spawn `approver` with the prompt `<paths> Final round: N.`
 When it finishes, read the first line of `decision.md`:
 
-- `APPROVE`: go to **Merge**.
+- `APPROVE` and the `merge` setting is `auto`: go to **Merge**.
+- `APPROVE` and the `merge` setting is `verify`: set `stage=approved`. The
+  branch and its worktree stay for the user to check. Tell them the job is
+  approved and waiting, give the worktree path, and say they merge it from the
+  dashboard or with `/factory approve <job-id>`. Your part of the job ends here.
 - `ESCALATE`: go to **Needs human**.
 - No file or any other first line: go to **Needs human**.
 
 ### Merge
 
-The merge happens in the main checkout, so it must be clean and on `main`:
-`git status --porcelain --untracked-files=no -- . ':!factory/backlog.md'`
-prints nothing and `git branch --show-current` prints `main`. Untracked files
-don't count: if the merge would overwrite one, git refuses and the failure path
-below handles it. `factory/backlog.md` is exempt: every `/factory next` edits
-it, and job branches never touch it, so a dirty backlog cannot conflict with the
-merge. If not, set `stage=needs-human` and tell the user the job is approved
-but the main checkout is busy; they run `/factory approve <job-id>` once it is
-clean. Otherwise:
+Run `python factory/job.py merge <job-id>` from `<repo>`. It merges the branch
+into `main` in the main checkout with `--no-ff`, removes the worktree, deletes
+the branch and sets `stage=merged`, all in one step. Its exit code says what
+happened:
 
-```bash
-git merge --no-ff factory/<job-id> -m "Merge factory/<job-id>"
-git worktree remove <worktree>
-git branch -d factory/<job-id>
-```
+- `0`: merged. It prints what it did, including any worktree or branch it
+  couldn't remove; pass that on to the user.
+- `3`: the main checkout is busy (not on `main`, or tracked files are changed;
+  untracked files, `factory/backlog.md` and `factory/config.json` don't count).
+  Nothing changed. Set `stage=approved note="<what it printed>"` and tell the
+  user the job is approved and waits for a clean checkout.
+- `1`: the merge failed and was undone. Set
+  `stage=needs-human note="<what it printed>"` and tell the user why.
 
-Set `stage=merged`. If the merge fails, run `git merge --abort` (when a merge
-is in progress), set `stage=needs-human` and tell the user why. If removing the
-worktree fails, the job is still merged: tell the user what `git worktree remove`
-printed. Never push.
+Never merge with git yourself, and never push.
 
 ### Needs human
 
@@ -271,11 +290,12 @@ on its backlog line with the job id.
 
 ## /factory approve <job-id>
 
-The job must be in `needs-human`. Run **Merge** with that job id.
+The job must be in `approved` or `needs-human`. Run **Merge** with that job id.
+The dashboard's Merge button runs the same `job.py merge`.
 
 ## /factory rework <job-id> <note>
 
-The job must be in `needs-human`.
+The job must be in `approved` or `needs-human`.
 
 1. Write the note, verbatim, to `factory/jobs/<job-id>/rework-<k>.md`, where `k`
    is the next unused number.
@@ -308,16 +328,21 @@ Your session becomes the job's orchestrator. Pick up from the stage in
 
 ## /factory dashboard
 
-The board is `factory/dashboard.html`, served from `factory/` by a plain static
-server that lists directories:
-`python -m http.server 5099 --bind 127.0.0.1 --directory factory`. Start it in
-the background if nothing answers on that port yet, and give the user
+The board is `factory/dashboard.html`, served by `python factory/server.py`
+(port 5099; `--port` to change it). Start it in the background from `<repo>` if
+nothing answers on that port yet, and give the user
 `http://127.0.0.1:5099/dashboard.html`. Every job is on it, whichever session
-runs it.
+runs it. Through the server the user can change the settings, merge or delete a
+job and edit the backlog. Served by a plain static server instead
+(`python -m http.server --directory factory`), the board is read-only.
 
 ## Reporting
 
 Keep the user posted with one short line per transition, for example
 `003-rate-limiting: round 2, security CHANGES, ux/ui/code PASS → resuming builder`.
-When the job ends, say whether it merged or needs a human, and why, and list
-the `## Follow-ups` from `decision.md` when it has any.
+When the job ends, say whether it merged, is approved and waiting, or needs a
+human, and why, and list the `## Follow-ups` from `decision.md` when it has any.
+
+The user can merge or delete a waiting job from the dashboard. If your job's
+folder disappears, or its stage changes to one you didn't set, stop and tell
+the user what you found.
