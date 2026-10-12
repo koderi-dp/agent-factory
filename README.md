@@ -94,6 +94,7 @@ Open Claude Code in your repo and type one of these:
 | --- | --- |
 | `/factory <feature>` | Runs one job, from spec to merge. Example: `/factory Add a dark mode toggle to settings` |
 | `/factory next` | Takes the first unchecked `- [ ]` item from `factory/backlog.md` and runs it. |
+| `/factory watch` | Waits for the dashboard's **Start** button and runs each item you start there. Leave it open in a session. |
 | `/factory approve <job-id>` | Merges a job that is waiting for you (or use the dashboard's Merge button). |
 | `/factory rework <job-id> <note>` | Sends a waiting job back to a fresh builder with your note. |
 | `/factory resume <job-id>` | Picks up a job whose Claude Code session ended mid-run. |
@@ -144,6 +145,7 @@ And it lets you change things:
 
 - **Settings**: the model and effort level (low to max) for each step, how many review rounds a job gets, and what happens after APPROVE: merge straight away, or wait for you to check it first. Saved to `factory/config.json`; running jobs pick changes up at their next step.
 - **Merge** and **Delete job** buttons on a job's card.
+- **Start** on a backlog card runs that item. A session running `/factory watch` picks it up, with its normal permission prompts. If none is watching, it waits for one, or, if you choose so in Settings, the server starts a headless Claude session for it (in `auto` permission mode, or with every check skipped), whose log goes to `factory/jobs/headless-*.log`.
 - **Backlog**: paste a feature (plain text or Markdown, with its details) or a whole list of them, drag cards to set the order (the top card is built next), and remove them.
 
 The server listens on 127.0.0.1 only and refuses requests from other sites. Served by any plain static server instead (`python -m http.server --directory factory`, then open `/dashboard/`), the board still works but is read-only.

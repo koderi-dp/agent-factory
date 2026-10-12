@@ -1,6 +1,6 @@
 ---
 name: factory
-description: Run the software factory. Use when the user types /factory <feature>, /factory next, /factory approve <job-id>, /factory rework <job-id> <note>, /factory resume <job-id> or /factory dashboard. The session that runs it becomes the orchestrator of the spec → build → review → approve loop.
+description: Run the software factory. Use when the user types /factory <feature>, /factory next, /factory watch, /factory approve <job-id>, /factory rework <job-id> <note>, /factory resume <job-id> or /factory dashboard. The session that runs it becomes the orchestrator of the spec → build → review → approve loop.
 ---
 
 # Factory
@@ -48,6 +48,9 @@ before each step, so a change applies from the next step.
 - `maxRounds`: review rounds before the job comes to the user (1 to 5, default 3).
   `MAX_RESUMES` is `maxRounds - 1`: how many times the builder can be resumed
   after round 1.
+- `start` and `headlessPermissions`: what the dashboard's Start button does
+  when no `/factory watch` session is ready. The dashboard server acts on
+  them; you don't.
 - `merge`: what an APPROVE leads to. `auto` merges straight away; `verify`
   parks the job in `approved` until the user merges it from the dashboard or
   with `/factory approve`.
@@ -205,7 +208,10 @@ name real ports.
 
 ### Build check
 
-Read the first line of `build.md`.
+Run `python factory/job.py free-ports <job-id>` first: it stops any dev server
+an agent left running on the job's ports, which would otherwise keep the next
+agent off them and, on Windows, stop the worktree from being removed. Then read
+the first line of `build.md`.
 
 - `STATUS: READY`: check that the branch has commits
   (`git -C <worktree> log --oneline main..HEAD` prints something) and the
@@ -232,6 +238,7 @@ Read the first line of `build.md`.
    Never resume the builder mid-round. If a reviewer finishes without writing
    its file, or writes a first line that isn't a verdict, spawn it once more
    with the same prompt. If the second attempt fails too, go to **Needs human**.
+   When all four are in, run `python factory/job.py free-ports <job-id>`.
 4. Decide:
    - **All PASS**: go to **Approve**.
    - **Any CHANGES, `resumes` < `MAX_RESUMES`**: set `stage=build` and
@@ -297,6 +304,31 @@ backlog and try the next `- [ ]` item. If none is left, say so and stop.
 Run `/factory <title>` with the details, and once step 1 has given it a job id,
 replace `claimed` on its backlog line with the job id. `feature` in `job.json`
 is the title alone.
+
+## /factory watch
+
+Makes your session the one the dashboard's **Start** button runs jobs in, so the
+user can start a backlog item with a click instead of typing `/factory next`.
+Pick a watcher id once: `w-` and six random letters or digits. Then:
+
+1. Run `python factory/job.py wait --watcher <id>` from `<repo>`, with the Bash
+   tool's timeout at its maximum. It returns within 9 minutes.
+   - Exit `2`: nobody pressed Start. Run it again.
+   - Exit `0`: it printed `{"item": "<title>"}`. Run **/factory next** for
+     exactly that item instead of the first one: claim the `- [ ] <title>` line
+     and take its details as usual. If that line is gone or already checked,
+     tell the user and go back to step 1.
+2. When the job ends (merged, approved and waiting, or needs a human), report it
+   as usual and go back to step 1.
+
+Your session runs one job at a time; for more at once, the user opens more
+watching sessions. When the user stops you, run
+`python factory/job.py unwatch --watcher <id>` so the dashboard stops counting
+you.
+
+`/factory watch --once` is the same for a single job: run `wait` with
+`--timeout 120`; on exit `2`, stop. After the job, run `unwatch` and stop. The
+dashboard launches headless sessions this way when the user set Start to do so.
 
 ## /factory approve <job-id>
 

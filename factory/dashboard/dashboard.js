@@ -57,6 +57,9 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
 
 let jobs = []
 let backlog = []
+let starts = [] // backlog items the Start button queued, waiting for a /factory watch session
+let watchers = [] // heartbeats of /factory watch sessions
+const WATCHER_FRESH_MS = 45 * 1000
 let lastRender = ''
 let showAllMerged = false
 const roundCache = new Map() // "<job>/<n>" -> verdicts of a finished round
@@ -232,10 +235,13 @@ function renderQueue() {
   const shown = edit ? backlog : backlog.slice(0, 8)
   const rest = backlog.length - shown.length
   const last = backlog.length - 1
+  const starting = new Set(starts.map((r) => r.item))
   const items = shown.map(({ text, details }, i) => `
     <li class="qcard${edit ? ' movable' : ''}" data-index="${i}">
       <span class="qn">${i + 1}</span><span class="qtext">${esc(text)}</span>
-      ${i === 0 ? '<span class="qnext">next</span>' : ''}
+      ${starting.has(text)
+        ? '<span class="qnext starting">starting…</span>'
+        : i === 0 ? '<span class="qnext">next</span>' : ''}
       ${details ? `<details class="qdetails" data-title="${esc(text)}" ${openDetails.has(text) ? 'open' : ''}>
         <summary>Details</summary><div class="md">${markdown(details)}</div></details>` : ''}
       ${edit ? `<span class="qtools">
@@ -243,9 +249,12 @@ function renderQueue() {
         ${i > 0 ? `<button class="qbtn" data-queue-move="${i}" data-to="${i - 1}" aria-label="Move up: ${esc(text)}">↑</button>` : ''}
         ${i < last ? `<button class="qbtn" data-queue-move="${i}" data-to="${i + 1}" aria-label="Move down: ${esc(text)}">↓</button>` : ''}
         <button class="qbtn remove" data-queue-remove="${i}" aria-label="Remove: ${esc(text)}">×</button>
+        ${starting.has(text)
+          ? `<button class="qbtn start" data-queue-cancel="${i}" aria-label="Don't start: ${esc(text)}">Cancel</button>`
+          : `<button class="qbtn start" data-queue-start="${i}" aria-label="Start: ${esc(text)}">▶ Start</button>`}
       </span>` : ''}
     </li>`).join('')
-  const html = (items || '<li class="empty">Nothing queued.</li>') + (rest > 0 ? `<li class="queue-more">+${rest} more</li>` : '')
+  const html = watchHtml(edit) + (items || '<li class="empty">Nothing queued.</li>') + (rest > 0 ? `<li class="queue-more">+${rest} more</li>` : '')
   $('open-add').hidden = !edit
   sorter?.option('disabled', !edit)
   $('queue-count').textContent = backlog.length || ''
@@ -256,6 +265,26 @@ function renderQueue() {
     $('queue-list').innerHTML = html
     if (focused) [...document.querySelectorAll('.qbtn')].find((b) => b.getAttribute('aria-label') === focused)?.focus()
   }
+}
+
+// Whether a Claude Code session is waiting for the Start button (/factory watch).
+function watchHtml(edit) {
+  if (!edit) return ''
+  const now = Date.now()
+  const alive = watchers.filter((w) => w.busy || now - at(w.at) < WATCHER_FRESH_MS)
+  const idle = alive.filter((w) => !w.busy).length
+  const busy = alive.filter((w) => w.busy)
+  if (!alive.length && backend.config.start === 'headless') {
+    return `<li class="watch on">Start launches a headless Claude session (${esc(backend.config.headlessPermissions === 'auto' ? 'auto mode' : 'no permission checks')}).</li>`
+  }
+  if (!alive.length) {
+    return `<li class="watch off">No session is watching, so Start only queues.
+      Run <code>/factory watch</code> in Claude Code. <button class="qbtn" data-copy="/factory watch">Copy</button></li>`
+  }
+  const parts = []
+  if (idle) parts.push(`${idle} session${idle === 1 ? '' : 's'} ready`)
+  if (busy.length) parts.push(`${busy.length} running a job`)
+  return `<li class="watch on" title="${esc(busy.map((w) => w.busy).join('\n'))}">● ${parts.join(' · ')}</li>`
 }
 
 // ---- Backlog drag and drop -------------------------------------------------
@@ -388,10 +417,20 @@ async function loadJobs() {
   try {
     hrefs = await listDir('/jobs/')
   } catch (err) {
-    if (/HTTP 404/.test(err.message)) return []
+    if (/HTTP 404/.test(err.message)) {
+      starts = []
+      watchers = []
+      return []
+    }
     throw err
   }
   const ids = hrefs.filter((h) => h.endsWith('/')).map((h) => h.slice(0, -1)).sort()
+  // Start requests and watcher heartbeats are files beside the job folders.
+  const read = (re) => Promise.all(hrefs.filter((h) => re.test(h)).map((h) =>
+    fetchOptional(`/jobs/${h}`).then((t) => (t ? JSON.parse(t) : null)).catch(() => null)))
+  ;[starts, watchers] = await Promise.all([read(/^request-.*\.json$/), read(/^watcher-.*\.json$/)])
+  starts = starts.filter(Boolean)
+  watchers = watchers.filter(Boolean)
   return Promise.all(ids.map(async (id) => {
     const text = await fetchOptional(`/jobs/${id}/job.json`)
     if (text === null) return { id, problem: 'Starting: no job.json yet.' }
@@ -497,6 +536,9 @@ function openSettings() {
   const { config, agents, models, efforts, agentDefaults, agentEfforts } = backend
   const form = $('settings-form')
   form.elements.merge.value = config.merge
+  form.elements.start.value = config.start
+  form.elements.headlessPermissions.value = config.headlessPermissions
+  $('s-headless').hidden = config.start !== 'headless'
   form.elements.maxRounds.value = String(config.maxRounds)
   $('s-models').innerHTML = '<span class="mh">Step</span><span class="mh">Model</span><span class="mh">Effort</span>' +
     agents.map((a) => `
@@ -520,6 +562,8 @@ async function saveSettings(e) {
       models: pick('model'),
       efforts: pick('effort'),
       merge: form.elements.merge.value,
+      start: form.elements.start.value,
+      headlessPermissions: form.elements.headlessPermissions.value,
       maxRounds: Number(form.elements.maxRounds.value),
     })
     $('settings').close()
@@ -532,6 +576,9 @@ async function saveSettings(e) {
 
 $('open-settings').addEventListener('click', openSettings)
 $('settings-form').addEventListener('submit', saveSettings)
+$('settings-form').addEventListener('change', (e) => {
+  if (e.target.name === 'start') $('s-headless').hidden = e.target.value !== 'headless'
+})
 document.querySelector('[data-settings-cancel]').addEventListener('click', () => $('settings').close())
 // ---- Add to backlog --------------------------------------------------------
 
@@ -752,6 +799,15 @@ document.addEventListener('click', (e) => {
   const moveEl = e.target.closest('[data-queue-move]')
   if (moveEl) {
     return editQueue({ action: 'move', index: Number(moveEl.dataset.queueMove), to: Number(moveEl.dataset.to) })
+  }
+  const startEl = e.target.closest('[data-queue-start]')
+  if (startEl) return editQueue({ action: 'start', index: Number(startEl.dataset.queueStart) })
+  const cancelEl = e.target.closest('[data-queue-cancel]')
+  if (cancelEl) return editQueue({ action: 'cancel', index: Number(cancelEl.dataset.queueCancel) })
+  const copyEl = e.target.closest('[data-copy]')
+  if (copyEl) {
+    navigator.clipboard?.writeText(copyEl.dataset.copy).then(() => { copyEl.textContent = 'Copied' })
+    return
   }
   const removeEl = e.target.closest('[data-queue-remove]')
   if (removeEl) return editQueue({ action: 'remove', index: Number(removeEl.dataset.queueRemove) })

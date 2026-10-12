@@ -105,6 +105,10 @@ def new(sandbox):
 
 
 def clean(sandbox):
+    # Stop servers the agents left running first: on Windows they keep the worktrees from being deleted.
+    for job_json in (sandbox / "factory" / "jobs").glob("*/job.json"):
+        subprocess.run([sys.executable, "factory/job.py", "free-ports", job_json.parent.name],
+                       cwd=sandbox, capture_output=True)
     if (sandbox / ".git").exists():
         for line in git("worktree", "list", "--porcelain", cwd=sandbox).stdout.splitlines():
             if line.startswith("worktree ") and Path(line[9:]).resolve() != sandbox.resolve():

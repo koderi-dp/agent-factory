@@ -1,6 +1,8 @@
 import json
 import subprocess
+import sys
 import threading
+import time
 import unittest
 
 from helpers import Repo, git, job
@@ -121,6 +123,28 @@ class MergeTests(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0, "a merge was left in progress")
         self.assertEqual((self.repo.path / "notes.txt").read_text(encoding="utf-8"), "wip, edited\n")
         self.assertEqual(job.load("001-conflict")["stage"], "approved")
+
+    def test_a_server_left_running_in_the_worktree_doesnt_block_the_merge(self):
+        # Job 095's ports are 6050-6058, clear of the real jobs' ports.
+        worktree = self.repo.add_job("095-leftover")
+        server = subprocess.Popen([sys.executable, "-m", "http.server", "6050", "--bind", "127.0.0.1"],
+                                  cwd=worktree, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(50):
+                if job.listeners([6050]):
+                    break
+                time.sleep(0.1)
+            self.assertTrue(job.listeners([6050]), "the test server didn't start")
+            job.merge("095-leftover")
+            self.assertEqual(job.listeners([6050]), [])
+            self.assertFalse(worktree.exists())
+            self.assertNotIn("note", job.load("095-leftover"))
+        finally:
+            server.kill()
+
+    def test_job_ports(self):
+        self.assertEqual(job.job_ports("003-x"), list(range(5130, 5139)))
+        self.assertEqual(job.job_ports("not-a-number"), [])
 
     def test_only_waiting_jobs_merge(self):
         self.repo.add_job("001-live", stage="build")

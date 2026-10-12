@@ -87,6 +87,16 @@
       <label class="radio"><input type="radio" name="merge" value="verify"> Wait for me to check it, then I merge it here</label>
     </fieldset>
     <fieldset>
+      <legend>When you press Start and no Claude Code session is watching</legend>
+      <label class="radio"><input type="radio" name="start" value="queue"> Queue it until a session runs <code>/factory watch</code></label>
+      <label class="radio"><input type="radio" name="start" value="headless"> Start a headless Claude session in the background for it</label>
+      <div class="sub" id="s-headless">
+        <label class="radio"><input type="radio" name="headlessPermissions" value="auto"> Auto mode: routine commands run, risky ones are blocked (recommended)</label>
+        <label class="radio"><input type="radio" name="headlessPermissions" value="bypassPermissions"> Skip every permission check (sandboxes only)</label>
+        <p class="note">A headless session asks nobody before it runs a command. Its log is in <code>factory/jobs/headless-*.log</code>.</p>
+      </div>
+    </fieldset>
+    <fieldset>
       <legend><label for="s-rounds">Review rounds before a job comes to you</label></legend>
       <select id="s-rounds" name="maxRounds">
         <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>

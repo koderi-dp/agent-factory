@@ -12,6 +12,7 @@ See the agent-factory repo's README for setup.
 | --- | --- |
 | `/factory <feature>` | Runs one job from spec to merge, in its own worktree. |
 | `/factory next` | Takes the first `- [ ]` item from `backlog.md`. |
+| `/factory watch` | Runs the items you press Start on in the dashboard. |
 | `/factory approve <job-id>` | Merges a job waiting for you. |
 | `/factory rework <job-id> <note>` | Sends a waiting job back to a fresh builder with your note. |
 | `/factory resume <job-id>` | Picks up a job whose session ended mid-run. |

@@ -11,7 +11,8 @@ drive it. Without it, `python -m http.server` still serves a read-only board.
   POST /api/jobs/<job-id>/merge    merge an approved or waiting job
   POST /api/jobs/<job-id>/delete   remove a job's worktree, branch and folder ({"force": true} for a live one)
   POST /api/backlog                {"action": "add", "items": [{"text": title, "details": markdown}, ...]},
-                                   {"action": "remove", "index": n} or {"action": "move", "index": n, "to": m};
+                                   {"action": "remove", "index": n}, {"action": "move", "index": n, "to": m},
+                                   {"action": "start" or "cancel", "index": n} for a /factory watch session;
                                    n and m count unchecked items. Details are stored indented under the item.
 """
 
@@ -19,6 +20,9 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import job  # factory/job.py; Python puts this script's folder on the path
@@ -87,6 +91,23 @@ def new_items(body):
     return out
 
 
+def start_headless(permissions):
+    """Launch a background `/factory watch --once` session that takes the next start request."""
+    claude = shutil.which("claude")
+    if not claude:
+        raise job.JobError("the claude command isn't on PATH, so Start can't launch a headless session")
+    log = job.JOBS / f"headless-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 10_000:04}.log"
+    # Its own process group, so it keeps running if the dashboard server stops. On Windows it gets
+    # one hidden console that every command it runs shares; with no console at all (DETACHED_PROCESS)
+    # each git or python call would open a window of its own.
+    flags = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+             if os.name == "nt" else {"start_new_session": True})
+    with open(log, "w", encoding="utf-8") as out:
+        subprocess.Popen([claude, "-p", "/factory watch --once", "--permission-mode", permissions],
+                         cwd=job.repo_root(), stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, **flags)
+    return log.name
+
+
 def edit_backlog(body):
     text = BACKLOG.read_text(encoding="utf-8") if BACKLOG.exists() else "# Backlog\n\n"
     blocks = backlog_blocks(text.splitlines())
@@ -99,6 +120,17 @@ def edit_backlog(body):
             raise job.JobError(f"{key} must name one of the {len(slots)} queued items")
         return n
 
+    if action in ("start", "cancel"):
+        title = blocks[slots[item_at("index")]]["lines"][0][6:].strip()
+        if action == "cancel":
+            return job.cancel_request(title)
+        queued = any(r["item"] == title for r in job.pending_requests())
+        request = job.request_start(title)
+        cfg = job.load_config()
+        # A session that is already watching takes it; launch one only when none is ready.
+        if not queued and cfg["start"] == "headless" and not job.idle_watchers():
+            request["headless"] = start_headless(cfg["headlessPermissions"])
+        return request
     if action == "add":
         blocks.extend(new_items(body))
     elif action == "remove":
@@ -188,8 +220,8 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json(200, {"message": job.merge(job_id)})
                 return self.send_json(200, {"message": job.delete(job_id, bool(body.get("force")))})
             if path == "/api/backlog" and self.command == "POST":
-                edit_backlog(body)
-                return self.send_json(200, {"ok": True})
+                result = edit_backlog(body)
+                return self.send_json(200, {"ok": True, **(result if isinstance(result, dict) else {})})
             return self.send_json(404, {"error": "no such endpoint"})
         except job.Busy as err:
             return self.send_json(409, {"error": str(err), "busy": True})
