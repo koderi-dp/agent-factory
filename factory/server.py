@@ -22,10 +22,12 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-import job  # factory/job.py; Python puts this script's folder on the path
+sys.dont_write_bytecode = True  # no factory/__pycache__ in the repos the factory runs in
+import job  # noqa: E402  factory/job.py; Python puts this script's folder on the path
 
 BACKLOG = job.FACTORY / "backlog.md"
 ITEM = re.compile(r"^[-*]\s+\[[ xX]\]\s+\S")
