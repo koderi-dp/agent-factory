@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "factory-dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5099", "--bind", "127.0.0.1", "--directory", "factory"],
+      "port": 5099
+    }
+  ]
+}

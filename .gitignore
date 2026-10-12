@@ -1,0 +1,10 @@
+# Runtime state of factory runs
+/factory/jobs/
+*.tmp
+
+# Generated from claude/ by sync-claude.ps1
+/.claude/
+
+# Python
+__pycache__/
+*.pyc
