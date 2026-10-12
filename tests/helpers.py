@@ -1,6 +1,8 @@
 """A throwaway git repo with a factory/ folder, and job.py pointed at it."""
 
+import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -55,4 +57,15 @@ class Repo:
         for line in git("worktree", "list", "--porcelain", cwd=self.path).splitlines():
             if line.startswith("worktree ") and Path(line[9:]) != self.path:
                 subprocess.run(["git", "worktree", "remove", "--force", line[9:]], cwd=self.path, capture_output=True)
-        shutil.rmtree(self.tmp, ignore_errors=True)
+        remove_tree(self.tmp)
+
+
+def remove_tree(path):
+    """Delete a folder, including git's read-only object files, which Windows won't delete as they are."""
+    def unlock(func, p, _):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=unlock)
+    else:
+        shutil.rmtree(path, onerror=unlock)

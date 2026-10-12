@@ -187,7 +187,8 @@ def main():
     parser.add_argument("--skip-permissions", action="store_true",
                         help="let run start headless sessions that don't ask before running commands")
     args = parser.parse_args()
-    sandbox = args.dir.resolve()
+    # Expand %TEMP%, $TEMP and ~ here, since not every shell does it for us.
+    sandbox = Path(os.path.expandvars(os.path.expanduser(str(args.dir)))).resolve()
     if sandbox == ROOT or ROOT in sandbox.parents:
         sys.exit("the sandbox must be outside this repo")
     if args.command == "new":
