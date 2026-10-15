@@ -49,13 +49,16 @@ class StubAdapter:
              "cwd": context.job["worktree"], "env": {}, "stdin": "prompt.md"},
             prompt, context.job["frozen"]["preamble"], {"retry_context": retry})
 
-    def parse_event(self, line):
+    def parse_event(self, line, *, context=None, quiet_seconds=0):
         self.seen.append(line)
         try:
             event = json.loads(line)
             return EventUpdate(event.get("session_id"), event.get("usage"), event.get("activity"))
         except (ValueError, AttributeError):
             return EventUpdate()
+
+    def summarize(self, event, *, worktree=None, report_path=None, quiet_seconds=0):
+        return event.get("activity")
 
     def classify(self, context, exit_info):
         if exit_info["exit_code"]:

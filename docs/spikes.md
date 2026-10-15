@@ -90,9 +90,9 @@ Write-Output LONG_END` with these command item fields (wrapper path omitted here
 ```
 
 There were no intermediate output items in this sample. The agent then emitted
-`LONG_DONE` and `turn.completed`. TODO (plan §13.4, session 1.6): summarize the
-started command while it runs; pair updates by item ID and don't require output
-or usage during a quiet tool run.
+`LONG_DONE` and `turn.completed`. Session 1.6 summarizes the started command
+without waiting for output or usage. Complete updates replace the activity;
+updates containing only an item ID leave the existing activity intact.
 
 ### Denied action under `--approve-for-me` (spike 3)
 
@@ -128,10 +128,11 @@ The CLI exited **0** and continued. JSONL contained no command-execution item,
 top-level error, or structured permission-denial field. Thus stdout and exit code
 alone cannot establish absence of denials. This was a hard execpolicy denial with
 automatic approvals enabled; it does not establish the behavior or event shape of
-an automatic reviewer's discretionary rejection. TODO (plan §6.5/§13.4, session
-1.6): retain stderr, distinguish a denial that stopped work from one the agent
-recovered from, and validate the report contract even after exit 0. Do not classify
-every stderr denial as a failed attempt.
+an automatic reviewer's discretionary rejection. Session 1.6 reads retained stderr
+alongside JSONL, exposes masked denial diagnostics, and treats a denial as a
+permission failure when the process or terminal turn fails. Exit 0 without a
+failed terminal turn still requires a fresh, valid report; a recovered denial
+does not itself make the attempt fail.
 
 ### Developer/system config versus prepending (spike 4; plan §18 item 2)
 
@@ -194,7 +195,28 @@ instructions rather than built-in prefixes. No additional cache trials were run.
 `tests/test_cli_spikes.py` checks complete terminal streams and metadata,
 success/auth/long-run shapes, stderr-only denial with continuation, instruction
 and cache observations, nested JSON path redaction, and overwrite protection.
-It launches no CLIs. Adapter implementation remains session 1.6 scope.
+It launches no CLIs. Session 1.6 implements the adapter against these fixtures.
+
+### Adapter follow-through — session 1.6
+
+`engine/adapters/codex.py` uses `thread.started.thread_id`, normalizes each
+`turn.completed.usage` without estimating missing fields or cost, and summarizes
+tool activity with secret masking. The supervisor accumulates usage at its durable
+byte offset, so recovery does not count a turn twice. Classification rereads logs
+and report evidence, requiring no in-memory parser state from the old service.
+
+The installed CLI's `codex exec resume --help` omits the parent-only `-C`,
+`--add-dir`, and `--approve-for-me` options. Resume commands keep the same execution
+flags **before** `resume <session-id> -`; a help-only subprocess test checks this
+argv with no model call. On Windows, the PATH fallback resolves `codex.cmd` to an
+absolute path before launching. Saved machine `cli.codex` takes precedence.
+
+`tests/test_engine_codex_adapter.py` parses every retained Codex JSONL/stderr pair
+and classifies every recorded exit. Synthetic tests cover the remaining §6.5 and
+§13.4 rows, including stopped denials, budget/rate failures, report retries, and
+secret masking. Synthetic cases are test inputs, not new CLI experiment evidence.
+Packet assembly and git-dependent report checks retain session 1.8 TODOs; timeout
+enforcement remains session 1.7. No additional live provider run was needed.
 
 Claude spikes **1, 2, 6, and the Claude half of 7 are deferred to session 1.11**.
 No Claude executable was invoked and no existing Claude capture was changed in

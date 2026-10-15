@@ -373,11 +373,21 @@ def test_limits_round_robin_and_restart_recount_two_repos_three_jobs_four_execut
     supervisor.start()
     try:
         scheduler.machine.call(lambda connection: save_machine_settings(connection, {"concurrency": {"global": 7}}))
+        # Windows wall-clock timestamps can tie. Observe successful dispatches
+        # inside the scheduler's serialised claim path instead of sorting ties
+        # by ThreadPoolExecutor input order (which is not lock acquisition order).
+        dispatch_order = []
+        original_claim = scheduler._claim
+        def observed_claim(*args):
+            claim = original_claim(*args)
+            if claim is not None:
+                dispatch_order.append(claim.repo_id)
+            return claim
+        monkeypatch.setattr(scheduler, "_claim", observed_claim)
         with ThreadPoolExecutor(max_workers=12) as pool:
             claims = [claim for claim in pool.map(lambda _: scheduler.claim_next(), range(40)) if claim]
         assert len(claims) == scheduler.live_global == 7
-        ordered = sorted(claims, key=lambda claim: claim.attempt["t_queued"])
-        assert [claim.repo_id for claim in ordered] == [identifiers[n % 2] for n in range(7)]
+        assert dispatch_order == [identifiers[n % 2] for n in range(7)]
         counts = {}
         for claim in claims:
             key = claim.repo_id, claim.job["id"]

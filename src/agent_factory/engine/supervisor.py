@@ -1,14 +1,12 @@
 """Prepare/spawn/record, durable log tailing and startup recovery (§6.4).
 
 Adapters are injected; no provider executable or provider module is required.
-TODO (plan §6.5/§8.1, session 1.6): move the neutral protocol to adapters/base.py.
 TODO (plan §9, session 1.7): port leases, Stop escalation and execution timeouts.
 TODO (plan §8.2, session 1.8): supply the real packet/system prompt builder.
 TODO (plan §3.1, session 1.9): service timer/wake-ups call tick() and own its lifetime.
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -17,56 +15,19 @@ import sqlite3
 import subprocess
 import threading
 import time
-from typing import Any, Literal, Protocol, TypeVar
+from typing import Any, TypeVar
 
 import psutil
 
 from agent_factory import run_cli
 from agent_factory.engine import db, pipeline, winjob
+from agent_factory.engine.adapters.base import (
+    Adapter, EventUpdate, ExitOutcome, Prepared, UnsupportedProviderError, add_usage,
+)
 from agent_factory.engine.crash import crash_at
 from agent_factory.engine.scheduler import Claim, LIVE, Scheduler
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True)
-class Prepared:
-    command: Mapping[str, Any]
-    prompt: str
-    system: str
-    packet: Mapping[str, Any]
-
-
-@dataclass(frozen=True)
-class EventUpdate:
-    session_id: str | None = None
-    usage: Mapping[str, Any] | None = None
-    activity: str | None = None
-
-
-@dataclass(frozen=True)
-class ExitOutcome:
-    state: Literal["valid", "invalid", "failed", "stopped"]
-    error_class: str | None = None
-    detail: str | None = None
-    completion: pipeline.Completion | None = None
-    current_head: str | None = None
-
-
-class Adapter(Protocol):
-    """All hooks run outside DB transactions; event parsing must be replay-safe.
-
-    classify() validates reports and returns evidence/current head, without
-    changing persisted state. prepare() consumes frozen context and retry data.
-    """
-
-    def prepare(self, context: Claim) -> Prepared: ...
-    def parse_event(self, line: bytes) -> EventUpdate: ...
-    def classify(self, context: Claim, exit_info: Mapping[str, Any]) -> ExitOutcome: ...
-
-
-class UnsupportedProviderError(ValueError):
-    pass
 
 
 def _read_with_retry(read: Callable[[], T]) -> T:
@@ -326,14 +287,20 @@ class Supervisor:
             return  # leave partial UTF-8/JSON lines for the next poll
         updates: dict[str, Any] = {}
         now = pipeline._now()
+        usage = json.loads(context.attempt["usage"]) if context.attempt.get("usage") else None
+        last_activity = (context.attempt.get("last_activity_at") or context.attempt.get("t_first_event")
+                         or context.attempt.get("t_launch") or context.attempt["t_queued"])
+        quiet = (datetime.fromisoformat(now) - datetime.fromisoformat(last_activity)).total_seconds()
         for line in data[:end].splitlines():
-            event = self.adapter(context.execution["provider"]).parse_event(line)
+            event = self.adapter(context.execution["provider"]).parse_event(line, context=context, quiet_seconds=quiet)
             if event.session_id is not None:
                 updates["session_id"] = event.session_id
             if event.usage is not None:
-                updates["usage"] = json.dumps(dict(event.usage))
+                usage = add_usage(usage, event.usage)
+                updates["usage"] = json.dumps(usage)
             if event.activity is not None:
                 updates.update(last_activity=event.activity, last_activity_at=now)
+                quiet = 0
         updates["log_offset"] = context.attempt["log_offset"] + end
         updates["t_first_event"] = context.attempt["t_first_event"] or now
         crash_at("during_tail")
