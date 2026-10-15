@@ -352,4 +352,41 @@ both node.exe members, the three termination paths, the uv version change and
 same-worker heartbeat, path redaction, and overwrite protection. Two tests
 repeat the actual local processes on Windows (skipped on other platforms or
 when npm/uv is absent). This completes spikes **5 and 8**; Claude spikes remain
-deferred as described above.
+deferred as described above.`r`n`r`n## Names
+
+Checked 2026-10-15. This is an availability snapshot, not a reservation; package indexes
+and command ownership can change before release.
+
+### PyPI
+
+Queried the PyPI JSON API (`https://pypi.org/pypi/<name>/json`):
+
+| Name | HTTP | Finding |
+|---|---:|---|
+| `agent-factory` | 404 | No project currently returned; available to claim at check time. |
+| `agentfactory` | 200 | Occupied; version 0.0.0, summary `AgentFactory`. |
+| `agent_factory` | 404 | No project currently returned. |
+| `factory` | 200 | Occupied; version 1.2, an object-oriented factory package. |
+
+### `factory` command collisions
+
+Searches of PyPI and npm package listings/readmes found active and published tools
+that install an unqualified `factory` executable, including npm packages
+[`@usefactory/factory`](https://www.npmjs.com/package/%40usefactory/factory),
+[`feature-factory`](https://www.npmjs.com/package/feature-factory),
+[`@agent-relay/factory`](https://www.npmjs.com/package/%40agent-relay/factory),
+and [`@gorlitzer-labs/factory`](https://www.npmjs.com/package/%40gorlitzer-labs/factory).
+The Factory Droid npm package [`@factory/cli`](https://www.npmjs.com/package/%40factory/cli)
+installs `droid`, not `factory`. PyPI project search is not a complete executable-index:
+package metadata does not offer a dependable global query for every published console
+script, so the search is evidence of collisions, not an exhaustive census. Command
+collisions are per-user environment/PATH and can arise from tools installed outside these
+indexes too.
+
+### Recommendation
+
+Use the free-at-check `agent-factory` distribution name. Keep `agent-factory` as the
+unambiguous command and avoid installing a global `factory` alias: multiple unrelated
+npm packages already claim that command, so PATH precedence would make the result depend
+on install order. Skills and automation should invoke `agent-factory`, as proposed in
+plan §18 item 3. No package or command was registered by this check.
