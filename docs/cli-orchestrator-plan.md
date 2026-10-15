@@ -1382,8 +1382,18 @@ before the next starts.
 
 ### 17.0 Models and cost for building this plan
 
-Implementation is done with Codex. Each finished phase is cross-reviewed with Claude, so a
-different model checks the work.
+Implementation is done with Codex, with Sol as the default builder. Each finished phase
+is cross-reviewed with Astra through `codex exec review`, so a different model checks the
+work. The runner supports `--reviewer codex|claude|none` (default `codex`).
+
+**Codex-first execution:** Claude usage is currently unavailable. Session 0.2 captures
+only Codex CLI evidence; 1.6 builds the provider-neutral interface and Codex adapter.
+Claude spikes (1, 2, 6 and its half of 7), adapter implementation and real Claude/mixed
+smoke tests move to session 1.11, skipped unless `--include-claude` is supplied.
+The engine must run and be testable without Claude installed. Preserve partial baseline
+and spike evidence; unknown or rate-limited measurements must never be presented as
+successful experiments. Codex-only exit criteria allow later development to proceed,
+but Claude/mixed parity remains pending and is required before release.
 
 **Codex models** (from OpenAI's Codex models page, October 2026; prices per million tokens,
 input/output, from third-party API price lists):
@@ -1407,7 +1417,8 @@ and Ultra (parallel subagents; not available on Luna). Higher effort means more 
 
 **Rules that keep cost down without hurting quality:**
 1. **Sol is the default.** Astra only where §6.4/§3.2-class correctness is at stake *and*
-   Sol has failed twice on it. Never Astra for UI, scaffolding, or docs.
+   Sol has failed twice on it. Never Astra for UI, scaffolding, or docs implementation.
+   The separate Astra phase review is an explicit exception to this escalation rule.
 2. **Effort follows risk, not size.** A large but routine change (dashboard pages) → Medium.
    A small but subtle change (claim protocol) → Extra High.
 3. **Luna for mechanical, fully specified work:** copying srt-gateway's `ui/`, renaming,
@@ -1421,14 +1432,16 @@ and Ultra (parallel subagents; not available on Luna). Higher effort means more 
    caused by vague goals costs more than any model choice.
 6. **Max/Ultra only on demand.** Max when one hard problem is stuck at Extra High. Ultra only
    for work that splits into independent parts (Phase 3 pages), never for the engine core.
-7. **Cross-review once per phase, not per commit.** Review the phase diff with Claude
-   (`/code-review high`, or `xhigh` for Phase 1's core). Fix the findings in Codex at the
-   same model and effort that built the code.
+7. **Cross-review once per phase, not per commit.** Review the phase diff with Codex
+   Astra (`high`, or `xhigh` for Phase 1). Sol · High fixes verified findings and adds
+   regression tests. Claude Opus is optional through `--reviewer claude`; `none` does
+   not satisfy review criteria. Completing deferred 1.11 requires a fresh Phase 1 parity
+   review even if the Codex-only Phase 1 review already passed.
 
 **Agent prompts.** Every session in every phase has a ready-to-paste prompt, with its
 model and effort, in [`cli-orchestrator-prompts.md`](cli-orchestrator-prompts.md). It also
 has a shared preamble (spec-first, tests define done, Windows first-class, no scope creep)
-and the Claude cross-review prompt.
+and the cross-review prompt (Astra by default).
 
 **Budget shape.** Exact token counts aren't predictable, so plan by share, not by number:
 - **Phase 1:** about 40% of the total. It's the most code and the hardest code.
@@ -1469,7 +1482,9 @@ the next large project starts from real numbers.
 The baseline sandbox runs use the factory's own settings (haiku/low as in `tools/sandbox.py`)
 to keep them cheap. Run them twice, not more.
 
-**Exit:** a baseline table committed in `docs/benchmarks.md`; every spike answered.
+**Exit for Codex development:** a baseline table committed in `docs/benchmarks.md`
+(partial results clearly labelled); Codex, Windows and names spikes answered. Claude
+spikes are explicitly deferred to 1.11 and do not block Phase 1.
 
 ### Phase 1: Package, engine and runner, Full pipeline parity
 
@@ -1479,7 +1494,8 @@ to keep them cheap. Run them twice, not more.
   - `db.py` + repo migration 0001;
   - `config.py` (v2 + upgrade); `roles.py` (built-ins + overrides);
   - `pipeline.py` (ported advance); `gitops.py`; `ports.py` (machine-wide leases).
-- **Runner:** `run_cli.py` (base-Python launch), `supervisor.py`, `winjob.py`, the Claude and Codex adapters.
+- **Runner:** `run_cli.py` (base-Python launch), `supervisor.py`, `winjob.py`, provider-neutral
+  adapter interface and Codex adapter first; Claude follows in deferred session 1.11.
 - **Scheduling:** machine-wide limits with round-robin across repos; claim/launch/record;
   recovery; stop; timeouts; exit classification.
 - **Packet v1:** sections 1–3 and 5–9. Acceptance criteria come from the spec.
@@ -1499,10 +1515,10 @@ to keep them cheap. Run them twice, not more.
 | `db.py`, migrations, registry, `config.py` (Pydantic + v1→v2) | Sol · High |
 | Porting `job.advance` → `pipeline.py` with its existing tests | Sol · High |
 | **Claim/launch/record + recovery (§6.4), `run_cli.py` + `winjob.py` (§3.2), stop/timeouts (§9), port leases** | **Sol · Extra High**. Escalate to **Astra · High** only if the §16.3 crash tests still fail after two Sol attempts. |
-| Claude and Codex adapters, exit classification, `summarize()` | Sol · High (from the Phase 0 spike fixtures) |
+| Codex adapter, exit classification, `summarize()`; Claude in deferred 1.11 | Sol · High (from recorded provider fixtures) |
 | Packet builder, `roles.py`, `gitops.py` port | Sol · High |
 | Fake CLI, test fixtures, skill wrapper templates, minimal read-only page | Luna · Medium (switch to Sol if it needs repeated fixes) |
-| Phase review | Claude `/code-review xhigh` on the engine core, `high` on the rest |
+| Phase review | Codex Astra · Extra High; Sol · High fixes |
 
 Suggested sessions:
 1. skeleton + DB + registry;
@@ -1510,15 +1526,16 @@ Suggested sessions:
 3. pipeline port;
 4. wrapper + Job Objects;
 5. claim/launch/record + recovery + crash tests;
-6. adapters;
+6. Codex adapter (Claude fixtures + adapter + parity in deferred 1.11);
 7. ports + stop + timeouts;
 8. packet;
 9. CLI commands + API;
 10. review fixes.
 
-**Exit:** §16.2 and §16.3 green on Windows and Linux. Full runs the 3 sandbox features with
-Claude, with Codex, and mixed, in two sandbox repos at once with no port collisions. Zero
-duplicate launches in crash tests.
+**Exit for Codex development:** §16.2 (provider-neutral and Codex cases) and §16.3 green
+on Windows and Linux. Full runs the 3 sandbox features with Codex in two sandbox repos
+at once with no port collisions. Zero duplicate launches in crash tests. Claude-specific
+§16.2 cases and real Claude/mixed Full runs remain deferred to 1.11, required before release.
 
 ### Phase 2: Fast pipeline and measurement
 
@@ -1536,10 +1553,11 @@ duplicate launches in crash tests.
 | `fast-approver` role, slimming built-in roles (prompt writing) | Sol · High. Role text decides agent quality and token use on every future job. |
 | Approval `CHANGES`, sensitive-path guard, `factory eject` | Sol · Medium |
 | Benchmark command, usage/timing API | Sol · Medium |
-| Phase review | Claude `/code-review high` |
+| Phase review | Codex Astra · High; Sol · High fixes |
 
 Benchmark runs cost real agent tokens. Use haiku/low or Luna/Light for the sandbox
-comparison, plus **one** run with your production models to confirm the ratio holds.
+comparison (Codex Luna/Light while Claude is deferred), plus **one** run with your
+production Codex models to confirm the ratio holds. Defer Claude comparisons to 1.11.
 
 **Exit:** Fast and Full benchmarked against the Phase 0 baseline, results in `docs/benchmarks.md`.
 Fast + auto-merge is blocked on sensitive paths in tests.
@@ -1569,7 +1587,7 @@ Fast + auto-merge is blocked on sensitive paths in tests.
 | Pipeline view `layout.ts` + components | Sol · High for `layout.ts`, Medium for the components |
 | Pages: shell/overview, board, job detail tabs, backlog, settings | Sol · Medium. **Ultra** is reasonable here: the pages are independent once the store and API types exist. |
 | Playwright + Vitest tests, visual baselines | Sol · Medium |
-| Phase review | Claude `/code-review high`, plus a manual side-by-side check with srt-gateway |
+| Phase review | Codex Astra · High, plus a manual side-by-side check with srt-gateway |
 
 **Exit:** §16.4 green; no polling left except refetch after reset.
 
@@ -1580,6 +1598,8 @@ Fast + auto-merge is blocked on sensitive paths in tests.
 - `install.py` reduced to the optional uv bootstrap; README rewritten around
   `uv tool install` + `factory init`.
 - v1 runtime files and `workflow.md` orchestration removed from this repo; `tools/sync_codex.py` removed.
+- Before publishing, complete deferred session 1.11, its Claude/mixed parity tests and
+  its fresh phase review. Do not claim Claude support without that evidence.
 - Publish `1.0.0rc1`, migrate srt-gateway and pylon with `factory upgrade`, run real jobs in both, then publish `1.0.0`.
 
 **Prompts:** sessions 4.1–4.4 in [`cli-orchestrator-prompts.md`](cli-orchestrator-prompts.md#phase-4-release-migration-switch-over).
@@ -1591,7 +1611,7 @@ Fast + auto-merge is blocked on sensitive paths in tests.
 | `ci.yml`, `release.yml`, trusted publishing, provenance | Sol · High (packaging mistakes surface only at release time) |
 | `factory upgrade` v1 migration, version gate, service restart on upgrade | Sol · High |
 | `install.py` bootstrap, README rewrite, removing v1 files | Luna · Medium |
-| Phase review | Claude `/code-review high`; `/security-review` on the release workflow and installer |
+| Phase review | Codex Astra · High, including security of the release workflow and installer |
 
 Release-candidate dry runs: push `rc` tags to TestPyPI first, which costs nothing.
 
@@ -1622,6 +1642,7 @@ it pays for itself in agent tokens. Its own build cost is part of that decision.
 To be answered by Phase 0 spikes or by the maintainer:
 
 1. Does `claude -p --permission-mode auto` stop or continue after a denial, and how is that reported?
+   Deferred to session 1.11 until Claude usage returns; partial rate-limit captures are not an answer.
 2. Is there a Codex `exec` flag for system/developer instructions?
 3. **Names:** is `agent-factory` free on PyPI? Is `factory` too generic a command name
    (collisions with other tools on PATH)? Proposal: package `agent-factory`, commands

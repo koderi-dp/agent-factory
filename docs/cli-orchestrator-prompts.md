@@ -5,8 +5,9 @@ Codex session: start a fresh session, set the model and effort shown, paste the 
 Sessions within a phase run in order. Each one ends with tests passing and a commit.
 
 Model and cost rules are in plan §17.0. In short: Sol is the default, Astra only after Sol
-has failed twice on engine-core correctness, Luna for mechanical work, and one Claude
-cross-review per phase.
+has failed twice on engine-core correctness, Luna for mechanical work, and one Astra
+cross-review per phase (separate from Sol implementation sessions). Claude work is deferred
+until usage is available; it is not a prerequisite for Codex engine development.
 
 ## Automatic: `tools/run_plan.py` (recommended)
 
@@ -23,8 +24,12 @@ What the runner does:
   a `[session X.Y]` commit exists, and the working tree is clean.
 - **Failures:** a failed session is retried once. Session 1.5 then escalates to Astra. If it
   still fails, the runner stops and tells you why.
-- **End of each phase (from Phase 1):** Claude reviews the phase diff and writes the findings
-  to `docs/reviews/phase-N.md`. A Codex fix session then works through them.
+- **End of each phase (from Phase 1):** `codex exec review` with Astra reviews the phase diff.
+  The runner saves its final response to `docs/reviews/phase-N.md`; Sol fixes the findings.
+  Use `--reviewer claude|codex|none` to switch (default: `codex`; `--no-review` aliases `none`).
+- **Deferred Claude work:** session 1.11 is skipped unless `--include-claude` is passed.
+  When usage returns, run `python tools/run_plan.py --phase 1 --include-claude`.
+  Deferred work remains required before claiming Claude/mixed-provider parity or releasing.
 - **Pause:** the runner stops at the end of each phase for you to look things over. Run it
   again to continue.
 - **Manual work:** it stops before sessions that need you (4.4).
@@ -33,8 +38,13 @@ Codex runs with `--dangerously-bypass-approvals-and-sandbox` by default (`--perm
 bypass`). Sessions need network access, package installs, and nested `claude`/`codex` runs.
 Use `--permissions auto` for the sandboxed `--approve-for-me` mode.
 
-Logs go to `.git/plan-run/`, so they're never committed. Progress is read from git history,
-so it's safe to stop and rerun at any time.
+Live output defaults to full messages, available reasoning summaries, commands with output
+tails, file diffs, plans, and token usage. Use `--brief` for compact output or `--quiet`
+for progress only; `--reasoning none` disables reasoning summaries.
+
+Logs go to `.git/plan-run/`, so they're never committed. Progress is read from git history.
+Stop between sessions before changing these prompts, then restart the runner. If interrupted
+mid-session, inspect and finish its uncommitted work before restarting; never discard fixtures.
 
 ## Manual: one session at a time
 
@@ -53,7 +63,7 @@ No copy-pasting is needed. Codex reads this file itself.
    ```
 3. When it finishes (tests run, commit made), close it. Start a **new** session for the next one.
 4. After the last session of a phase, run the cross-review prompt (bottom of this file) in
-   Claude Code, then a fix session in Codex with the findings.
+   Codex with Astra (or Claude when available), then a fix session in Codex with Sol.
 
 `{PREAMBLE}` in the prompts below means "apply the Shared preamble". Codex does that when you use the one-liner.
 
@@ -64,14 +74,19 @@ Every prompt below starts with `{PREAMBLE}`. Paste this text in its place:
 ```text
 You are implementing part of the agent-factory rewrite described in
 docs/cli-orchestrator-plan.md. That document is the spec. Read the sections named below
-before writing code, and follow them exactly. If the spec is ambiguous or seems wrong,
-stop and ask instead of improvising. Note the question in your final message.
+before writing code, and follow them exactly. The Codex-first sequencing in §17 is the
+current execution plan: Claude experiments, its adapter and mixed-provider smoke tests
+are deferred to session 1.11. Never invoke Claude in other automatic sessions.
+Resolve routine implementation choices from the spec and existing code. If a material
+ambiguity prevents correctness, stop with SESSION-RESULT: FAIL and a precise question.
 
 Rules:
 - Work on the current branch. Commit at the end with a clear message; do not push.
 - Match the existing code style. Python 3.11+, type hints, stdlib-first, no new
   dependencies beyond plan §2 without asking.
 - Windows is a first-class platform: paths, process handling, file locks, line endings.
+- Inspect existing code and any interrupted-session artifacts before editing. Preserve
+  useful evidence; do not treat rate-limit captures as successful behaviour experiments.
 - Tests define done. Write or port the tests listed for this session, and run them.
   Report the exact test command and its result. Never claim tests pass without running them.
 - Don't implement later sessions' scope. Leave a TODO with the plan section reference
@@ -109,27 +124,27 @@ and a unit test covers the parsing with a fixture job.json.
 
 Then run the baseline yourself: the sandbox's 3 features × 2 runs with the current factory.
 
-### 0.2 CLI behaviour spikes · Sol · Medium
+### 0.2 Codex CLI behaviour spikes · Sol · Medium
 
 ```text
 {PREAMBLE}
 
-Read: plan §6.5, §8.1, §13.4, §14, §17 Phase 0 spikes 1–4, 6, 7, §18.
+Read: plan §6.5, §8.1, §13.4, §14, §17 Phase 0 spikes 3, 4, 7, §18.
 
-Task: write throwaway scripts under spikes/ (not shipped) that answer spikes 1–4, 6 and 7
-by actually running `claude -p` and `codex exec` against a scratch git repo:
-1. A denied command under `claude -p --permission-mode auto`: exit code, the
-   `permission_denials` field, and whether the session continues.
-2. Claude stream-json: capture full event logs for a success, an auth failure (bad config
-   dir), and a long tool run. Save them as fixtures in tests/fixtures/claude/.
-3. `codex exec --json`: the same three cases, saved as fixtures in tests/fixtures/codex/.
-   Include behaviour under --approve-for-me on a denied action.
-4. Whether codex exec accepts developer/system instructions via -c, versus prepending them to the prompt.
-6. `--session-id` then kill the process, then `--resume` with -p: does it continue the same session?
-7. Two consecutive runs with an identical system prompt file: report cached-input tokens from usage.
+Task: write throwaway scripts under spikes/ (not shipped) and actually run `codex exec`
+against a scratch git repo. Inspect and reuse the interrupted 0.2 scripts and fixtures.
+Do not run Claude or overwrite its existing captures; its experiments belong to 1.11.
+1. Capture `codex exec --json` success, auth failure (isolated empty CODEX_HOME), and a
+   long tool run as complete, redacted fixtures in tests/fixtures/codex/.
+2. Capture --approve-for-me on a denied action: exit status, events and whether it continues.
+3. Test developer/system instructions via -c versus prepending them to the prompt.
+4. Two consecutive runs with identical developer instructions: report cached-input tokens.
+   A zero cache hit is a measured result, not a reason for repeated paid experiments.
 
-Done when: docs/spikes.md answers each question with evidence (commands, exit codes,
-trimmed event excerpts), and the fixtures are committed. Update plan §18 items 1–2 with the answers.
+Done when: docs/spikes.md answers these Codex questions with commands, exit codes and
+trimmed event excerpts; fixtures and scripts are committed. Update plan §18 item 2.
+List Claude spikes 1, 2, 6 and the Claude half of 7 as deferred to 1.11; do not claim
+those experiments passed. Retain pre-existing Claude captures as partial evidence.
 ```
 
 ### 0.3 Windows process spikes · Sol · High (run on Windows)
@@ -282,22 +297,25 @@ under 2 repos × 3 jobs × 4 executions. Run the crash tests 20 times in a loop 
 any flakiness. Flaky is a failure.
 ```
 
-### 1.6 Adapters · Sol · High
+### 1.6 Codex adapter · Sol · High
 
 ```text
 {PREAMBLE}
 
-Read: plan §6.5, §8.1, §13.4, §14, docs/spikes.md, tests/fixtures/claude/ and tests/fixtures/codex/.
+Read: plan §6.5, §8.1, §13.4, §14, docs/spikes.md and tests/fixtures/codex/.
 
-Task: engine/adapters/{base,claude,codex}.py. Each adapter:
+Task: engine/adapters/{base,codex}.py. The Codex adapter:
 - builds the command line (§8.1), using machine settings for executable paths;
 - parses events incrementally (session id, usage, errors, permission denials);
 - implements summarize(event) (§13.4, with secret masking);
 - classifies the exit (§6.5).
 
-Codex: get the session id from thread.started. Claude: the session id is preassigned.
+Get the Codex session id from thread.started. Keep the adapter interface provider-neutral.
+Claude is added in 1.11 after its recorded fixtures exist. An unavailable provider must
+produce a clear unsupported-provider error; never silently fall back or require Claude
+imports/executables to start the Codex engine.
 
-Tests: every fixture from the Phase 0 spikes parses; the classification table in §6.5 is
+Tests: every Codex fixture from the Phase 0 spikes parses; the classification table in §6.5 is
 covered row by row; the summarize() table in §13.4 is covered row by row, including masking.
 ```
 
@@ -350,7 +368,7 @@ Tests: the §16.2 API security list; init is idempotent and writes exactly §4.2
 the version gate exits 4 with the fix text; a second `serve` exits 0 and prints the URL.
 ```
 
-### 1.10 End-to-end and review fixes · Sol · High
+### 1.10 Codex end-to-end · Sol · High
 
 ```text
 {PREAMBLE}
@@ -359,8 +377,39 @@ Read: plan §17 Phase 1 exit criteria.
 
 Task: make tools/sandbox.py drive the new engine (FACTORY_HOME in a temp dir, two sandbox
 repos). Run Full on the 3 features in both repos at once with the fake CLI, then once with
-real CLIs at haiku/low and Luna/Light. Fix whatever these runs expose; each fix gets a test.
-(Claude's phase review and its fixes run after this session, in a separate step.)
+Codex at Luna/Light. Fix whatever these runs expose; each fix gets a test. Do not run
+Claude or mixed-provider jobs here; defer them to 1.11 and record that parity is pending.
+(Astra's phase review and Sol fixes run after this session, in a separate step.)
+```
+
+### 1.11 Claude fixtures, adapter and parity · Sol · High (requires Claude)
+
+Skipped by default. Run `python tools/run_plan.py --phase 1 --include-claude` once Claude
+usage returns. This is required before release, but does not block Codex development.
+
+```text
+{PREAMBLE}
+
+Exception to the Codex-only rule: this session explicitly authorizes Claude experiments.
+Read: plan §6.5, §8.1, §13.4, §14, §17 Phase 0 spikes 1, 2, 6, 7, §18; docs/spikes.md;
+engine/adapters/{base,codex}.py and the existing partial tests/fixtures/claude/ captures.
+
+First capture real Claude behaviour in a scratch git repo: denial under permission-mode
+auto (exit, permission_denials, continuation), stream-json success/auth failure/long tool
+run, preassigned --session-id then kill/resume with -p, and caching across two stable system
+prompts. Preserve partial evidence; a rate limit does not answer denial/resume/cache questions.
+If usage is still unavailable, report FAIL; never fabricate fixture evidence.
+Record commands, exits and excerpts in docs/spikes.md; update plan §18 item 1.
+
+Then implement engine/adapters/claude.py using those fixtures: command building,
+incremental session/usage/error/denial parsing, summarize with secret masking and exit
+classification. Cover §6.5 and §13.4 row by row with tests. Register it through the
+provider-neutral interface; Codex must still work without a Claude executable installed.
+Run Full's three sandbox features with Claude, then mixed providers, in two repos at once;
+verify no port collisions and fix verified failures with regression tests. Clear the
+Claude parity deferral only after these checks pass. Require a fresh phase review of
+this session's changes even if an earlier Phase 1 review was already completed. The runner
+uses docs/reviews/phase-1-claude-parity.md and [phase 1 Claude parity review fixes].
 ```
 
 ---
@@ -577,6 +626,9 @@ Task:
 
 Read: plan §17 Phase 4 exit criteria.
 
+Before publishing, verify session 1.11 and [phase 1 Claude parity review fixes] commits
+exist and Claude/mixed parity tests passed. If deferred work remains, stop without tagging.
+
 Task: tag v1.0.0rc1 and confirm the release workflow publishes to TestPyPI. Then, step by
 step with me, install it with uv on this machine and run `factory upgrade --dry-run` in
 C:\Source\projects\srt-gateway and in pylon. Review the diffs with me before applying them.
@@ -593,23 +645,17 @@ from the measured bottleneck.
 
 ---
 
-## Cross-review prompt (Claude, once per phase)
+## Cross-review prompt (Astra by default, once per phase)
 
-Run in Claude Code on the phase's diff, at the effort shown in the phase's model table:
+The runner uses `codex exec review` with `gpt-6-astra`, at `xhigh` for Phase 1 and `high`
+for later phases. It supplies the exact phase diff range in the custom prompt (the CLI
+cannot combine a custom prompt with `--base`). For a manual review, use:
 
-```text
-/code-review high
-
-Context: this diff implements Phase <N> of docs/cli-orchestrator-plan.md. Review it against
-that spec, not just for generic bugs. In particular:
-- every rule in the sections listed for this phase's sessions in docs/cli-orchestrator-prompts.md;
-- duplicate-launch, crash-recovery, and process-ownership guarantees (Phase 1);
-- Windows behaviour;
-- tests that assert the spec's behaviour rather than the implementation's.
-
-Rank findings most severe first.
+```powershell
+codex exec -m gpt-6-astra -c model_reasoning_effort='"high"' review "Review git diff <base>..HEAD against docs/cli-orchestrator-plan.md and this phase's sessions in docs/cli-orchestrator-prompts.md. Verify each finding. Include file:line, failure scenario and suggested fix, most severe first. Check Windows, process ownership, crash recovery and spec coverage. Do not edit files. Treat session 1.11 Claude work as deferred until completed. Return No findings. if none."
 ```
 
-`tools/run_plan.py` does this automatically: Claude writes `docs/reviews/phase-N.md`, then a
-Codex session (Sol · High) fixes the findings and commits with `[phase N review fixes]`. When
-running manually, do the same: save the findings to that file and run a fix session.
+`tools/run_plan.py` saves the final response to `docs/reviews/phase-N.md`, then a Sol · High
+session verifies and fixes findings, tests, and commits with `[phase N review fixes]`.
+`--reviewer claude` uses Claude Opus instead; `--reviewer none` skips review and fixes.
+Do not interpret a skipped review as satisfying phase review criteria.
