@@ -1,15 +1,16 @@
-"""Prepare/spawn/record, durable log tailing and startup recovery (§6.4).
+"""Attempt launch/recovery, durable logs, port leases, Stop and timeouts (§6.4, §9).
 
 Adapters are injected; no provider executable or provider module is required.
-TODO (plan §9, session 1.7): port leases, Stop escalation and execution timeouts.
 TODO (plan §8.2, session 1.8): supply the real packet/system prompt builder.
 TODO (plan §3.1, session 1.9): service timer/wake-ups call tick() and own its lifetime.
 """
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import json
 import math
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -20,14 +21,24 @@ from typing import Any, TypeVar
 import psutil
 
 from agent_factory import run_cli
-from agent_factory.engine import db, pipeline, winjob
+from agent_factory.engine import db, pipeline, ports, winjob
 from agent_factory.engine.adapters.base import (
     Adapter, EventUpdate, ExitOutcome, Prepared, UnsupportedProviderError, add_usage,
 )
 from agent_factory.engine.crash import crash_at
+from agent_factory.engine.config import load_machine_settings
 from agent_factory.engine.scheduler import Claim, LIVE, Scheduler
 
 T = TypeVar("T")
+STOP_DETAIL = "Stopped by user"
+
+
+@dataclass
+class Stopping:
+    deadline: float
+    members: list[psutil.Process]
+    timeout: bool
+    signalled: bool = False
 
 
 def _read_with_retry(read: Callable[[], T]) -> T:
@@ -69,11 +80,14 @@ def _token_processes(token: str) -> list[psutil.Process]:
 
 class Supervisor:
     def __init__(self, scheduler: Scheduler, adapters: Mapping[str, Adapter], *,
-                 adoption_timeout: float = 10) -> None:
+                 adoption_timeout: float = 10, stop_grace: float = 10) -> None:
         self.scheduler = scheduler
         self.adapters = dict(adapters)
         self.adoption_timeout = adoption_timeout
+        self.stop_grace = stop_grace
         self._children: dict[tuple[str, int], subprocess.Popen] = {}
+        self._spawn_times: dict[tuple[str, int], str] = {}
+        self._stopping: dict[tuple[str, int], Stopping] = {}
         self._lock = threading.RLock()
 
     def adapter(self, provider: str) -> Adapter:
@@ -94,7 +108,95 @@ class Supervisor:
                 for attempt_id in attempts:
                     self.recover(self.scheduler.context(identifier, attempt_id))
             self.scheduler.recount()
+            self.sync_ports()
             self.scheduler.ready = True
+
+    def _pause_ports(self, repo_id: str, job_id: str, detail: str) -> None:
+        def apply(connection: sqlite3.Connection) -> None:
+            with db.tx(connection):
+                changed = connection.execute(
+                    "UPDATE jobs SET state='paused',pause_reason='ports',note=?,updated_at=? "
+                    "WHERE id=? AND state='running'", (detail, pipeline._now(), job_id)).rowcount
+                if changed:
+                    pipeline._event(connection, job_id, pipeline._now(), "job.state",
+                                    {"state": "paused", "pause_reason": "ports", "note": detail})
+        self.scheduler.repos[repo_id][1].call(apply)
+
+    def _range_listeners(self) -> tuple[ports.Listener, ...]:
+        configured = self.scheduler.machine.call(lambda connection: load_machine_settings(connection).ports.range)
+        start, end = map(int, configured.split("-"))
+        return ports.listeners(range(start, end + 1))
+
+    def _lease_job(self, repo_id: str, job_id: str, occupied: tuple[ports.Listener, ...]) -> int:
+        base = self.scheduler.machine.call(lambda connection: ports.lease(connection, repo_id, job_id, occupied))
+        def record(connection: sqlite3.Connection) -> None:
+            with db.tx(connection):
+                connection.execute("UPDATE jobs SET port_base=? WHERE id=?", (base, job_id))
+        self.scheduler.repos[repo_id][1].call(record)
+        return base
+
+    def sync_ports(self) -> None:
+        """Reconcile the two DBs after crashes; retain leases for missing repos.
+
+        TODO (plan §11, session 1.8): call after git merge/delete job mutations.
+        The service also calls it on every tick.
+        """
+        leases = self.scheduler.machine.call(lambda connection: [dict(row) for row in connection.execute(
+            "SELECT * FROM port_leases")])
+        occupied = None
+        for identifier, (_, writer) in self.scheduler.repos.items():
+            jobs = writer.call(lambda connection: [dict(row) for row in connection.execute("SELECT * FROM jobs")])
+            by_id = {job["id"]: job for job in jobs}
+            for lease in leases:
+                if lease["repo_id"] != identifier:
+                    continue
+                job = by_id.get(lease["job_id"])
+                if job is None or job["state"] in ports.RELEASE_STATES:
+                    self.scheduler.machine.call(lambda connection, job_id=lease["job_id"]:
+                                                ports.release(connection, identifier, job_id))
+            for job in jobs:
+                if job["state"] in ports.RELEASE_STATES:
+                    def clear(connection: sqlite3.Connection, job_id: str = job["id"]) -> None:
+                        with db.tx(connection):
+                            connection.execute("UPDATE jobs SET port_base=NULL WHERE id=?", (job_id,))
+                    writer.call(clear)
+                elif job["state"] == "running":
+                    try:
+                        existing = next((lease for lease in leases if lease["repo_id"] == identifier
+                                         and lease["job_id"] == job["id"]), None)
+                        if existing is None and occupied is None:
+                            occupied = self._range_listeners()
+                        self._lease_job(identifier, job["id"], occupied or ())
+                    except ports.PortsUnavailable as error:
+                        self._pause_ports(identifier, job["id"], str(error))
+
+    def _check_ports(self, context: Claim) -> None:
+        if context.job["port_base"] is None:
+            return
+        writer = self.scheduler.repos[context.repo_id][1]
+        ids = writer.call(lambda connection: [row[0] for row in connection.execute(
+            f"SELECT a.id FROM attempts a JOIN executions e ON e.id=a.execution_id "
+            f"WHERE e.job_id=? AND a.state IN {LIVE}", (context.job["id"],))])
+        base = context.job["port_base"]
+        occupied = ports.listeners(range(base, base + ports.BLOCK_SIZE))
+        owned, contexts = [], []
+        for attempt_id in ids:
+            other = self.scheduler.context(context.repo_id, attempt_id)
+            contexts.append(other)
+            owned.extend(winjob.owned_tree(other.directory, other.attempt["owner_token"]))
+        for listener in occupied:
+            if listener.pid is None or listener.create_time is None:
+                continue
+            try:
+                candidate = psutil.Process(listener.pid)
+                if candidate.create_time() == listener.create_time and any(
+                        winjob.contains_process(other.directory, other.attempt["owner_token"], candidate) for other in contexts):
+                    owned.append(candidate)
+            except psutil.Error:
+                continue
+        conflict = ports.foreign(occupied, base, owned)
+        if conflict:
+            raise ports.PortsUnavailable(conflict.detail)
 
     @staticmethod
     def _prune_events(writer: db.Writer) -> None:
@@ -112,6 +214,7 @@ class Supervisor:
             if not self.scheduler.ready:
                 self.start()
             self.poll()
+            self.sync_ports()
             launched = []
             while (context := self.scheduler.claim_next()) is not None:
                 self.launch(context)
@@ -121,6 +224,14 @@ class Supervisor:
     def launch(self, context: Claim) -> None:
         directory, token = context.directory, context.attempt["owner_token"]
         try:
+            base = self._lease_job(context.repo_id, context.job["id"], self._range_listeners())
+            context = replace(context, job={**context.job, "port_base": base})
+            self._check_ports(context)
+        except ports.PortsUnavailable as error:
+            self._unclaim(context)
+            self._pause_ports(context.repo_id, context.job["id"], str(error))
+            return
+        try:
             directory.mkdir(parents=True, exist_ok=True)
             prepared = self.adapter(context.execution["provider"]).prepare(context)
             run_cli.atomic_write(directory / "prompt.md", prepared.prompt.encode("utf-8"))
@@ -129,8 +240,11 @@ class Supervisor:
             run_cli.atomic_json(directory / "packet.json", dict(prepared.packet))
             self._update(context, {"packet_bytes": len(prepared.prompt.encode("utf-8"))})
             crash_at("after_prepare")
+            spawned_at = pipeline._now()
             child = winjob.spawn_wrapper(directory, token)
-            self._children[(context.repo_id, context.attempt["id"])] = child
+            key = context.repo_id, context.attempt["id"]
+            self._children[key] = child
+            self._spawn_times[key] = spawned_at
         except Exception as error:
             self._fail_unspawned(context, str(error))
             return
@@ -156,9 +270,12 @@ class Supervisor:
         if context.attempt["state"] == "running":
             return
         pid, created = process.pid, process.create_time()
-        # proc.json is durable before CLI start; it provides a conservative
-        # freshness bound even if the engine died before recording t_launch.
-        launched = datetime.fromtimestamp(created, timezone.utc).isoformat()
+        # Prefer the engine's wall clock at spawn. Linux's boot-time based
+        # create_time can lag wall time by a fraction of a second (notably WSL),
+        # which would expire short timeouts before the CLI even starts.
+        # After a crash, creation/queue times provide durable lower bounds.
+        launched = self._spawn_times.get((context.repo_id, context.attempt["id"])) or max(
+            datetime.fromtimestamp(created, timezone.utc).isoformat(), context.attempt["t_queued"])
         def apply(connection: sqlite3.Connection) -> None:
             with db.tx(connection):
                 changed = connection.execute(
@@ -181,6 +298,10 @@ class Supervisor:
         # dying. Preserve that evidence so explicit Resume can use its exact ID.
         self.tail(context)
         context = self.scheduler.context(context.repo_id, context.attempt["id"])
+        if ((directory / "stop").exists() or context.attempt["error_class"] == "timeout"
+                or context.attempt["error_detail"] == STOP_DETAIL):
+            self._stop_attempt(context, timeout=context.attempt["error_class"] == "timeout")
+            return
         if (directory / "exit.json").exists():
             self.finalise(context)
             return
@@ -200,6 +321,9 @@ class Supervisor:
         if process is not None:
             try:
                 self._record(context, process)
+                context = self.scheduler.context(context.repo_id, context.attempt["id"])
+                if self._expired(context):
+                    self._stop_attempt(context, timeout=True)
             except psutil.Error:
                 # Exit can race the ownership check; prefer durable exit evidence.
                 if (directory / "exit.json").exists():
@@ -228,6 +352,99 @@ class Supervisor:
             self._unclaim(context)
         else:
             self._lost(context)
+
+    @staticmethod
+    def _expired(context: Claim) -> bool:
+        launched = context.attempt["t_launch"]
+        if launched is None:
+            return False
+        frozen = context.job["frozen"]
+        step = next(step for step in frozen["pipeline"] if step["id"] == context.execution["step_id"])
+        entry = next(entry for entry in step["executions"] if entry["id"] == context.execution["exec_id"])
+        minutes = entry.get("timeoutMinutes", frozen["timeouts"]["executionMinutes"])
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(launched)).total_seconds() >= minutes * 60
+
+    def stop(self, repo_id: str, job_id: str, *, attempt_id: int | None = None) -> None:
+        """Begin a nonblocking Stop. poll() completes escalation and persistence."""
+        with self._lock:
+            writer = self.scheduler.repos[repo_id][1]
+            def pause(connection: sqlite3.Connection) -> list[int]:
+                with db.tx(connection):
+                    job, _ = pipeline.load(connection, job_id)
+                    if job["state"] not in {"running", "paused"}:
+                        raise ValueError("only running or paused jobs can be stopped")
+                    ids = [row[0] for row in connection.execute(
+                        f"SELECT a.id FROM attempts a JOIN executions e ON e.id=a.execution_id "
+                        f"WHERE e.job_id=? AND a.state IN {LIVE}", (job_id,))]
+                    if attempt_id is not None:
+                        if attempt_id not in ids:
+                            raise ValueError("attempt is not live in this job")
+                        ids = [attempt_id]
+                    now = pipeline._now()
+                    connection.execute("UPDATE jobs SET state='paused',pause_reason='process',note=?,updated_at=? WHERE id=?",
+                                       (STOP_DETAIL, now, job_id))
+                    # Durable intent closes the tx-to-stop-file crash window.
+                    connection.executemany("UPDATE attempts SET error_detail=? WHERE id=?", [(STOP_DETAIL, i) for i in ids])
+                    pipeline._event(connection, job_id, now, "job.state", {"state": "paused", "pause_reason": "process"})
+                    return ids
+            for identifier in writer.call(pause):
+                self._stop_attempt(self.scheduler.context(repo_id, identifier), timeout=False)
+
+    def _stop_attempt(self, context: Claim, *, timeout: bool) -> None:
+        key = context.repo_id, context.attempt["id"]
+        if key not in self._stopping:
+            members = winjob.owned_tree(context.directory, context.attempt["owner_token"])
+            detail = "Execution time limit exceeded" if timeout else STOP_DETAIL
+            def intent(connection: sqlite3.Connection) -> None:
+                with db.tx(connection):
+                    now = pipeline._now()
+                    connection.execute(f"UPDATE attempts SET error_class=?,error_detail=? WHERE id=? AND state IN {LIVE}",
+                                       ("timeout" if timeout else None, detail, context.attempt["id"]))
+                    connection.execute("UPDATE jobs SET state='paused',pause_reason=?,note=?,updated_at=? "
+                                       "WHERE id=? AND state IN ('running','paused')",
+                                       ("timeout" if timeout else "process", detail, now, context.job["id"]))
+                    pipeline._event(connection, context.job["id"], now, "job.state",
+                                    {"state": "paused", "pause_reason": "timeout" if timeout else "process"})
+            self.scheduler.repos[context.repo_id][1].call(intent)
+            self._stopping[key] = Stopping(time.monotonic() + self.stop_grace, members, timeout)
+        stopping = self._stopping[key]
+        # Refresh the tree while its root is still verifiable, retaining earlier
+        # identities if a descendant has since become orphaned.
+        current = winjob.owned_tree(context.directory, context.attempt["owner_token"])
+        known = {(p.pid, p.create_time()) for p in stopping.members}
+        stopping.members.extend(p for p in current if (p.pid, p.create_time()) not in known)
+        if not stopping.signalled and winjob.request_stop(context.directory, context.attempt["owner_token"]):
+            stopping.signalled = True
+            stopping.deadline = time.monotonic() + self.stop_grace
+            if os.name != "nt":
+                winjob.signal_tree(context.directory, context.attempt["owner_token"], stopping.members, kill=False)
+        if any(winjob.alive(p) for p in stopping.members):
+            if time.monotonic() >= stopping.deadline:
+                winjob.signal_tree(context.directory, context.attempt["owner_token"], stopping.members, kill=True)
+            return
+        # A token-only wrapper can still be publishing proc.json. Leave it live
+        # and retry rather than declaring Stop finished ahead of that process.
+        if _token_processes(context.attempt["owner_token"]):
+            return
+        self.tail(context, final=True)
+        info = _json(context.directory / "exit.json") or {}
+        def finish(connection: sqlite3.Connection) -> None:
+            with db.tx(connection):
+                now = pipeline._now()
+                changed = connection.execute(
+                    "UPDATE attempts SET state='stopped',exit_code=?,t_exit=?,t_validated=? "
+                    f"WHERE id=? AND owner_token=? AND state IN {LIVE}",
+                    (info.get("exit_code"), info.get("ended_at", now), now,
+                     context.attempt["id"], context.attempt["owner_token"])).rowcount
+                if changed:
+                    connection.execute("UPDATE executions SET state='stopped' WHERE id=? AND state IN ('claimed','running')",
+                                       (context.execution["id"],))
+                    pipeline._event(connection, context.job["id"], now, "attempt.state",
+                                    {"id": context.attempt["id"], "state": "stopped", "error_class": "timeout" if stopping.timeout else None})
+                    pipeline._event(connection, context.job["id"], now, "execution.state",
+                                    {"id": context.execution["id"], "state": "stopped"})
+        self.scheduler.repos[context.repo_id][1].call(finish)
+        del self._stopping[key]
 
     def _unclaim(self, context: Claim) -> None:
         def apply(connection: sqlite3.Connection) -> None:
@@ -315,9 +532,17 @@ class Supervisor:
         for key, child in list(self._children.items()):
             if child.poll() is not None:
                 del self._children[key]
+                self._spawn_times.pop(key, None)
         self.scheduler.recount()
 
     def finalise(self, context: Claim) -> None:
+        # exit.json precedes wrapper teardown. Do not advance into another step
+        # until its containment has removed leftover servers.
+        deadline = time.monotonic() + 0.25
+        while winjob.owned_process(context.directory, context.attempt["owner_token"]) is not None:
+            if time.monotonic() >= deadline:
+                return
+            time.sleep(0.01)
         info = _json(context.directory / "exit.json")
         if info is None or type(info.get("exit_code")) is not int or not isinstance(info.get("ended_at"), str):
             self._lost(context, "Invalid exit.json")
@@ -337,7 +562,8 @@ class Supervisor:
             created = proc.get("wrapper_create_time")
             if type(created) in (float, int) and math.isfinite(created):
                 try:
-                    launched = datetime.fromtimestamp(created, timezone.utc).isoformat()
+                    launched = self._spawn_times.get((context.repo_id, context.attempt["id"])) or max(
+                        datetime.fromtimestamp(created, timezone.utc).isoformat(), context.attempt["t_queued"])
                 except (ValueError, OverflowError, OSError):
                     self._lost(context, "Invalid wrapper creation time")
                     return

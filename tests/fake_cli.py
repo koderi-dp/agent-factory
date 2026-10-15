@@ -27,12 +27,12 @@ def ignore_term(enabled: bool) -> None:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
 
-def server(path: Path, ignore: bool) -> None:
+def server(path: Path, ignore: bool, port: int = 0) -> None:
     ignore_term(ignore)
     with socket.socket() as listener:
         if os.name == "nt":
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-        listener.bind(("127.0.0.1", 0))
+        listener.bind(("127.0.0.1", port))
         listener.listen()
         write_json(path, {"pid": os.getpid(), "parent_pid": os.getppid(),
                           "port": listener.getsockname()[1]})
@@ -41,11 +41,13 @@ def server(path: Path, ignore: bool) -> None:
             connection.close()
 
 
-def child(path: Path, ignore: bool) -> None:
+def child(path: Path, ignore: bool, port: int = 0, orphan: bool = False, escape: bool = False) -> None:
     ignore_term(ignore)
     subprocess.Popen([sys._base_executable, "-I", "-S", str(Path(__file__).resolve()),
-                      "--server", str(path), "--ignore-term", str(int(ignore))],
-                     stdin=subprocess.DEVNULL, close_fds=True)
+                      "--server", str(path), "--ignore-term", str(int(ignore)), "--port", str(port)],
+                     stdin=subprocess.DEVNULL, close_fds=True, start_new_session=escape and os.name != "nt")
+    if orphan:
+        return
     while True:
         time.sleep(1)
 
@@ -56,11 +58,15 @@ def main() -> int:
     parser.add_argument("--child", type=Path)
     parser.add_argument("--server", type=Path)
     parser.add_argument("--ignore-term", type=int, default=0)
+    parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--orphan", action="store_true")
+    parser.add_argument("--escape", action="store_true")
     args = parser.parse_args()
     if args.server:
-        server(args.server, bool(args.ignore_term))
+        server(args.server, bool(args.ignore_term), args.port)
     if args.child:
-        child(args.child, bool(args.ignore_term))
+        child(args.child, bool(args.ignore_term), args.port, args.orphan, args.escape)
+        return 0
     scenario = json.loads(args.scenario.read_text(encoding="utf-8"))
     ignore_term(scenario.get("ignore_sigterm", False))
     directory = args.scenario.parent
@@ -72,7 +78,10 @@ def main() -> int:
         process = subprocess.Popen(
             [sys._base_executable, "-I", "-S", str(Path(__file__).resolve()),
              "--child", str(directory / "server.json"),
-             "--ignore-term", str(int(scenario.get("ignore_sigterm", False)))],
+             "--ignore-term", str(int(scenario.get("ignore_sigterm", False))),
+             "--port", str(scenario.get("server_port", 0)),
+             *(["--orphan"] if scenario.get("orphan_server") else []),
+             *(["--escape"] if scenario.get("server_new_session") else [])],
             stdin=subprocess.DEVNULL, close_fds=True)
         child_pid = process.pid
     # Reading proc.json here verifies that publication preceded the CLI launch.

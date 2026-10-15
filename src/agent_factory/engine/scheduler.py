@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_factory.engine import db, pipeline, registry
+from agent_factory.engine import db, pipeline, ports, registry
 from agent_factory.engine.config import load_machine_settings
 from agent_factory.engine.crash import crash_at
 from agent_factory.paths import machine_dir
@@ -28,6 +28,10 @@ class Claim:
     @property
     def directory(self) -> Path:
         return self.root / "factory" / "jobs" / self.job["id"] / self.attempt["dir"]
+
+    @property
+    def ports(self) -> tuple[int, ...]:
+        return ports.assigned(self.job["port_base"], self.execution)
 
 
 class Scheduler:
@@ -167,6 +171,11 @@ class Scheduler:
                 job, _ = pipeline.load(connection, job_id)
                 if job["state"] != "paused":
                     raise ValueError("only paused jobs can be resumed")
+                if connection.execute(f"SELECT 1 FROM attempts a JOIN executions e ON e.id=a.execution_id "
+                                      f"WHERE e.job_id=? AND a.state IN {LIVE} "
+                                      "AND (a.error_class='timeout' OR a.error_detail='Stopped by user')",
+                                      (job_id,)).fetchone():
+                    raise ValueError("wait for stopping attempts to exit before resuming")
                 now = pipeline._now()
                 connection.execute("UPDATE jobs SET state='running',pause_reason=NULL,note=NULL,updated_at=? WHERE id=?",
                                    (now, job_id))

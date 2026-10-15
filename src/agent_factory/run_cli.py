@@ -13,6 +13,7 @@ from contextlib import ExitStack
 import ctypes
 from ctypes import wintypes
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,10 @@ import time
 
 POLL_INTERVAL = 0.05
 STOP_GRACE_SECONDS = 10
+
+
+def job_name(token: str) -> str:
+    return "Local\\agent-factory-" + hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def atomic_write(path: Path, data: bytes) -> None:
@@ -81,9 +86,10 @@ class _ExtendedLimitInformation(ctypes.Structure):
 
 
 class WindowsJob:
-    """The wrapper owns the only, non-inheritable KILL_ON_JOB_CLOSE handle."""
+    """The wrapper holds the lifetime, non-inheritable KILL_ON_JOB_CLOSE handle."""
 
-    def __init__(self) -> None:
+    def __init__(self, token: str) -> None:
+        self.name = job_name(token)
         self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         for name, restype, argtypes in (
             ("CreateJobObjectW", wintypes.HANDLE, [ctypes.c_void_p, wintypes.LPCWSTR]),
@@ -120,7 +126,9 @@ class WindowsJob:
     def contain(self) -> None:
         # NULL security attributes make this handle non-inheritable. Descendants
         # inherit membership, not a handle that would keep the job alive.
-        self.handle = self._checked(self.kernel32.CreateJobObjectW(None, None))
+        self.handle = self._checked(self.kernel32.CreateJobObjectW(None, self.name))
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS: never join another job
+            raise OSError("An attempt Job Object with this owner token already exists")
         limits = _ExtendedLimitInformation()
         limits.BasicLimitInformation.LimitFlags = 0x2000  # KILL_ON_JOB_CLOSE
         self._checked(self.kernel32.SetInformationJobObject(
@@ -193,7 +201,7 @@ def read_command(directory: Path) -> dict:
 
 
 def run(directory: Path, token: str) -> int:
-    job = WindowsJob() if os.name == "nt" else None
+    job = WindowsJob(token) if os.name == "nt" else None
     created = job.create_time() if job is not None else posix_create_time()
     # This MUST be the first artifact: even a containment/command failure is an
     # identifiable, lost attempt, never evidence that a spawn did not happen.
