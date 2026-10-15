@@ -231,8 +231,9 @@ def main():
     p.add_argument("--status", action="store_true")
     p.add_argument("--no-pause", action="store_true", help="continue into the next phases")
     p.add_argument("--no-review", action="store_true", help="skip the Claude review + fix step")
-    p.add_argument("--permissions", choices=("auto", "bypass"), default="auto",
-                   help="auto = codex --approve-for-me (default); bypass = no sandbox, only in a throwaway VM")
+    p.add_argument("--permissions", choices=("auto", "bypass"), default="bypass",
+                   help="bypass = no sandbox or approvals (default; sessions need network, installs "
+                        "and nested claude/codex runs); auto = codex --approve-for-me")
     p.add_argument("--timeout", type=int, default=240, help="minutes per Codex session (default 240)")
     p.add_argument("--quiet", action="store_true", help="don't show live Codex activity, only progress lines")
     a = p.parse_args()

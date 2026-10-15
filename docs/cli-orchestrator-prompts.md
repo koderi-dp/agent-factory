@@ -29,6 +29,10 @@ What the runner does:
   again to continue.
 - **Manual work:** it stops before sessions that need you (4.4).
 
+Codex runs with `--dangerously-bypass-approvals-and-sandbox` by default (`--permissions
+bypass`). Sessions need network access, package installs, and nested `claude`/`codex` runs.
+Use `--permissions auto` for the sandboxed `--approve-for-me` mode.
+
 Logs go to `.git/plan-run/`, so they're never committed. Progress is read from git history,
 so it's safe to stop and rerun at any time.
 
