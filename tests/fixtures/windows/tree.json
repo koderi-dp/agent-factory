@@ -1,0 +1,196 @@
+{
+  "platform": "Windows-11-10.0.26300-SP0",
+  "python": "3.13.16 (tags/v3.13.16:cbc944f, Sep 30 2026, 19:17:50) [MSC v.1944 64 bit (AMD64)]",
+  "base_executable": "C:\\Program Files\\Python313\\python.exe",
+  "measured_at": "2026-10-15T19:48:10Z",
+  "node_version": {
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.EXE",
+      "--version"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.088,
+    "stdout": "v24.22.0\n",
+    "stderr": ""
+  },
+  "npm_version": {
+    "argv": [
+      "C:\\WINDOWS\\system32\\cmd.exe",
+      "/d",
+      "/c",
+      "C:\\Program Files\\nodejs\\npm.cmd",
+      "--version"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.388,
+    "stdout": "12.0.2\n",
+    "stderr": ""
+  },
+  "cases": [
+    {
+      "mode": "terminate",
+      "launcher": {
+        "argv": [
+          "C:\\Program Files\\Python313\\python.exe",
+          "<SOURCE>\\spikes\\windows\\process_spikes.py",
+          "_launch",
+          "<SCRATCH>\\tree-terminate",
+          "Local\\factory-spike-8697d628dd65431f9056ddd02982e510",
+          "C:\\Program Files\\nodejs\\npm.cmd"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.118,
+        "stdout": "{\"launcher_pid\": 33348, \"wrapper_pid\": 18372, \"creationflags\": 134218240}\n",
+        "stderr": ""
+      },
+      "wrapper": {
+        "wrapper_pid": 18372,
+        "npm_pid": 19908,
+        "job_name": "Local\\factory-spike-8697d628dd65431f9056ddd02982e510",
+        "handle_inheritable": false
+      },
+      "server": {
+        "pid": 41732,
+        "ppid": 11748,
+        "port": 58059
+      },
+      "members": [
+        {
+          "pid": 18372,
+          "image": "C:\\Program Files\\Python313\\python.exe"
+        },
+        {
+          "pid": 19908,
+          "image": "C:\\Windows\\System32\\cmd.exe"
+        },
+        {
+          "pid": 41732,
+          "image": "C:\\Program Files\\nodejs\\node.exe"
+        },
+        {
+          "pid": 21344,
+          "image": "C:\\Program Files\\nodejs\\node.exe"
+        },
+        {
+          "pid": 11748,
+          "image": "C:\\Windows\\System32\\cmd.exe"
+        }
+      ],
+      "launcher_exited_tree_survived": true,
+      "http_after_launcher_exit": "200 OK",
+      "all_members_exited": true,
+      "port_rebound": true,
+      "stop_elapsed_seconds": 0.103
+    },
+    {
+      "mode": "stop",
+      "launcher": {
+        "argv": [
+          "C:\\Program Files\\Python313\\python.exe",
+          "<SOURCE>\\spikes\\windows\\process_spikes.py",
+          "_launch",
+          "<SCRATCH>\\tree-stop",
+          "Local\\factory-spike-23f265cf0680479a8cb4da48f964faa1",
+          "C:\\Program Files\\nodejs\\npm.cmd"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.121,
+        "stdout": "{\"launcher_pid\": 23368, \"wrapper_pid\": 10484, \"creationflags\": 134218240}\n",
+        "stderr": ""
+      },
+      "wrapper": {
+        "wrapper_pid": 10484,
+        "npm_pid": 4180,
+        "job_name": "Local\\factory-spike-23f265cf0680479a8cb4da48f964faa1",
+        "handle_inheritable": false
+      },
+      "server": {
+        "pid": 39196,
+        "ppid": 12152,
+        "port": 58065
+      },
+      "members": [
+        {
+          "pid": 10484,
+          "image": "C:\\Program Files\\Python313\\python.exe"
+        },
+        {
+          "pid": 4180,
+          "image": "C:\\Windows\\System32\\cmd.exe"
+        },
+        {
+          "pid": 39196,
+          "image": "C:\\Program Files\\nodejs\\node.exe"
+        },
+        {
+          "pid": 42708,
+          "image": "C:\\Program Files\\nodejs\\node.exe"
+        },
+        {
+          "pid": 12152,
+          "image": "C:\\Windows\\System32\\cmd.exe"
+        }
+      ],
+      "launcher_exited_tree_survived": true,
+      "http_after_launcher_exit": "200 OK",
+      "all_members_exited": true,
+      "port_rebound": true,
+      "stop_elapsed_seconds": 0.103
+    },
+    {
+      "mode": "close",
+      "launcher": {
+        "argv": [
+          "C:\\Program Files\\Python313\\python.exe",
+          "<SOURCE>\\spikes\\windows\\process_spikes.py",
+          "_launch",
+          "<SCRATCH>\\tree-close",
+          "Local\\factory-spike-75eb6bf9bbce4fde8a4a7db9904496ee",
+          "C:\\Program Files\\nodejs\\npm.cmd"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.123,
+        "stdout": "{\"launcher_pid\": 23392, \"wrapper_pid\": 11904, \"creationflags\": 134218240}\n",
+        "stderr": ""
+      },
+      "wrapper": {
+        "wrapper_pid": 11904,
+        "npm_pid": 35652,
+        "job_name": "Local\\factory-spike-75eb6bf9bbce4fde8a4a7db9904496ee",
+        "handle_inheritable": false
+      },
+      "server": {
+        "pid": 20916,
+        "ppid": 30796,
+        "port": 58071
+      },
+      "members": [
+        {
+          "pid": 11904,
+          "image": "C:\\Program Files\\Python313\\python.exe"
+        },
+        {
+          "pid": 35652,
+          "image": "C:\\Windows\\System32\\cmd.exe"
+        },
+        {
+          "pid": 20916,
+          "image": "C:\\Program Files\\nodejs\\node.exe"
+        },
+        {
+          "pid": 25564,
+          "image": "C:\\Program Files\\nodejs\\node.exe"
+        },
+        {
+          "pid": 30796,
+          "image": "C:\\Windows\\System32\\cmd.exe"
+        }
+      ],
+      "launcher_exited_tree_survived": true,
+      "http_after_launcher_exit": "200 OK",
+      "all_members_exited": true,
+      "port_rebound": true,
+      "stop_elapsed_seconds": 0.102
+    }
+  ]
+}

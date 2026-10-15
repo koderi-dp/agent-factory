@@ -1,0 +1,102 @@
+{
+  "platform": "Windows-11-10.0.26300-SP0",
+  "python": "3.13.16 (tags/v3.13.16:cbc944f, Sep 30 2026, 19:17:50) [MSC v.1944 64 bit (AMD64)]",
+  "base_executable": "C:\\Program Files\\Python313\\python.exe",
+  "measured_at": "2026-10-15T19:48:41Z",
+  "uv_version": {
+    "argv": [
+      "<HOME>\\.local\\bin\\uv.EXE",
+      "--version"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.044,
+    "stdout": "uv 0.9.13 (7ca92dcf6 2025-11-26)\n",
+    "stderr": ""
+  },
+  "case": {
+    "env_overrides": {
+      "UV_TOOL_DIR": "<SCRATCH>\\uv\\tools",
+      "UV_TOOL_BIN_DIR": "<SCRATCH>\\uv\\bin",
+      "UV_NO_CONFIG": "1"
+    },
+    "install": {
+      "argv": [
+        "<HOME>\\.local\\bin\\uv.EXE",
+        "tool",
+        "install",
+        "--offline",
+        "--no-index",
+        "--python",
+        "C:\\Program Files\\Python313\\python.exe",
+        "<SCRATCH>\\uv\\factory_windows_spike-0.0.1-py3-none-any.whl"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.267,
+      "stdout": "",
+      "stderr": "Resolved 1 package in 1ms\nPrepared 1 package in 14ms\nInstalled 1 package in 70ms\n + factory-windows-spike==0.0.1 (from file:///<SCRATCH>/uv/factory_windows_spike-0.0.1-py3-none-any.whl)\nInstalled 1 executable: factory-windows-spike\nwarning: `<SCRATCH>\\uv\\bin` is not on your PATH. To use installed tools, run `set PATH=\"<SCRATCH>\\\\uv\\\\bin;%PATH%\"` or `uv tool update-shell`.\n"
+    },
+    "launch": {
+      "argv": [
+        "<SCRATCH>\\uv\\bin\\factory-windows-spike.exe",
+        "<SCRATCH>\\uv\\runtime"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.325,
+      "stdout": "{\"version\": \"0.0.1\", \"worker_pid\": 44460, \"base_executable\": \"C:\\\\Program Files\\\\Python313\\\\python.exe\", \"tool_executable\": \"<SCRATCH>\\\\uv\\\\tools\\\\factory-windows-spike\\\\Scripts\\\\python.exe\", \"tool_prefix\": \"<SCRATCH>\\\\uv\\\\tools\\\\factory-windows-spike\", \"copied_script\": \"<SCRATCH>\\\\uv\\\\runtime\\\\base_worker.py\"}\n",
+      "stderr": ""
+    },
+    "launched": {
+      "version": "0.0.1",
+      "worker_pid": 44460,
+      "base_executable": "C:\\Program Files\\Python313\\python.exe",
+      "tool_executable": "<SCRATCH>\\uv\\tools\\factory-windows-spike\\Scripts\\python.exe",
+      "tool_prefix": "<SCRATCH>\\uv\\tools\\factory-windows-spike",
+      "copied_script": "<SCRATCH>\\uv\\runtime\\base_worker.py"
+    },
+    "before": {
+      "pid": 44460,
+      "count": 1,
+      "executable": "C:\\Program Files\\Python313\\python.exe",
+      "prefix": "C:\\Program Files\\Python313",
+      "script": "<SCRATCH>\\uv\\runtime\\base_worker.py"
+    },
+    "force_install": {
+      "argv": [
+        "<HOME>\\.local\\bin\\uv.EXE",
+        "tool",
+        "install",
+        "--offline",
+        "--no-index",
+        "--python",
+        "C:\\Program Files\\Python313\\python.exe",
+        "--force",
+        "<SCRATCH>\\uv\\factory_windows_spike-0.0.2-py3-none-any.whl"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.359,
+      "stdout": "",
+      "stderr": "Resolved 1 package in 2ms\nPrepared 1 package in 14ms\nUninstalled 1 package in 4ms\nInstalled 1 package in 74ms\n - factory-windows-spike==0.0.1 (from file:///<SCRATCH>/uv/factory_windows_spike-0.0.1-py3-none-any.whl)\n + factory-windows-spike==0.0.2 (from file:///<SCRATCH>/uv/factory_windows_spike-0.0.2-py3-none-any.whl)\nInstalled 1 executable: factory-windows-spike\nwarning: `<SCRATCH>\\uv\\bin` is not on your PATH. To use installed tools, run `set PATH=\"<SCRATCH>\\\\uv\\\\bin;%PATH%\"` or `uv tool update-shell`.\n"
+    },
+    "new_version": {
+      "argv": [
+        "<SCRATCH>\\uv\\bin\\factory-windows-spike.exe",
+        "--version"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.206,
+      "stdout": "0.0.2\n",
+      "stderr": ""
+    },
+    "after": {
+      "pid": 44460,
+      "count": 7,
+      "executable": "C:\\Program Files\\Python313\\python.exe",
+      "prefix": "C:\\Program Files\\Python313",
+      "script": "<SCRATCH>\\uv\\runtime\\base_worker.py"
+    },
+    "worker_image": "C:\\Program Files\\Python313\\python.exe",
+    "same_worker_alive": true,
+    "no_file_lock_failure": true,
+    "worker_stopped": true
+  }
+}

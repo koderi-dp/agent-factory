@@ -1667,3 +1667,14 @@ To be answered by Phase 0 spikes or by the maintainer:
 8. Private distribution instead of public PyPI? If so, use `uv tool install git+https://github.com/koderi-dp/agent-factory@v1.0.0`.
    That works only if the built dashboard is present, so it would need the GitHub Release wheel URL instead:
    `uv tool install https://github.com/…/releases/download/v1.0.0/agent_factory-1.0.0-py3-none-any.whl`.
+9. **Windows process tree (Phase 0 spike 5):** answered by session 0.3 on Windows 11
+   build 26300. A wrapper launched with `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`
+   assigned itself to a KILL_ON_JOB_CLOSE Job Object before `npm run dev`. The five-member
+   tree (including two node.exe processes) survived launcher exit; external job termination,
+   a wrapper stop file, and wrapper death each killed all members and freed the HTTP port.
+   Working ctypes code: `spikes/windows/winjob_proto.py`; evidence and limits: [spikes.md](spikes.md).
+10. **Windows uv replacement (Phase 0 spike 8):** answered by session 0.3 with uv 0.9.13.
+    An isolated `uv tool install --force` replaced local dummy version 0.0.1 with 0.0.2
+    (exit 0, no file-lock failure) while the same base-Python process running a copied
+    temp script continued its heartbeat. This used the existing system base Python;
+    replacing that interpreter and full service re-adoption were not tested. See [spikes.md](spikes.md).

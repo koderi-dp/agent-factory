@@ -202,3 +202,154 @@ this session. The preserved `tests/fixtures/claude/README.md` describes partial
 evidence: success and auth captures exist, but rate-limited denial, long-tool,
 kill/resume and cache captures do not establish those behaviors. Claude parity
 has not passed.
+
+## Windows processes — session 0.3
+
+Measured on **2026-10-15**, Windows 11 build 26300, x64, Python **3.13.16**,
+Node **24.22.0**, npm **12.0.2**, uv **0.9.13**. These are live Windows
+experiments, with a dependency-free Node HTTP server and a local dummy wheel;
+no Claude/Codex invocation, npm install, package publication, or factory runtime
+change was needed.
+
+### Reproduction and evidence
+
+```powershell
+python spikes/windows/process_spikes.py all
+# Or run just one unfinished capture:
+python spikes/windows/process_spikes.py tree
+python spikes/windows/process_spikes.py uv
+# Repeat the live probes in disposable directories, without replacing captures:
+python -m unittest discover -s tests -p test_windows_spikes.py -v
+```
+
+The successful capture commands were `all` (tree succeeded, then the first uv
+attempt hit the path assertion described below) and `uv` (succeeded after that
+assertion was corrected), both with exit codes shown below. The script refuses
+to overwrite existing public evidence, checking all requested cases before
+launching any experiment. Use the tests to reproduce completed probes.
+
+Complete redacted commands, stdout/stderr, versions, timestamps, process IDs,
+and observations are in `tests/fixtures/windows/{tree,uv}.json`. Raw results,
+generated wheels, package.json/server.cjs, and process logs remain in separate
+OS-temp scratch directories. `.git/windows-spikes/*.json` points to them. No
+existing CLI fixtures were changed. Redaction handles both Windows 8.3 and long
+paths, forward-slash file URLs, and JSON embedded in command stdout.
+
+### Job Object assignment, detached launcher, and tree termination (spike 5)
+
+`spikes/windows/winjob_proto.py` contains the working ctypes implementation.
+Its structs use pointer-sized `SIZE_T`, and every Win32 function has explicit
+argument/result types so x64 handles are not truncated. The wrapper:
+
+1. Starts with `sys._base_executable` and
+   `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` (`0x08000200`).
+2. Creates a named Job Object with **KILL_ON_JOB_CLOSE**, checks that its handle
+   is non-inheritable, and **assigns itself before spawning children**.
+3. Runs `cmd.exe /d /c "<node-dir>\npm.cmd" run dev` with stdin discarded and
+   stdout/stderr redirected to a file. The temp package's `dev` script is
+   `node server.cjs`, listening on `127.0.0.1` on an OS-selected port.
+4. Keeps the job handle open and polls its scratch directory's `stop` file.
+
+The launcher exits 0 immediately. The probe waits until that exit, independently
+requests HTTP and gets **200 OK**, then confirms the tree remains alive for a
+further half-second. `QueryInformationJobObject(JobObjectBasicProcessIdList)`
+finds **five members** in every case: the Python wrapper, two cmd.exe processes,
+and two node.exe processes (npm's CLI and the HTTP server). The launcher itself
+is outside that job. Process handles are held across termination to avoid
+mistaking a reused PID for a surviving process.
+
+| Action after launcher exit | Launcher exit | Members exited | Port rebound/listening | Measured stop time |
+|---|---:|---:|---:|---:|
+| External `TerminateJobObject` | 0 | 5 / 5 | yes | 0.103 s |
+| Create `stop`; wrapper calls `TerminateJobObject` | 0 | 5 / 5 | yes | 0.103 s |
+| Terminate only wrapper; OS closes last Job handle | 0 | 5 / 5 | yes | 0.102 s |
+
+The third case holds **no external job handle** when the wrapper is terminated;
+the monitor closes its query handle first. This separately verifies
+KILL_ON_JOB_CLOSE rather than accidentally relying on explicit job termination.
+After every stop, an exclusive socket successfully **binds and listens on the
+same address and port**; release is not inferred just from dead process IDs.
+
+These results agree with Microsoft's [Job Object lifetime and child-process
+rules](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).
+Assignment succeeded in this host without `CREATE_BREAKAWAY_FROM_JOB`. That
+does not establish compatibility with every restrictive enclosing Job Object,
+Windows 7, or another session-ending/host policy. Test that separately if such
+an environment must be supported.
+
+Phase 1 reuse (plan §3.2/§9, session 1.4): keep the sole long-lived job handle in
+the wrapper. An engine holding another handle prevents last-handle cleanup when
+the wrapper dies. `TerminateJobObject` also kills the wrapper itself, so the
+engine must record a requested stop; it cannot depend on wrapper cleanup code
+writing `exit.json` afterward. TODO (session 1.4): implement the production
+command/proc/exit protocol, owner-token checks, copying/versioning, and POSIX
+process groups. Those are not part of this prototype.
+
+### Force-install a newer uv tool while its base-Python worker runs (spike 8)
+
+The driver builds stdlib-only local wheels for `factory-windows-spike` versions
+**0.0.1** and **0.0.2**. `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` point inside the
+scratch directory, so the user's installed tools and PATH are unaffected.
+It runs the following command sequence (full argv is in the fixture):
+
+```powershell
+uv tool install --offline --no-index --python "<BASE_PYTHON>" "<SCRATCH>\uv\factory_windows_spike-0.0.1-py3-none-any.whl"
+& "<SCRATCH>\uv\bin\factory-windows-spike.exe" "<SCRATCH>\uv\runtime"
+uv tool install --offline --no-index --python "<BASE_PYTHON>" --force "<SCRATCH>\uv\factory_windows_spike-0.0.2-py3-none-any.whl"
+& "<SCRATCH>\uv\bin\factory-windows-spike.exe" --version
+```
+
+The 0.0.1 entry point copies `base_worker.py` from its installed package into
+the temp runtime directory, starts it with **`sys._base_executable`**, file
+output and the same detached flags, then exits. The copied script imports only
+stdlib modules and atomically updates a heartbeat every 0.1 s. The monitor
+asserts that its executable and prefix are outside the tool venv, and its
+script is under the copied runtime directory.
+
+| Command/check | Exit/result | Wall seconds |
+|---|---|---:|
+| Install 0.0.1 | 0 | 0.267 |
+| Launch copied base-Python worker | 0 | 0.325 |
+| `uv tool install --force` 0.0.2 | **0, no file-lock failure** | 0.359 |
+| Newly installed tool's `--version` | 0, stdout `0.0.2` | 0.206 |
+| Same worker PID 44460 | alive; heartbeat **1 → 7** | — |
+| Worker stop file, then wait on process handle | worker exited | — |
+
+uv reported uninstalling 0.0.1 and installing 0.0.2. The monitor required a
+heartbeat **after the install and version check**, then stopped the worker and
+waited for it to exit. This establishes that this copied-script/base-interpreter
+pattern permits a force reinstall on the measured Windows machine. The base
+interpreter here is the existing system Python at
+`C:\Program Files\Python313\python.exe`, not a newly downloaded uv-managed
+interpreter. The test does not exercise replacing the base Python itself or a
+complete engine/service re-adoption (sessions 1.5/4.2).
+
+### Corrections and verification
+
+The first uv run installed 0.0.1 and launched/stopped its worker, but failed a
+**probe assertion before force install**: `Path.resolve()` expanded the script
+to a long path while the scratch root retained its 8.3 spelling. Both paths
+are now resolved before containment comparisons. That first attempt is not
+upgrade-success evidence; its scratch directory was retained.
+
+The first live integration test with space/non-ASCII temp paths also observed
+a transient `PermissionError` reading an atomically replaced JSON file. Reads
+and replaces now retry for at most two seconds. A subsequent six-test run
+passed, including all three npm stop paths and the uv force-install probe in
+those paths. Public fixtures retain the original successful measurements;
+repeated integration tests do not overwrite them.
+
+Verification commands run in this session:
+
+- `python -m unittest discover -s tests` — **121 tests, OK** (122.601 s).
+- `python -m unittest discover -s tests -p test_windows_spikes.py -v` — final
+  focused run **7 tests, OK** (6.162 s), including the added transient-sharing
+  regression test and both live integration tests.
+- `git diff --cached --check` — no whitespace errors.
+
+`tests/test_windows_spikes.py` checks detached flags, process membership,
+both node.exe members, the three termination paths, the uv version change and
+same-worker heartbeat, path redaction, and overwrite protection. Two tests
+repeat the actual local processes on Windows (skipped on other platforms or
+when npm/uv is absent). This completes spikes **5 and 8**; Claude spikes remain
+deferred as described above.
