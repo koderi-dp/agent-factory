@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "<HOME>\\.local\\bin\\claude.EXE",
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--model",
+    "sonnet",
+    "--effort",
+    "low",
+    "--permission-mode",
+    "auto",
+    "--strict-mcp-config",
+    "--setting-sources",
+    ""
+  ],
+  "prompt": "Reply exactly SPIKE_OK. Do not use tools.",
+  "exit_code": 0,
+  "killed": false,
+  "elapsed_seconds": 3.021,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  }
+}

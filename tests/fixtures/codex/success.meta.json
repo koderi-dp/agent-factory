@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "<HOME>\\AppData\\Roaming\\npm\\codex.cmd",
+    "exec",
+    "--json",
+    "--ignore-user-config",
+    "--ignore-rules",
+    "-m",
+    "gpt-6-luna",
+    "-c",
+    "model_reasoning_effort=\"low\"",
+    "--approve-for-me",
+    "-"
+  ],
+  "prompt": "Reply exactly SPIKE_OK. Do not use tools.",
+  "exit_code": 0,
+  "killed": false,
+  "elapsed_seconds": 4.83,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "<HOME>\\.local\\bin\\claude.EXE",
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--model",
+    "sonnet",
+    "--effort",
+    "low",
+    "--permission-mode",
+    "auto",
+    "--strict-mcp-config",
+    "--setting-sources",
+    ""
+  ],
+  "prompt": "Run a shell command that prints LONG_START, sleeps 12 seconds, then prints LONG_END. Use PowerShell Start-Sleep -Seconds 12 on Windows or sleep 12 on Bash. Wait for completion, then reply LONG_DONE. Do nothing else.",
+  "exit_code": 1,
+  "killed": false,
+  "elapsed_seconds": 2.419,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  }
+}

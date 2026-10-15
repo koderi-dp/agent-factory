@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a140ff-a4ad-7042-ba4d-8e4b31ab8b95"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"SPIKE_OK"}}
+{"type":"turn.completed","usage":{"input_tokens":13705,"cached_input_tokens":7936,"cache_write_input_tokens":0,"output_tokens":7,"reasoning_output_tokens":0}}
