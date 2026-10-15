@@ -26,7 +26,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import re
 import time
+from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -155,6 +157,135 @@ def status(sandbox):
     print("node --test on main:", "pass" if r.returncode == 0 else "FAIL")
 
 
+def _timestamp(value):
+    """Parse the UTC timestamps stored in v1 job history."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _log_usage(path):
+    """Return token and cost totals found in a headless log, or None when absent."""
+    if not path.is_file():
+        return None, None
+    text = path.read_text(encoding="utf-8", errors="replace")
+    # Claude's structured result and Codex usage events both use these field names.
+    def total(names):
+        values = []
+        for name in names:
+            values.extend(re.findall(r'"' + re.escape(name) + r'"\s*:\s*(\d+(?:\.\d+)?)', text))
+        return sum(float(v) for v in values) if values else None
+
+    tokens = total(("input_tokens", "output_tokens", "cache_read_input_tokens", "cached_input_tokens"))
+    cost = total(("total_cost_usd", "cost_usd"))
+    return tokens, cost
+
+
+def benchmark_rows(sandbox):
+    """Read v1 jobs and their corresponding headless logs into printable rows."""
+    rows = []
+    jobs_dir = sandbox / "factory" / "jobs"
+    for path in sorted(jobs_dir.glob("*/job.json")):
+        try:
+            job = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        history = job.get("history", [])
+        points = [(h.get("stage", "unknown"), _timestamp(h.get("at")))
+                  for h in history if isinstance(h, dict)]
+        stage_times = {}
+        terminal_stages = {"approved", "merged", "needs-human"}
+        for (stage, start), (_, end) in zip(points, points[1:]):
+            if (stage not in terminal_stages and start is not None and end is not None
+                    and end >= start):
+                stage_times[stage] = stage_times.get(stage, 0) + end - start
+        created = _timestamp(job.get("created")) or (points[0][1] if points else None)
+        terminal = bool(history and history[-1].get("stage") in {"approved", "merged", "needs-human"})
+        ended = (_timestamp(job.get("updated")) if terminal else None) or (points[-1][1] if points else None)
+        if (terminal and points and points[-1][0] not in terminal_stages
+                and ended is not None and points[-1][1] is not None):
+            final_stage = points[-1][0]
+            if ended >= points[-1][1]:
+                stage_times[final_stage] = stage_times.get(final_stage, 0) + ended - points[-1][1]
+        wall = ended - created if created is not None and ended is not None and ended >= created else None
+        # A headless Claude invocation logs directly in jobs/. Codex session metadata
+        # carries the same basename as its log.
+        logs = sorted(jobs_dir.glob("headless-*.log"))
+        tokens = cost = None
+        for log in logs:
+            try:
+                log_text = log.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if f"SANDBOX-FEATURE: {job.get('feature', '')}" in log_text:
+                tokens, cost = _log_usage(log)
+                break
+        else:
+            # Historical headless sessions have no feature marker. A lone log is
+            # unambiguous; with several logs, report usage as unknown per job.
+            if len(logs) == 1:
+                tokens, cost = _log_usage(logs[0])
+        runs = job.get("runs", [])
+        rows.append({"id": job.get("id", path.parent.name), "feature": job.get("feature", ""),
+                     "wall": wall, "stages": stage_times,
+                     "agents": sum(len(run.get("reports", {})) for run in runs),
+                     "tokens": tokens, "cost": cost})
+    return rows
+
+
+def _duration(seconds):
+    return f"{seconds:.1f}s" if seconds is not None else "unknown"
+
+
+def _benchmark_markdown(rows):
+    lines = ["| Job | Feature | Wall time | Stage times | Agent runs | Tokens | Cost (USD) |",
+             "|---|---|---:|---|---:|---:|---:|"]
+    for row in rows:
+        stages = ", ".join(
+            f"{name}: {_duration(seconds)}" for name, seconds in row["stages"].items()
+        ) or "unknown"
+        tokens = f"{row['tokens']:.0f}" if row["tokens"] is not None else "unknown"
+        cost = f"${row['cost']:.4f}" if row["cost"] is not None else "unknown"
+        feature = str(row["feature"]).replace("|", "\\|").replace("\n", " ")
+        lines.append(
+            f"| {row['id']} | {feature} | {_duration(row['wall'])} | {stages} | "
+            f"{row['agents']} | {tokens} | {cost} |"
+        )
+    if not rows:
+        lines.append("| No jobs found | | unknown | unknown | 0 | unknown | unknown |")
+    return "\n".join(lines)
+
+
+def bench(sandbox):
+    if not sandbox.exists():
+        sys.exit("no sandbox yet; run: python tools/sandbox.py new")
+    rows = benchmark_rows(sandbox)
+    table = _benchmark_markdown(rows)
+    print(table)
+    target = ROOT / "docs" / "benchmarks.md"
+    heading = "## v1 baseline"
+    capture_heading = "### Latest capture"
+    existing = target.read_text(encoding="utf-8") if target.exists() else "# Benchmarks\n"
+    capture = capture_heading + "\n\n" + table + "\n"
+    if capture_heading in existing:
+        before, rest = existing.split(capture_heading, 1)
+        next_section = re.search(r"\n#{2,3} ", rest)
+        existing = before + capture + (rest[next_section.start():] if next_section else "")
+    elif heading in existing:
+        prefix, rest = existing.split(heading, 1)
+        next_section = re.search(r"\n## ", rest)
+        after_heading = rest[next_section.start():] if next_section else ""
+        body = rest[:next_section.start()] if next_section else rest
+        existing = prefix + heading + body.rstrip() + "\n\n" + capture + after_heading
+    else:
+        existing = existing.rstrip() + "\n\n" + heading + "\n\n" + capture
+    target.write_text(existing, encoding="utf-8")
+    print(f"\nWrote {target}")
+
+
 def run(sandbox, jobs, skip_permissions):
     if not sandbox.exists():
         sys.exit("no sandbox yet; run: python tools/sandbox.py new")
@@ -172,17 +303,26 @@ def run(sandbox, jobs, skip_permissions):
     count = jobs or len(queued(sandbox))
     started = time.time()
     for n in range(1, count + 1):
-        if not queued(sandbox):
+        items = queued(sandbox)
+        if not items:
             break
-        print(f"\n=== job {n} of {count}: {queued(sandbox)[0]}", flush=True)
-        subprocess.run([claude, "-p", "/factory next", "--permission-mode", "bypassPermissions"], cwd=sandbox)
+        feature = items[0]
+        log_dir = sandbox / "factory" / "jobs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log = log_dir / f"headless-{time.time_ns()}.log"
+        print(f"\n=== job {n} of {count}: {feature} (log: {log.name})", flush=True)
+        with log.open("w", encoding="utf-8") as out:
+            out.write(f"SANDBOX-FEATURE: {feature}\n")
+            out.flush()
+            subprocess.run([claude, "-p", "/factory next", "--permission-mode", "bypassPermissions"],
+                           cwd=sandbox, stdout=out, stderr=subprocess.STDOUT)
     print(f"\nfinished in {int(time.time() - started)} s\n")
     status(sandbox)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["new", "serve", "run", "status", "reset", "clean"])
+    parser.add_argument("command", choices=["new", "serve", "run", "status", "reset", "clean", "bench"])
     parser.add_argument("--dir", type=Path, default=DEFAULT_DIR, help=f"sandbox folder (default {DEFAULT_DIR})")
     parser.add_argument("--port", type=int, default=5097, help="dashboard port for serve")
     parser.add_argument("--jobs", type=int, default=0, help="run at most this many jobs (default: the whole backlog)")
@@ -204,6 +344,8 @@ def main():
         serve(sandbox, args.port)
     elif args.command == "status":
         status(sandbox)
+    elif args.command == "bench":
+        bench(sandbox)
     elif args.command == "run":
         run(sandbox, args.jobs, args.skip_permissions)
 

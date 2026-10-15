@@ -1,0 +1,16 @@
+{
+  "id": "001-feature",
+  "feature": "A small fixture feature",
+  "created": "2026-01-01T00:00:00Z",
+  "history": [
+    {"stage": "spec", "at": "2026-01-01T00:00:00Z"},
+    {"stage": "build", "at": "2026-01-01T00:00:30Z"},
+    {"stage": "review", "at": "2026-01-01T00:02:00Z"},
+    {"stage": "approved", "at": "2026-01-01T00:03:00Z"}
+  ],
+  "runs": [
+    {"stage": "spec", "reports": {"spec-writer": {}}},
+    {"stage": "build", "reports": {"builder": {}}},
+    {"stage": "review", "reports": {"reviewer-security": {}, "reviewer-ux": {}}}
+  ]
+}
