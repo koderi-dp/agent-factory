@@ -129,8 +129,7 @@ class RepoConfig(ConfigModel):
             if kinds[-1] != "approval" or kinds.count("approval") != 1:
                 raise ValueError(f"{name}: pipeline must end with exactly one approval step")
         self._roles = resolved
-        # TODO (plan §10.5, sessions 1.3/1.8): freeze these exact roles, their sources
-        # and hashes with profiles, limits, preamble and engine version at job creation.
+        # engine.pipeline.freeze snapshots these roles and policy at job creation (§10.5).
         # TODO (plan §15.4, session 1.9): enforce the engine version gate in commands.
         return self
 

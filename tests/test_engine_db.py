@@ -70,3 +70,43 @@ def test_migration_rejects_gaps_and_newer_database(connection, tmp_path):
     connection.execute("PRAGMA user_version=5")
     with pytest.raises(ValueError, match="newer"):
         db.migrate(connection, Path(db.__file__).parent / "migrations" / "machine")
+
+
+def test_repo_migration_idempotence_foreign_keys_and_live_attempt_index(connection):
+    directory = Path(db.__file__).parent / "migrations" / "repo"
+    db.migrate(connection, directory)
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert tables == {"jobs", "executions", "attempts", "events", "start_queue", "sqlite_sequence"}
+    with db.tx(connection):
+        connection.execute(
+            "INSERT INTO jobs (id, seq, title, pipeline_name, frozen, state, branch, worktree, created_at, updated_at) "
+            "VALUES ('001-job', 1, 'Feature', 'full', '{}', 'queued', 'factory/001-job', 'worktree', 'now', 'now')")
+        execution_id = connection.execute(
+            "INSERT INTO executions (job_id, step_id, exec_id, round, type, uses, provider, model, effort, state, created_at) "
+            "VALUES ('001-job', 'build', 'build', 1, 'task', 'builder', 'codex', 'model', 'medium', 'pending', 'now')"
+        ).lastrowid
+        connection.execute(
+            "INSERT INTO attempts (execution_id, n, kind, state, owner_token, dir) VALUES (?, 1, 'fresh', 'running', 'owner1', 'a1')",
+            (execution_id,))
+        connection.execute("INSERT INTO start_queue (title, backlog_key, created_at, job_id) VALUES ('Feature', 'key', 'now', '001-job')")
+    db.migrate(connection, directory)
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert connection.execute("SELECT title FROM jobs").fetchone()[0] == "Feature"
+    with pytest.raises(sqlite3.IntegrityError):
+        with db.tx(connection):
+            connection.execute(
+                "INSERT INTO attempts (execution_id, n, kind, state, owner_token, dir) VALUES (?, 2, 'resume', 'launching', 'owner2', 'a2')",
+                (execution_id,))
+    with db.tx(connection):
+        connection.execute("UPDATE attempts SET state='valid'")
+        connection.execute(
+            "INSERT INTO attempts (execution_id, n, kind, state, owner_token, dir) VALUES (?, 2, 'resume', 'launching', 'owner2', 'a2')",
+            (execution_id,))
+    with pytest.raises(sqlite3.IntegrityError):
+        with db.tx(connection):
+            connection.execute("DELETE FROM jobs")  # start_queue intentionally keeps its FK.
+    with db.tx(connection):
+        connection.execute("DELETE FROM start_queue")
+        connection.execute("DELETE FROM jobs")
+    assert connection.execute("SELECT COUNT(*) FROM executions").fetchone()[0] == 0
+    assert connection.execute("SELECT COUNT(*) FROM attempts").fetchone()[0] == 0
