@@ -5,6 +5,7 @@
   python tools/run_plan.py --status      list sessions and whether each is done
   python tools/run_plan.py --phase 2     run a specific phase (skips sessions already done)
   python tools/run_plan.py --no-pause    continue into the following phases without stopping
+  python tools/run_plan.py --quiet       hide live Codex activity (commands, edits, messages)
 
 Sessions and their model/effort come from docs/cli-orchestrator-prompts.md headings. A session
 is done when its "[session X.Y]" commit exists. Logs go to .git/plan-run/.
@@ -16,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -26,6 +28,7 @@ MODELS = {"Sol": "gpt-6.1-sol", "Astra": "gpt-6-astra", "Luna": "gpt-6-luna"}
 EFFORTS = {"Light": "low", "Medium": "medium", "High": "high", "Extra High": "xhigh"}
 HEADING = re.compile(r"^### (\d+)\.(\d+) (.+?) · (you \+ )?(Sol|Luna|Astra) · (Light|Medium|High|Extra High)(.*)$")
 RESULT = re.compile(r"SESSION-RESULT: (PASS|FAIL)(.*)")
+VERBOSE = True
 
 
 def sessions():
@@ -55,6 +58,57 @@ def clean():
     return git("status", "--porcelain") == ""
 
 
+def short(text, limit=110):
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def report(line):
+    """Print one readable line for a Codex JSON event: commands, edits, messages, usage."""
+    try:
+        event = json.loads(line)
+    except ValueError:
+        if line.strip():
+            print(f"    {short(line)}", flush=True)
+        return
+    kind = event.get("type", "")
+    item = event.get("item") or {}
+    itype = item.get("type") or item.get("item_type") or ""
+    stamp = time.strftime("%H:%M:%S")
+    text = None
+    if kind == "thread.started":
+        text = f"session {event.get('thread_id', '?')}  (codex resume <id> to open it)"
+    elif kind == "item.started" and itype == "command_execution":
+        text = f"$ {short(item.get('command', ''), 100)}"
+    elif kind == "item.completed":
+        if itype == "command_execution":
+            code = item.get("exit_code")
+            if code not in (None, 0):
+                text = f"  ✗ exit {code}: {short(item.get('command', ''), 90)}"
+        elif itype == "file_change":
+            paths = [c.get("path", "?") for c in item.get("changes", []) if isinstance(c, dict)]
+            text = f"✎ {short(', '.join(paths) or 'files', 100)}"
+        elif itype == "agent_message":
+            text = f"» {short(item.get('text', ''))}"
+        elif itype == "todo_list":
+            todos = item.get("items", [])
+            finished = sum(1 for t in todos if isinstance(t, dict) and t.get("completed"))
+            text = f"☐ plan: {finished}/{len(todos)} steps done"
+        elif itype in ("mcp_tool_call", "web_search"):
+            text = f"· {itype}: {short(item.get('query') or item.get('tool') or '', 90)}"
+        elif itype == "error":
+            text = f"! {short(item.get('message', ''))}"
+    elif kind == "turn.completed":
+        usage = event.get("usage") or {}
+        text = (f"tokens: in {usage.get('input_tokens', '?')} (cached {usage.get('cached_input_tokens', '?')}), "
+                f"out {usage.get('output_tokens', '?')}")
+    elif kind in ("turn.failed", "error"):
+        err = event.get("error") or {}
+        text = f"! {short(err.get('message') if isinstance(err, dict) else err or event.get('message', kind))}"
+    if text:
+        print(f"    {stamp} {text}", flush=True)
+
+
 def run_codex(label, prompt, model, effort, permissions, timeout):
     codex = shutil.which("codex") or sys.exit("codex isn't on PATH")
     LOGS.mkdir(parents=True, exist_ok=True)
@@ -65,12 +119,25 @@ def run_codex(label, prompt, model, effort, permissions, timeout):
     args = [codex, "exec", "--json", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
             *perm, "-C", str(REPO), "-o", str(last), "-"]
     print(f"  → codex {model} · {effort}   log: {log.relative_to(REPO)}", flush=True)
-    with open(log, "w", encoding="utf-8") as out:
-        try:
-            code = subprocess.run(args, cwd=REPO, input=prompt, stdout=out, stderr=subprocess.STDOUT,
-                                  text=True, encoding="utf-8", timeout=timeout * 60).returncode
-        except subprocess.TimeoutExpired:
-            return False, f"timed out after {timeout} min"
+    process = subprocess.Popen(args, cwd=REPO, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+    process.stdin.write(prompt)
+    process.stdin.close()
+    deadline = time.monotonic() + timeout * 60
+    timer = threading.Timer(timeout * 60, process.kill)
+    timer.start()
+    try:
+        with open(log, "w", encoding="utf-8") as out:
+            for line in process.stdout:
+                out.write(line)
+                out.flush()
+                if VERBOSE:
+                    report(line)
+        code = process.wait()
+    finally:
+        timer.cancel()
+    if time.monotonic() >= deadline:
+        return False, f"timed out after {timeout} min"
     final = last.read_text(encoding="utf-8") if last.exists() else ""
     m = None
     for m in RESULT.finditer(final):
@@ -167,7 +234,10 @@ def main():
     p.add_argument("--permissions", choices=("auto", "bypass"), default="auto",
                    help="auto = codex --approve-for-me (default); bypass = no sandbox, only in a throwaway VM")
     p.add_argument("--timeout", type=int, default=240, help="minutes per Codex session (default 240)")
+    p.add_argument("--quiet", action="store_true", help="don't show live Codex activity, only progress lines")
     a = p.parse_args()
+    global VERBOSE
+    VERBOSE = not a.quiet
 
     all_sessions = sessions()
     if a.status:
