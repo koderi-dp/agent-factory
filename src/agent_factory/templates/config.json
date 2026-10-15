@@ -1,0 +1,172 @@
+{
+  "version": 2,
+  "engine": ">=1.0,<2",
+  "defaultPipeline": "full",
+  "pipelines": {
+    "fast": [
+      {
+        "id": "build",
+        "uses": "builder",
+        "provider": "claude",
+        "profiles": {
+          "claude": {
+            "model": "opus",
+            "effort": "medium"
+          },
+          "codex": {
+            "model": "gpt-6.1-sol",
+            "effort": "medium"
+          }
+        }
+      },
+      {
+        "id": "approve",
+        "uses": "fast-approver",
+        "provider": "codex",
+        "profiles": {
+          "claude": {
+            "model": "opus",
+            "effort": "medium"
+          },
+          "codex": {
+            "model": "gpt-6.1-sol",
+            "effort": "medium"
+          }
+        },
+        "onChanges": "build"
+      }
+    ],
+    "full": [
+      {
+        "id": "spec",
+        "uses": "spec-writer",
+        "provider": "claude",
+        "profiles": {
+          "claude": {
+            "model": "opus",
+            "effort": "medium"
+          },
+          "codex": {
+            "model": "gpt-6.1-sol",
+            "effort": "medium"
+          }
+        }
+      },
+      {
+        "id": "build",
+        "uses": "builder",
+        "provider": "claude",
+        "profiles": {
+          "claude": {
+            "model": "opus",
+            "effort": "medium"
+          },
+          "codex": {
+            "model": "gpt-6.1-sol",
+            "effort": "medium"
+          }
+        }
+      },
+      {
+        "id": "review",
+        "onChanges": "build",
+        "parallel": [
+          {
+            "id": "security",
+            "uses": "reviewer-security",
+            "provider": "claude",
+            "profiles": {
+              "claude": {
+                "model": "opus",
+                "effort": "medium"
+              },
+              "codex": {
+                "model": "gpt-6.1-sol",
+                "effort": "medium"
+              }
+            }
+          },
+          {
+            "id": "ux",
+            "uses": "reviewer-ux",
+            "provider": "claude",
+            "profiles": {
+              "claude": {
+                "model": "opus",
+                "effort": "medium"
+              },
+              "codex": {
+                "model": "gpt-6.1-sol",
+                "effort": "medium"
+              }
+            }
+          },
+          {
+            "id": "ui",
+            "uses": "reviewer-ui",
+            "provider": "claude",
+            "profiles": {
+              "claude": {
+                "model": "opus",
+                "effort": "medium"
+              },
+              "codex": {
+                "model": "gpt-6.1-sol",
+                "effort": "medium"
+              }
+            }
+          },
+          {
+            "id": "code",
+            "uses": "reviewer-code",
+            "provider": "codex",
+            "profiles": {
+              "claude": {
+                "model": "opus",
+                "effort": "medium"
+              },
+              "codex": {
+                "model": "gpt-6.1-sol",
+                "effort": "medium"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "approve",
+        "uses": "approver",
+        "provider": "claude",
+        "profiles": {
+          "claude": {
+            "model": "opus",
+            "effort": "medium"
+          },
+          "codex": {
+            "model": "gpt-6.1-sol",
+            "effort": "medium"
+          }
+        }
+      }
+    ]
+  },
+  "maxRounds": 3,
+  "merge": "verify",
+  "permissions": "auto",
+  "concurrency": {
+    "perJob": 4
+  },
+  "timeouts": {
+    "executionMinutes": 60
+  },
+  "sensitivePaths": [
+    "**/migrations/**",
+    ".github/**",
+    "**/*.lock",
+    "package.json",
+    "pyproject.toml",
+    "**/auth/**",
+    "Dockerfile",
+    "**/*.tf"
+  ]
+}
