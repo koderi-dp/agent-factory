@@ -35,14 +35,15 @@ FIXTURE = HERE / "sandbox-fixture"
 DEFAULT_DIR = Path(tempfile.gettempdir()) / "factory-sandbox" / "todo-app"
 
 # Light settings: the cheapest models, little thinking, one review round, merge straight away.
-LIGHT_CONFIG = {
-    "models": {a: "haiku" for a in (
-        "spec-writer", "builder", "reviewer-security", "reviewer-ux", "reviewer-ui", "reviewer-code", "approver")},
-    "efforts": {a: "low" for a in (
-        "spec-writer", "builder", "reviewer-security", "reviewer-ux", "reviewer-ui", "reviewer-code", "approver")},
-    "merge": "auto",
-    "maxRounds": 1,
-}
+LIGHT_CONFIG = json.loads((ROOT / "factory/config.json").read_text(encoding="utf-8"))
+LIGHT_CONFIG.update(merge="auto", maxRounds=1)
+for step in LIGHT_CONFIG["pipeline"]:
+    for execution in step.get("parallel", [step]):
+        execution["providers"] = {
+            "claude": {"model": "haiku", "effort": "low"},
+            "codex": {"model": "gpt-6-luna", "effort": "low"},
+        }
+
 
 # Small, independent changes that each touch one or two files and are quick to check.
 BACKLOG = [

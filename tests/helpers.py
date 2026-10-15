@@ -1,5 +1,6 @@
 """A throwaway git repo with a factory/ folder, and job.py pointed at it."""
 
+import copy
 import os
 import shutil
 import stat
@@ -14,6 +15,17 @@ sys.path.insert(0, str(ROOT / "factory"))
 import job  # noqa: E402  (needs the path above)
 
 
+def execution(eid, uses, **extra):
+    return {"id": eid, "uses": uses, "providers": copy.deepcopy(job.pipeline.PROVIDER_DEFAULTS), **extra}
+
+
+def write_agent(repo, role, kind, output, provider="claude"):
+    path = repo.path / f".{provider}/agents/{role}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\ntype: {kind}\noutput: {output}\n---\n\nFollow the dispatched report contract.\n", encoding="utf-8")
+    return path
+
+
 def git(*args, cwd):
     r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
     if r.returncode:
@@ -22,7 +34,7 @@ def git(*args, cwd):
 
 
 class Repo:
-    def __init__(self):
+    def __init__(self, agents=True):
         self.tmp = Path(tempfile.mkdtemp(prefix="factory-test-"))
         self.path = self.tmp / "app"
         self.factory = self.path / "factory"
@@ -30,6 +42,9 @@ class Repo:
         (self.path / "app.txt").write_text("one\n", encoding="utf-8")
         (self.path / ".gitignore").write_text("/factory/jobs/\n", encoding="utf-8")
         (self.factory / "backlog.md").write_text("# Backlog\n", encoding="utf-8")
+        if agents:
+            for provider in ("claude", "codex"):
+                shutil.copytree(ROOT / provider / "agents", self.path / f".{provider}/agents")
         git("init", "-q", "-b", "main", cwd=self.path)
         git("config", "user.name", "test", cwd=self.path)
         git("config", "user.email", "test@localhost", cwd=self.path)
@@ -39,16 +54,21 @@ class Repo:
         self._saved = (job.FACTORY, job.JOBS, job.CONFIG)
         job.FACTORY, job.JOBS, job.CONFIG = self.factory, self.factory / "jobs", self.factory / "config.json"
 
-    def add_job(self, job_id, stage="approved", file="app.txt", line="from the job\n"):
+    def add_job(self, job_id, stage="approved", file="app.txt", line="from the job\n", provider="claude"):
         """A job with its own worktree and one commit on its branch."""
         worktree = self.tmp / "app-factory" / job_id
         (job.JOBS / job_id).mkdir()
-        job.new(job_id, f"feature {job_id}", str(worktree))
+        job.new(job_id, f"feature {job_id}", str(worktree), provider=provider)
         git("worktree", "add", "-q", "-b", f"factory/{job_id}", str(worktree), "main", cwd=self.path)
         with open(worktree / file, "a", encoding="utf-8") as f:
             f.write(line)
         git("add", file, cwd=worktree)
         git("commit", "-q", "-m", f"change for {job_id}", cwd=worktree)
+        # These fixtures exercise merge/delete, with an already completed approval.
+        if stage in {"approved", "needs-human", "approve"}:
+            state = job.load(job_id)
+            state.update(pipelineComplete=True, approval={"verdict": "APPROVE", "head": git("rev-parse", "HEAD", cwd=worktree)})
+            job.save(state)
         job.update(job_id, [("stage", stage)])
         return worktree
 

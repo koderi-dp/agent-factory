@@ -1,0 +1,155 @@
+# Configurable factory workflow
+
+You orchestrate one job. Agents write its reports and code; Python validates and
+advances its saved pipeline. All job state goes through factory/job.py. Never
+write job.json by hand, skip a configured step, or merge directly with Git.
+
+## Settings
+
+Read `python factory/job.py config` before starting a job. `pipeline` is the
+ordered list. Each `uses` name resolves to `.claude/agents/<uses>.md`. New jobs snapshot resolved
+steps, role definitions, provider model/effort settings, maxRounds and merge policy.
+Config edits affect new jobs only.
+
+- Every executable step has `providers`, for example `"claude": {"model": "opus", "effort": "medium"}`
+  and `"codex": {"model": "gpt-6.1-sol", "effort": "medium"}`. Parallel reviewers are objects
+  with their own id, uses and providers. Model and effort must be explicit; there is no default sentinel.
+- `maxRounds`: at most this many attempts through retry loops, including the first attempt.
+- `merge`: auto merges after the final APPROVE; verify waits for explicit user approval.
+- `provider`, `start`, `headlessPermissions`: the client and permissions used by dashboard Start.
+
+## Isolation and reports
+
+Run from the project's Git root, with a committed local main branch. Every job
+has one branch and sibling worktree: `<parent>/<repo-name>-factory/<job-id>` on
+`factory/<job-id>`. Reports and state live in `<repo>/factory/jobs/<job-id>`.
+Nothing else in the user's main checkout is an agent's workspace. Read AGENTS.md
+(or CLAUDE.md) for setup, validation and service requirements.
+
+Use absolute paths for instructions, reports and worktree commands, and UTF-8
+for Markdown/JSON writes. Agents inherit the session's permission policy; never
+silently enable bypass or change the user's client configuration. An unavailable
+permission needs human attention. Agents use only assigned ports and their own
+throwaway service data; stop their processes before moving to the next step.
+Custom reviewers have no service ports assigned: use a separate task step for
+service-based checks, or the built-in UX/UI reviewers for browser checks.
+
+Report contracts:
+- Task: first line STATUS: READY or STATUS: BLOCKED. Built-in spec-writer uses a # heading.
+- Review: first line VERDICT: PASS or VERDICT: CHANGES.
+- Approval: first line APPROVE or ESCALATE.
+Reports explain evidence, failures and follow-ups below that first line.
+Each agent file starts with frontmatter declaring `type: task`, `type: review` or
+`type: approval`, and `output: <unique-report>.md`. The built-in spec-writer also
+declares `contract: spec` for its heading-based report. Files must exist for the
+selected provider; there is no cross-provider fallback or customAgents registry.
+The dispatch plan names the exact output. Task agents must commit code changes
+in the worktree and leave it clean. Reviewers and approval agents write reports
+only; they do not change the branch.
+
+## /factory <feature>
+
+1. Verify Git main, project instructions and fresh-checkout setup requirements.
+   Claim the next available three-digit number and a short feature slug with
+   an exclusive mkdir under factory/jobs/. Retry if another session claimed it.
+2. Create state immediately:
+   `python factory/job.py new <job-id> --feature "<title>" --worktree <absolute-worktree> --provider claude`.
+   Preserve the title verbatim. Write any details verbatim to request.md in the job folder.
+3. Create `git worktree add -b factory/<job-id> <absolute-worktree> main` and run
+   fresh-checkout setup from AGENTS.md there. Failure: set stage=needs-human
+   and note="<failure>" with job.py set and report the blocker.
+4. Follow Dispatch. Your session runs only its assigned job.
+
+## Dispatch
+
+1. Run `python factory/job.py step <job-id>`. It prepares the active attempt and
+   returns JSON with stage, step, run, tasks, results, feature, rework, worktree,
+   branch and jobFolder. Saved steps govern execution despite later config edits.
+   A missing instructions file is a blocker.
+2. For each task, read its instructions file and delegate that role with the Agent
+   tool. Read its Markdown instructions and include the body in a general-purpose
+   agent prompt, for both built-in and user-created roles. Pass the explicit model/effort values
+   from the plan. Never use another provider's model choices.
+3. Every prompt includes the absolute jobFolder, worktree, branch and task.output;
+   step.id, run.attempt, run.round, feature, task.ports and task.contract. Tell the
+   agent to read request.md if present, job.json results/runs, available upstream
+   reports and the rework note. End with: Write your assigned report; your final
+   message is not the pipeline input. Builders also read all CHANGES reports from
+   previous runs, including custom reviewers. Approvers check all configured
+   upstream steps and their evidence, not a fixed four-lens list.
+4. Run review groups in parallel up to available capacity. Start remaining
+   reviewers as slots free up. Wait for all before reworking anything. Call step
+   as reports arrive: fresh completed reports are omitted from tasks and review
+   chips update. Never dispatch a task twice while its agent is still running.
+   A missing/invalid report after an agent ends gets one fresh-agent retry. If it
+   fails again, set stage=needs-human with the reason and preserve the files.
+5. Retain the builder ID with `job.py set <id> builder=<agent-id>` when useful.
+   Resume it with SendMessage after a retry, or use a fresh builder if its thread
+   is gone. Other roles get independent agents. Close completed threads when
+   supported to free capacity. Never resume a builder mid-review.
+6. Once all tasks finish, run `python factory/job.py free-ports <id>`, then
+   `python factory/job.py advance <id>`. It validates report freshness/contracts,
+   a clean worktree and the exact reviewed head, archives evidence, then moves
+   forward, returns to onChanges within the retry budget, or pauses. Report the
+   returned stage and note. On validation failure, record needs-human with its
+   reason; never force advancement.
+7. Repeat step. If no tasks remain because reports already exist, advance without
+   respawning agents. Terminal stages finish as below.
+
+## Terminal states
+
+- approved: the final agent returned APPROVE. With saved mergePolicy=auto, run
+  `python factory/job.py merge <id>`. Exit 0 means merged; exit 3 means the user's
+  checkout is busy: leave it approved and save the reason as note. Other merge
+  failures need a human. With verify, wait for the user.
+- needs-human: quote the reason and link reports/worktree. Preserve everything.
+  The user may accept a final ESCALATE with /factory approve. Earlier incomplete
+  or blocked steps must be reworked first.
+- merged: report the result and the final decision report's Follow-ups.
+The engine refuses merge when the branch changed after the final decision.
+Never push. Stop if another session changes the stage or removes the job folder.
+
+## /factory next
+
+Take the first unchecked item in factory/backlog.md and its indented details.
+Claim its exact unchecked line with a conditional edit; if changed, reread and
+retry. Start the feature and put its job ID on the checked line. An empty backlog
+is a normal stop.
+
+## /factory watch
+
+Pick a unique w-<random> watcher ID. Run
+`python factory/job.py wait --watcher <id> --timeout 45` from the repo with
+asynchronous polling so the user can interrupt. Exit 2 means wait again. Exit 0
+names an item: claim that exact backlog item and run its pipeline. When it ends,
+wait again. Always run `python factory/job.py unwatch --watcher <id>` on stopping.
+`/factory watch --once` waits up to 120 seconds, runs at most one item, unwatches
+and stops. Dashboard Start uses this mode for headless sessions.
+
+## /factory resume <job-id>
+
+Confirm the prior orchestrator has stopped. Set provider=claude with job.py set.
+If the worktree doesn't exist, finish worktree creation and project setup first.
+Resume Dispatch at the job's saved stage. Reuse fresh parallel reports and spawn
+only missing tasks. Agent IDs from other sessions aren't reusable. Waiting jobs
+use approve or rework instead.
+
+## /factory rework <job-id> <note>
+
+Run `python factory/job.py rework <id> --note "<verbatim note>"`. This preserves
+history, writes the note, resets the retry allowance and returns to the first
+builder step, or the first task if there is no builder. Continue Dispatch.
+
+## /factory approve <job-id>
+
+Only on the user's explicit request, run `python factory/job.py merge <id> --human`.
+This can accept a final ESCALATE after prior steps finished; it cannot merge an
+incomplete pipeline or a head changed after the decision. Handle busy/failed
+merges as above. The dashboard Merge button performs the same action.
+
+## /factory dashboard
+
+Start `python factory/server.py` in the background if port 5099 is unused, then
+share http://127.0.0.1:5099/. Custom --port is supported. Columns come from
+configured and saved steps. Settings validates pipeline JSON and the selected provider's agent files;
+pipeline edits affect new jobs only. Model maps remain client-specific.

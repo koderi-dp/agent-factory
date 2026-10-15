@@ -186,15 +186,19 @@ class ConfigTests(unittest.TestCase):
         cfg = job.load_config()
         self.assertEqual(cfg["merge"], "auto")
         self.assertEqual(cfg["maxRounds"], 3)
-        self.assertEqual(set(cfg["models"]), set(job.AGENTS))
-        self.assertEqual(set(cfg["efforts"].values()), {"default"})
+        self.assertNotIn("models", cfg)
+        self.assertEqual(cfg["pipeline"][0]["providers"]["claude"], {"model": "opus", "effort": "medium"})
 
     def test_saves_and_fills_in_missing_keys(self):
-        job.save_config({"models": {"builder": "sonnet"}, "efforts": {"approver": "max"}, "merge": "verify"})
+        cfg = job.check_config({"merge": "verify"})
+        cfg["pipeline"][1]["providers"]["claude"]["model"] = "sonnet"
+        cfg["pipeline"][-1]["providers"]["claude"]["effort"] = "max"
+        job.save_config(cfg)
         cfg = json.loads(job.CONFIG.read_text(encoding="utf-8"))
-        self.assertEqual(cfg["models"]["builder"], "sonnet")
-        self.assertEqual(cfg["models"]["approver"], "default")
-        self.assertEqual(cfg["efforts"]["approver"], "max")
+        self.assertEqual(cfg["pipeline"][1]["providers"]["claude"]["model"], "sonnet")
+        self.assertEqual(cfg["pipeline"][-1]["providers"]["claude"]["model"], "opus")
+        self.assertNotIn("efforts", cfg)
+        self.assertEqual(cfg["pipeline"][-1]["providers"]["claude"]["effort"], "max")
         self.assertEqual(cfg["merge"], "verify")
 
     def test_refuses_bad_settings(self):

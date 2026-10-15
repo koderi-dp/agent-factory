@@ -1,10 +1,24 @@
 # Software factory
 
-A Claude Code loop that takes a one-line feature to a merged branch: a spec, a
-build, four parallel reviews (security, UX, UI, code) over up to three rounds,
-and a final approve-or-escalate gate. The orchestration rules are in
-`.claude/skills/factory/SKILL.md`; each step's agent is in `.claude/agents/`.
+A configurable Claude Code or Codex pipeline that takes a feature to a merged
+branch. The default runs spec, build, four reviews and approval. Configure your
+own ordered steps with `pipeline` in
+`config.json` or dashboard Settings. The orchestration rules are in the factory
+skill's `references/workflow.md`; Python validates and advances the saved steps.
 See the agent-factory repo's README for setup.
+
+For Codex, the entrypoint is `.agents/skills/factory/SKILL.md` and the seven roles
+are Markdown instructions under `.codex/agents/*.md`. Use `$factory` in place of `/factory` for every command
+below. Install either client or both with the single-file installer's `--provider`.
+Dashboard Settings selects which client Start launches. Each pipeline execution
+has explicit model and effort settings under `providers.claude` and
+`providers.codex`. The top-level `provider` selects the Start client.
+
+Codex headless runs need a signed-in Codex CLI. Their JSONL logs have matching
+`.session.json` metadata under `jobs/`. After stopping the prior run, resume the
+exact session with `python factory/codex_runner.py resume <session-file>`, or use
+`$factory resume <job-id>` from a fresh Codex session. Automatic mode retains
+Codex's workspace-write sandbox and automatic approval review.
 
 ## Use it
 
@@ -32,5 +46,13 @@ has its own worktree, branch, ports and `job.json`.
   Any static server that lists directories also works, read-only.
 - `job.py`: the only way to change a `job.json`, merge a job or delete one. The
   orchestrator and the server both use it. `python factory/job.py --help`.
+- `pipeline.py`: validates step IDs, agent definitions, report contracts and
+  backward retry targets. New jobs snapshot their resolved pipeline, retry limit,
+  merge policy and provider model/effort choices. Config edits apply to new jobs.
+- `job.py step <id>` returns pending agent tasks. `job.py advance <id>` validates
+  fresh reports and branch state, archives evidence and transitions the job.
+- `.claude/agents/<uses>.md` or `.codex/agents/<uses>.md`: role instructions,
+  resolved by name for the selected provider. Each file declares type
+  (task/review/approval) and output in frontmatter. Add a file to define a new role.
 - `jobs/<job-id>/`: one folder per job, with `job.json`, `spec.md`,
   `build.md`, `round-<N>/review-*.md` and `decision.md`. Gitignored.

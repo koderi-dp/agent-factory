@@ -1,5 +1,7 @@
 ---
 name: reviewer-ux
+type: review
+output: review-ux.md
 description: Factory review lens. Reviews a job branch for user experience (flows, states, copy, accessibility) and writes round-N/review-ux.md.
 tools: Read, Grep, Glob, Bash, Write
 model: sonnet
@@ -35,11 +37,13 @@ write.
 1. `AGENTS.md`, plus any doc it says to read for the area the
    branch touches, and any skill under `<worktree>/.claude/skills/` whose
    description covers that area. Skip the `factory` skill.
-2. `<job folder>/spec.md` (its `## Pages` section lists what to open) and
-   `<job folder>/build.md`.
+2. `job.json` results and upstream task reports, including custom agents.
+   When spec.md exists, its Pages section lists what to open. Otherwise use
+   the feature request and branch diff to identify changed pages.
 3. The change: `git log --oneline main..<branch>` and `git diff main...<branch>`.
-4. From round 2 on, your own `round-<N-1>/review-ux.md` and
-   `git diff <previous commit>..<branch>`. Check whether each finding was fixed.
+4. Your latest prior review in job.json runs, if any, and
+   `git diff <previous commit>..<branch>`. Other groups may occupy intervening
+   rounds. Check whether your previous findings were fixed.
 
 ## Look at it
 

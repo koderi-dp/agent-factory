@@ -80,18 +80,25 @@
 <dialog id="settings" aria-labelledby="s-title">
   <form id="settings-form" method="dialog">
     <h3 id="s-title">Settings</h3>
-    <p class="note">Saved to <code>factory/config.json</code>. Jobs read it at each step, so a change applies to running jobs from their next step.</p>
+    <p class="note">Saved to <code>factory/config.json</code>. Pipeline, retry limit and merge policy apply to new jobs. Model and effort changes apply at the next step of running jobs.</p>
+    <fieldset>
+      <legend><label for="s-provider">Client for dashboard Start</label></legend>
+      <select id="s-provider" name="provider">
+        <option value="claude">Claude Code</option><option value="codex">Codex</option>
+      </select>
+      <p class="note">Each step has model and effort settings for its providers. Changes apply to new jobs.</p>
+    </fieldset>
     <fieldset>
       <legend>After the approver says APPROVE</legend>
       <label class="radio"><input type="radio" name="merge" value="auto"> Merge into main straight away</label>
       <label class="radio"><input type="radio" name="merge" value="verify"> Wait for me to check it, then I merge it here</label>
     </fieldset>
     <fieldset>
-      <legend>When you press Start and no Claude Code session is watching</legend>
-      <label class="radio"><input type="radio" name="start" value="queue"> Queue it until a session runs <code>/factory watch</code></label>
-      <label class="radio"><input type="radio" name="start" value="headless"> Start a headless Claude session in the background for it</label>
+      <legend>When you press Start and no session of that client is watching</legend>
+      <label class="radio"><input type="radio" name="start" value="queue"> Queue it until a factory watch session is ready</label>
+      <label class="radio"><input type="radio" name="start" value="headless"> Start a headless session in the background for it</label>
       <div class="sub" id="s-headless">
-        <label class="radio"><input type="radio" name="headlessPermissions" value="auto"> Auto mode: routine commands run, risky ones are blocked (recommended)</label>
+        <label class="radio"><input type="radio" name="headlessPermissions" value="auto"> Automatic approval review with the client's normal sandbox (recommended)</label>
         <label class="radio"><input type="radio" name="headlessPermissions" value="bypassPermissions"> Skip every permission check (sandboxes only)</label>
         <p class="note">A headless session asks nobody before it runs a command. Its log is in <code>factory/jobs/headless-*.log</code>.</p>
       </div>
@@ -101,6 +108,11 @@
       <select id="s-rounds" name="maxRounds">
         <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
       </select>
+    </fieldset>
+    <fieldset>
+      <legend><label for="s-pipeline">Pipeline steps (JSON)</label></legend>
+      <p class="note">uses names an agent Markdown file in .claude/agents/ or .codex/agents/ for the selected client. Each file declares type and output in its frontmatter. Each execution has id, uses and providers with explicit model and effort. Parallel groups contain execution objects. onChanges names an earlier task to retry. Finish with one approval step.</p>
+      <textarea id="s-pipeline" rows="12" spellcheck="false" class="pipeline-json"></textarea>
     </fieldset>
     <fieldset>
       <legend>Model and effort for each step</legend>

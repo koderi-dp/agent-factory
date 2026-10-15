@@ -1,5 +1,7 @@
 ---
 name: builder
+type: task
+output: build.md
 description: Factory step 2. Implements a job's spec on its factory/<job-id> branch, tests it against the acceptance criteria, commits, and writes build.md. Resumed with SendMessage after each review round.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: opus
@@ -44,10 +46,11 @@ write.
 2. Any skill under `<worktree>/.claude/skills/` whose description covers the
    area you change: its `SKILL.md` and the references it points to. Skip the
    `factory` skill.
-3. `<job folder>/spec.md`: what to build. The acceptance criteria are your test
-   plan.
-4. When you are resumed after a review round, every `review-*.md` in the round
-   folder the message names. Address each finding in a `VERDICT: CHANGES` file.
+3. `job.json` results and the available upstream task reports. If the pipeline
+   has a spec step, use spec.md and its acceptance criteria as the test plan;
+   otherwise use the feature request. Also read request.md when present.
+4. When resumed, read every CHANGES report from prior job.json runs, including
+   custom reviewers. Address each finding in those reports.
    Notes in `VERDICT: PASS` files are optional.
 5. When you are started for a rework, the `rework-*.md` file the prompt names,
    plus the existing `build.md` and every round folder, so you know the history.

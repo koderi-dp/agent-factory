@@ -15,6 +15,23 @@ const LIVE = new Set(['spec', 'build', 'review', 'approve'])
 const MERGEABLE = new Set(['approve', 'approved', 'needs-human'])
 const REVIEWERS = [['security', 'sec'], ['ux', 'ux'], ['ui', 'ui'], ['code', 'code']]
 
+function isLive(job) {
+  return job.pipeline ? job.pipeline.some((s) => s.id === job.stage) : LIVE.has(job.stage)
+}
+
+function boardStages() {
+  const steps = new Map()
+  const add = (pipeline) => pipeline.forEach((s) => {
+    if (!steps.has(s.id)) steps.set(s.id, { key: s.id, label: s.label || s.id, agents: s.agents, executions: s.executions, who: (s.agents || []).join(' · ') })
+  })
+  add(backend?.pipeline || [])
+  jobs.filter((j) => j.pipeline).forEach((j) => add(j.pipeline))
+  if (!steps.size || jobs.some((j) => !j.pipeline && !j.problem)) {
+    STAGES.slice(0, 4).forEach((s) => { if (!steps.has(s.key)) steps.set(s.key, s) })
+  }
+  return [...steps.values(), ...STAGES.slice(4)]
+}
+
 // Set when the page is served by factory/server.py: settings, merge, delete and backlog edits.
 let backend = null
 
@@ -29,31 +46,19 @@ async function api(method, path, body) {
   return data
 }
 
-function modelOf(agent) {
-  if (!backend) return null
-  const set = backend.config.models[agent]
-  return set && set !== 'default' ? set : backend.agentDefaults[agent] || 'default'
-}
-
-// The effort only shows when the settings change it from the agent file's.
-function effortOf(agent) {
-  const set = backend?.config.efforts?.[agent]
-  return set && set !== 'default' ? set : null
-}
-
 function whoOf(stage) {
-  if (!backend) return stage.who
-  if (stage.agent) return [stage.agent, modelOf(stage.agent), effortOf(stage.agent)].filter(Boolean).join(' · ')
-  if (stage.key === 'review') {
-    const models = new Set(REVIEWERS.map(([k]) => modelOf(`reviewer-${k}`)))
-    return `sec · ux · ui · code · ${[...models].join('/')}`
-  }
-  return stage.who
+  if (!backend || !stage.executions) return stage.who
+  return stage.executions.map((execution) => {
+    const selection = execution.providers[backend.config.provider]
+    return [execution.id, selection?.model, selection?.effort].filter(Boolean).join(' · ')
+  }).join(' / ')
 }
 
 const $ = (id) => document.getElementById(id)
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+
+const factoryCommand = (provider = backend?.config.provider) => provider === 'codex' ? '$factory' : '/factory'
 
 let jobs = []
 let backlog = []
@@ -116,6 +121,7 @@ function verdictOf(text) {
 
 // Earlier rounds aren't in job.json; their verdicts come from the review files.
 async function pastRounds(job) {
+  if (job.pipeline) return [] // saved pipeline runs already contain their report verdicts
   const rounds = []
   for (let n = 1; n < job.round; n++) {
     const key = `${job.id}/${n}`
@@ -158,7 +164,7 @@ async function decisionOf(job) {
   if (!['merged', 'needs-human', 'approved'].includes(job.stage)) return none
   const cached = decisions.get(job.id)
   if (cached && cached.updated === job.updated) return cached
-  const text = await fetchOptional(`/jobs/${job.id}/decision.md`).catch(() => null)
+  const text = await fetchOptional(`/jobs/${job.id}/${job.approval?.file || 'decision.md'}`).catch(() => null)
   const d = text
     ? { updated: job.updated, verdict: text.split('\n')[0].trim(), followUps: countFollowUps(text) }
     : { updated: job.updated, ...none }
@@ -166,8 +172,8 @@ async function decisionOf(job) {
   return d
 }
 
-function chips(n, verdicts, waiting) {
-  const cells = REVIEWERS.map(([k, short]) => {
+function chips(n, verdicts, waiting, reviewers = REVIEWERS) {
+  const cells = reviewers.map(([k, short]) => {
     const v = verdicts[k]
     const cls = v === 'PASS' || v === 'CHANGES' ? v : v === 'pending' ? (waiting ? 'wait' : '') : 'bad'
     const label = v === 'missing' || v === 'invalid' ? `${short}?` : short
@@ -187,7 +193,7 @@ function brokenCard(job) {
 
 function card(job, past, decision, now) {
   if (job.problem) return brokenCard(job)
-  const live = LIVE.has(job.stage)
+  const live = isLive(job)
   const human = job.stage === 'needs-human' || job.stage === 'approved'
   // Approved jobs wait here under the "verify" policy, or when the main checkout was busy at merge time.
   const parked = job.stage === 'approved' || (human && decision.verdict === 'APPROVE')
@@ -195,7 +201,17 @@ function card(job, past, decision, now) {
   const since = stageSince(job)
   const quiet = live && now - at(job.updated) > QUIET_MS
   const rows = past.map((v, i) => chips(i + 1, v, false))
-  if (job.round > 0) rows.push(chips(job.round, job.reviews || {}, job.stage === 'review'))
+  if (job.pipeline) {
+    const reviewSteps = new Map(job.pipeline.filter((s) => s.type === 'review').map((s) => [s.id, s]))
+    for (const run of job.runs || []) {
+      const step = reviewSteps.get(run.step)
+      if (step) rows.push(chips(run.round, Object.fromEntries(Object.entries(run.reports).map(([a, r]) => [a, r.verdict])), false,
+        step.agents.map((a) => [a, a.replace(/^reviewer-/, '')])))
+    }
+    const step = reviewSteps.get(job.stage)
+    if (step && job.activeRun) rows.push(chips(job.round, job.reviews || {}, true,
+      step.agents.map((a) => [a, a.replace(/^reviewer-/, '')])))
+  } else if (job.round > 0) rows.push(chips(job.round, job.reviews || {}, job.stage === 'review'))
   const [num, ...slug] = job.id.split('-')
   const meta = []
   if (live && since) meta.push(`<span title="in ${esc(job.stage)} since ${esc(new Date(since).toLocaleString())}">in ${esc(job.stage)} ${ago(now - since)}</span>`)
@@ -206,10 +222,10 @@ function card(job, past, decision, now) {
   const hint = parked && backend
     ? `${verify ? 'Approved. Check it, then open the card to merge.' : 'Approved. Clean the main checkout, then open the card to merge.'}${job.note ? `<br>${esc(job.note)}` : ''}`
     : parked
-    ? `Approved. ${verify ? 'Check it, then merge' : 'Merge once the main checkout is clean'}:<br>/factory approve ${esc(job.id)}`
+    ? `Approved. ${verify ? 'Check it, then merge' : 'Merge once the main checkout is clean'}:<br>${factoryCommand(job.provider || 'claude')} approve ${esc(job.id)}`
     : human
-    ? `${job.note ? `${esc(job.note)}<br>` : ''}/factory approve ${esc(job.id)}<br>/factory rework ${esc(job.id)} …`
-    : quiet ? `No update for ${ago(now - at(job.updated))}. If its session ended:<br>/factory resume ${esc(job.id)}` : ''
+    ? `${job.note ? `${esc(job.note)}<br>` : ''}${factoryCommand(job.provider || 'claude')} approve ${esc(job.id)}<br>${factoryCommand(job.provider || 'claude')} rework ${esc(job.id)} …`
+    : quiet ? `No update for ${ago(now - at(job.updated))}. If its session ended:<br>${factoryCommand(job.provider || 'claude')} resume ${esc(job.id)}` : ''
   return `
     <button class="card ${live ? 'live' : ''} ${human ? 'human' : ''} ${job.stage === 'merged' ? 'merged' : ''}"
             data-job="${esc(job.id)}">
@@ -271,15 +287,17 @@ function renderQueue() {
 function watchHtml(edit) {
   if (!edit) return ''
   const now = Date.now()
-  const alive = watchers.filter((w) => w.busy || now - at(w.at) < WATCHER_FRESH_MS)
+  const provider = backend.config.provider || 'claude'
+  const command = factoryCommand(provider)
+  const alive = watchers.filter((w) => (w.provider || 'claude') === provider && (w.busy || now - at(w.at) < WATCHER_FRESH_MS))
   const idle = alive.filter((w) => !w.busy).length
   const busy = alive.filter((w) => w.busy)
   if (!alive.length && backend.config.start === 'headless') {
-    return `<li class="watch on">Start launches a headless Claude session (${esc(backend.config.headlessPermissions === 'auto' ? 'auto mode' : 'no permission checks')}).</li>`
+    return `<li class="watch on">Start launches a headless ${provider === 'codex' ? 'Codex' : 'Claude'} session (${esc(backend.config.headlessPermissions === 'auto' ? 'automatic review' : 'no permission checks')}).</li>`
   }
   if (!alive.length) {
     return `<li class="watch off">No session is watching, so Start only queues.
-      Run <code>/factory watch</code> in Claude Code. <button class="qbtn" data-copy="/factory watch">Copy</button></li>`
+      Run <code>${command} watch</code> in ${provider === 'codex' ? 'Codex' : 'Claude Code'}. <button class="qbtn" data-copy="${command} watch">Copy</button></li>`
   }
   const parts = []
   if (idle) parts.push(`${idle} session${idle === 1 ? '' : 's'} ready`)
@@ -336,7 +354,7 @@ async function editQueue(body) {
 
 function summaryHtml() {
   const count = (pred) => jobs.filter((j) => !j.problem && pred(j)).length
-  const running = count((j) => LIVE.has(j.stage))
+  const running = count((j) => isLive(j))
   const needs = count((j) => j.stage === 'needs-human' || j.stage === 'approved')
   const merged = count((j) => j.stage === 'merged')
   const parts = [`<span><b>${running}</b> running</span>`]
@@ -350,17 +368,19 @@ function summaryHtml() {
 async function render() {
   const problems = []
   const now = Date.now()
-  const byStage = Object.fromEntries(STAGES.map((s) => [s.key, []]))
+  const stages = boardStages()
+  document.querySelector('.board').style.setProperty('--columns', stages.length + 1)
+  const byStage = Object.fromEntries(stages.map((s) => [s.key, []]))
   const [pasts, decs] = await Promise.all([
     Promise.all(jobs.map((j) => (j.problem ? [] : pastRounds(j)))),
     Promise.all(jobs.map((j) => (j.problem ? {} : decisionOf(j)))),
   ])
   jobs.forEach((job, i) => {
-    const stage = job.problem ? 'spec' : COLUMN[job.stage] || job.stage
+    const stage = job.problem ? stages[0].key : COLUMN[job.stage] || job.stage
     if (!byStage[stage]) problems.push(`Job ${job.id} has unknown stage "${job.stage}"`)
     else byStage[stage].push(card(job, pasts[i], decs[i], now))
   })
-  const html = STAGES.map((s) => {
+  const html = stages.map((s) => {
     // Newest first within a column.
     let cards = byStage[s.key].reverse()
     let more = ''
@@ -371,7 +391,7 @@ async function render() {
     return `
     <section class="col ${s.cls || ''}">
       <div class="col-head">
-        <h2>${s.label}</h2><span class="who">${esc(whoOf(s))}</span>
+        <h2>${esc(s.label)}</h2><span class="who">${esc(whoOf(s))}</span>
         <span class="count">${byStage[s.key].length || ''}</span>
       </div>
       ${cards.join('') || '<div class="empty">—</div>'}${more}
@@ -469,6 +489,9 @@ async function loadBackend() {
     backend = null
   }
   $('open-settings').hidden = !backend
+  for (const span of document.querySelectorAll('footer span')) {
+    span.textContent = span.textContent.replace(/^[/\$]factory/, factoryCommand())
+  }
 }
 
 // ---- Drawer --------------------------------------------------------------
@@ -479,11 +502,11 @@ let acting = false
 function actionsHtml(job) {
   if (!backend) return ''
   const buttons = []
-  if (MERGEABLE.has(job.stage) && job.stage !== 'approve') {
+  if (MERGEABLE.has(job.stage) && job.stage !== 'approve' && (!job.pipeline || job.pipelineComplete)) {
     const approved = job.stage === 'approved' || decisions.get(job.id)?.verdict === 'APPROVE'
     buttons.push(`<button class="btn primary" data-action="merge" ${acting ? 'disabled' : ''}>${approved ? 'Merge into main' : 'Merge anyway'}</button>`)
   }
-  if (!LIVE.has(job.stage)) {
+  if (!isLive(job)) {
     buttons.push(`<button class="btn danger" data-action="delete" ${acting ? 'disabled' : ''}>Delete job</button>`)
   }
   return buttons.join('')
@@ -525,30 +548,70 @@ async function act(action) {
 
 // ---- Settings ------------------------------------------------------------
 
-function options(choices, current, fileValue) {
-  // An agent file without an effort line runs at the session's effort.
-  const label = fileValue === 'session' ? 'session default' : `agent file (${esc(fileValue || 'default')})`
-  return `<option value="default">${label}</option>` +
-    choices.map((c) => `<option value="${esc(c)}" ${current === c ? 'selected' : ''}>${esc(c)}</option>`).join('')
+function options(choices, current) {
+  const values = current && !choices.includes(current) ? [current, ...choices] : choices
+  return `<option value="" ${current ? '' : 'selected'}>Choose a value</option>` +
+    values.map((c) => `<option value="${esc(c)}" ${current === c ? 'selected' : ''}>${esc(c)}</option>`).join('')
+}
+
+function pipelineExecutions(pipeline) {
+  return pipeline.flatMap((step, i) => step.parallel
+    ? step.parallel.map((execution, j) => ({ execution, key: `${i}/${j}`, label: `${step.id} / ${execution.id}` }))
+    : [{ execution: step, key: `${i}`, label: step.id }])
+}
+
+let settingsDraft = null
+let settingsProvider = 'claude'
+let settingsPipelineText = ''
+
+function renderAgentSettings(provider) {
+  settingsProvider = provider
+  const { models, efforts } = backend.choices[provider]
+  settingsPipelineText = $('s-pipeline').value
+  try {
+    const entries = pipelineExecutions(JSON.parse(settingsPipelineText))
+    $('s-models').innerHTML = '<span class="mh">Step</span><span class="mh">Model</span><span class="mh">Effort</span>' +
+      entries.map(({ execution, key, label }) => {
+        const selection = execution.providers?.[provider] || {}
+        return `<span class="agent">${esc(label)} · ${esc(execution.uses)}</span>
+          <select data-model="${key}" aria-label="${esc(label)} model">${options(models, selection.model)}</select>
+          <select data-effort="${key}" aria-label="${esc(label)} effort">${options(efforts, selection.effort)}</select>`
+      }).join('')
+  } catch (err) {
+    $('s-models').textContent = 'Enter a valid pipeline to edit its models and effort.'
+  }
+}
+
+function storeAgentSettings() {
+  // Manual JSON edits take priority over controls rendered from older JSON.
+  if ($('s-pipeline').value !== settingsPipelineText) return
+  const pipeline = JSON.parse($('s-pipeline').value)
+  for (const { execution, key } of pipelineExecutions(pipeline)) {
+    const model = $('s-models').querySelector(`[data-model="${key}"]`)?.value
+    const effort = $('s-models').querySelector(`[data-effort="${key}"]`)?.value
+    if (model || effort) {
+      execution.providers ||= {}
+      execution.providers[settingsProvider] = { model, effort }
+    } else if (execution.providers) {
+      delete execution.providers[settingsProvider]
+    }
+  }
+  $('s-pipeline').value = JSON.stringify(pipeline, null, 2)
+  settingsPipelineText = $('s-pipeline').value
 }
 
 function openSettings() {
-  const { config, agents, models, efforts, agentDefaults, agentEfforts } = backend
+  const { config } = backend
+  settingsDraft = JSON.parse(JSON.stringify(config))
   const form = $('settings-form')
+  form.elements.provider.value = config.provider
   form.elements.merge.value = config.merge
   form.elements.start.value = config.start
   form.elements.headlessPermissions.value = config.headlessPermissions
   $('s-headless').hidden = config.start !== 'headless'
   form.elements.maxRounds.value = String(config.maxRounds)
-  $('s-models').innerHTML = '<span class="mh">Step</span><span class="mh">Model</span><span class="mh">Effort</span>' +
-    agents.map((a) => `
-    <span class="agent" id="s-agent-${a}">${esc(a)}</span>
-    <select data-model="${esc(a)}" aria-label="${esc(a)} model">
-      ${options(models, config.models[a], agentDefaults[a])}
-    </select>
-    <select data-effort="${esc(a)}" aria-label="${esc(a)} effort">
-      ${options(efforts, config.efforts[a], agentEfforts[a])}
-    </select>`).join('')
+  $('s-pipeline').value = JSON.stringify(config.pipeline, null, 2)
+  renderAgentSettings(config.provider)
   showMsg('s-msg', '')
   $('settings').showModal()
 }
@@ -556,11 +619,13 @@ function openSettings() {
 async function saveSettings(e) {
   e.preventDefault()
   const form = $('settings-form')
-  const pick = (attr) => Object.fromEntries([...form.querySelectorAll(`[data-${attr}]`)].map((s) => [s.dataset[attr], s.value]))
   try {
+    storeAgentSettings()
+    const pipeline = JSON.parse($('s-pipeline').value)
     await api('PUT', '/api/config', {
-      models: pick('model'),
-      efforts: pick('effort'),
+      ...settingsDraft,
+      pipeline,
+      provider: form.elements.provider.value,
       merge: form.elements.merge.value,
       start: form.elements.start.value,
       headlessPermissions: form.elements.headlessPermissions.value,
@@ -577,6 +642,12 @@ async function saveSettings(e) {
 $('open-settings').addEventListener('click', openSettings)
 $('settings-form').addEventListener('submit', saveSettings)
 $('settings-form').addEventListener('change', (e) => {
+  if (e.target.name === 'provider') {
+    try { storeAgentSettings() } catch (err) { showMsg('s-msg', err.message, 'error') }
+    renderAgentSettings(e.target.value)
+  }
+  if (e.target.id === 's-pipeline') renderAgentSettings(settingsProvider)
+  if (e.target.dataset.model || e.target.dataset.effort) storeAgentSettings()
   if (e.target.name === 'start') $('s-headless').hidden = e.target.value !== 'headless'
 })
 document.querySelector('[data-settings-cancel]').addEventListener('click', () => $('settings').close())

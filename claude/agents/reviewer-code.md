@@ -1,5 +1,7 @@
 ---
 name: reviewer-code
+type: review
+output: review-code.md
 description: Factory review lens. Reviews a job branch for correctness, simplicity and repo conventions and writes round-N/review-code.md.
 tools: Read, Grep, Glob, Bash, Write
 model: sonnet
@@ -35,11 +37,13 @@ write.
 1. `AGENTS.md`, plus any doc it says to read for the area the
    branch touches, and any skill under `<worktree>/.claude/skills/` whose
    description covers that area. Skip the `factory` skill.
-2. `<job folder>/spec.md` and `<job folder>/build.md`.
+2. `job.json` results and upstream task reports, including custom agents.
+   Read spec.md/build.md when present; otherwise use the feature request.
 3. The change: `git log --oneline main..<branch>` and `git diff main...<branch>`.
    Read the changed files in full where the diff isn't enough.
-4. From round 2 on, your own `round-<N-1>/review-code.md` and
-   `git diff <previous commit>..<branch>`. Check whether each finding was fixed.
+4. Your latest prior review in job.json runs, if any, and
+   `git diff <previous commit>..<branch>`. Other groups may occupy intervening
+   rounds. Check whether your previous findings were fixed.
 
 ## Check
 

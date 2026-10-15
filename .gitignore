@@ -2,7 +2,7 @@
 /factory/jobs/
 *.tmp
 
-# Generated from claude/ by sync-claude.ps1
+# Local factory installation
 /.claude/
 
 # Python

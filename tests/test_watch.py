@@ -41,12 +41,21 @@ class WatchTests(unittest.TestCase):
     def test_two_watchers_never_get_the_same_request(self):
         job.request_start("Only one")
         results = []
-        threads = [threading.Thread(target=lambda w=w: results.append(job.wait(w, timeout=2)))
+        errors = []
+
+        def claim(watcher):
+            try:
+                results.append(job.wait(watcher, timeout=2))
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=claim, args=(w,))
                    for w in ("w-a", "w-b")]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+        self.assertEqual(errors, [])
         self.assertEqual(sorted(r["item"] for r in results if r), ["Only one"])
 
     def test_cancel_and_unwatch(self):

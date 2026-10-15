@@ -1,5 +1,8 @@
 ---
 name: spec-writer
+type: task
+output: spec.md
+contract: spec
 description: Factory step 1. Turns a one-line feature request into factory/jobs/<job-id>/spec.md with testable acceptance criteria.
 tools: Read, Grep, Glob, Bash, Write
 model: opus

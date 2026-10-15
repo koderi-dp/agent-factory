@@ -4,7 +4,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 
-from helpers import Repo, job
+from helpers import Repo, execution, job, write_agent
 
 import server
 
@@ -63,10 +63,42 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("haiku", body["models"])
         self.assertIn("max", body["efforts"])
-        status, body, _ = self.request("PUT", "/api/config", {"merge": "verify", "efforts": {"builder": "high"}})
-        self.assertEqual((status, body["config"]["merge"], body["config"]["efforts"]["builder"]), (200, "verify", "high"))
+        cfg = body["config"]
+        cfg["merge"] = "verify"
+        cfg["pipeline"][1]["providers"]["claude"]["effort"] = "high"
+        status, body, _ = self.request("PUT", "/api/config", cfg)
+        self.assertEqual((status, body["config"]["merge"], body["config"]["pipeline"][1]["providers"]["claude"]["effort"]), (200, "verify", "high"))
         status, body, _ = self.request("PUT", "/api/config", {"merge": "never"})
         self.assertEqual(status, 400)
+
+    def test_codex_settings_and_choices_round_trip(self):
+        cfg = job.check_config({"provider": "codex"})
+        cfg["pipeline"][1]["providers"]["claude"]["model"] = "sonnet"
+        cfg["pipeline"][1]["providers"]["codex"]["model"] = "gpt-6-luna"
+        status, body, _ = self.request("PUT", "/api/config", cfg)
+        self.assertEqual(status, 200)
+        status, body, _ = self.request("GET", "/api/config")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["config"]["pipeline"][1]["providers"]["claude"]["model"], "sonnet")
+        self.assertEqual(body["config"]["pipeline"][1]["providers"]["codex"]["model"], "gpt-6-luna")
+        self.assertIn("gpt-6-luna", body["models"])
+        self.assertNotIn("opus", body["models"])
+        self.assertIn("opus", body["choices"]["claude"]["models"])
+        self.assertEqual(body["providers"], ["claude", "codex"])
+
+    def test_custom_pipeline_config_and_validation(self):
+        write_agent(self.repo, "writer", "task", "draft.md")
+        cfg = {"pipeline": [execution("draft", "writer"), execution("gate", "approver")]}
+        status, _, _ = self.request("PUT", "/api/config", cfg)
+        self.assertEqual(status, 200)
+        status, body, _ = self.request("GET", "/api/config")
+        self.assertEqual(status, 200)
+        self.assertIn("writer", body["agents"])
+        self.assertEqual(body["pipeline"][0]["agents"], ["writer"])
+        before = job.CONFIG.read_bytes()
+        status, _, _ = self.request("PUT", "/api/config", {**cfg, "pipeline": [{"id": "oops", "uses": "missing"}]})
+        self.assertEqual(status, 400)
+        self.assertEqual(job.CONFIG.read_bytes(), before)
 
     def test_merge_and_delete(self):
         self.repo.add_job("001-a")

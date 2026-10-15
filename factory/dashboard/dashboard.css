@@ -144,11 +144,12 @@ legend label { color: inherit; }
 
 /* Board */
 .board {
-  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px;
+  display: grid; grid-template-columns: repeat(var(--columns, 7), minmax(180px, 1fr)); gap: 12px;
   padding: 20px 32px 40px; align-items: start;
 }
 .col { min-width: 0; }
 .stage-cols { display: contents; }
+.pipeline-json { width: 100%; box-sizing: border-box; font-family: monospace; resize: vertical; }
 .col-head {
   display: flex; align-items: center; gap: 8px; padding: 0 2px 10px;
   border-bottom: 1px solid var(--line); margin-bottom: 12px; position: relative;

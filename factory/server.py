@@ -6,7 +6,7 @@ It listens on 127.0.0.1 only. Every request must name this server in its Host
 header, and every change must send `X-Factory: 1`, so other web pages can't
 drive it. Without it, `python -m http.server` still serves a read-only board.
 
-  GET  /api/config                 settings, the model and effort each agent file names, and the choices
+  GET  /api/config                 settings, resolved pipeline and provider model/effort choices
   PUT  /api/config                 replace the settings
   POST /api/jobs/<job-id>/merge    merge an approved or waiting job
   POST /api/jobs/<job-id>/delete   remove a job's worktree, branch and folder ({"force": true} for a live one)
@@ -32,21 +32,6 @@ import job  # noqa: E402  factory/job.py; Python puts this script's folder on th
 BACKLOG = job.FACTORY / "backlog.md"
 ITEM = re.compile(r"^[-*]\s+\[[ xX]\]\s+\S")
 UNCHECKED = re.compile(r"^[-*]\s+\[ \]\s+\S")
-
-
-def agent_defaults(field, absent):
-    """What each agent file's frontmatter says for a field, for the settings panel."""
-    out = {}
-    try:
-        agents = job.repo_root() / ".claude" / "agents"
-    except job.JobError:
-        return out
-    for name in job.AGENTS:
-        path = agents / f"{name}.md"
-        if path.exists():
-            m = re.search(rf"^{field}:\s*(\S+)", path.read_text(encoding="utf-8"), re.M)
-            out[name] = m.group(1) if m else absent
-    return out
 
 
 def backlog_blocks(lines):
@@ -95,18 +80,28 @@ def new_items(body):
 
 def start_headless(permissions):
     """Launch a background `/factory watch --once` session that takes the next start request."""
-    claude = shutil.which("claude")
-    if not claude:
-        raise job.JobError("the claude command isn't on PATH, so Start can't launch a headless session")
+    provider = job.load_config()["provider"]
+    executable = shutil.which(provider)
+    if not executable:
+        raise job.JobError(f"the {provider} command isn't on PATH, so Start can't launch a headless session")
+    repo = job.repo_root()
+    required = (repo / ".agents/skills/factory/SKILL.md" if provider == "codex"
+                else repo / ".claude/skills/factory/SKILL.md")
+    if not required.is_file():
+        raise job.JobError(f"install the {provider} factory skill first: {required}")
+    job.JOBS.mkdir(exist_ok=True)
     log = job.JOBS / f"headless-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 10_000:04}.log"
     # Its own process group, so it keeps running if the dashboard server stops. On Windows it gets
     # one hidden console that every command it runs shares; with no console at all (DETACHED_PROCESS)
     # each git or python call would open a window of its own.
     flags = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
              if os.name == "nt" else {"start_new_session": True})
+    args = ([sys.executable, str(job.FACTORY / "codex_runner.py"), "run",
+             str(log.with_suffix(".session.json")), "--permissions", permissions]
+            if provider == "codex" else
+            [executable, "-p", "/factory watch --once", "--permission-mode", permissions])
     with open(log, "w", encoding="utf-8") as out:
-        subprocess.Popen([claude, "-p", "/factory watch --once", "--permission-mode", permissions],
-                         cwd=job.repo_root(), stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, **flags)
+        subprocess.Popen(args, cwd=repo, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, **flags)
     return log.name
 
 
@@ -130,8 +125,12 @@ def edit_backlog(body):
         request = job.request_start(title)
         cfg = job.load_config()
         # A session that is already watching takes it; launch one only when none is ready.
-        if not queued and cfg["start"] == "headless" and not job.idle_watchers():
-            request["headless"] = start_headless(cfg["headlessPermissions"])
+        if not queued and cfg["start"] == "headless" and not job.idle_watchers(cfg["provider"]):
+            try:
+                request["headless"] = start_headless(cfg["headlessPermissions"])
+            except (job.JobError, OSError) as exc:
+                job.cancel_request(title)  # leave Start retryable after the missing tool is installed
+                raise job.JobError(str(exc))
         return request
     if action == "add":
         blocks.extend(new_items(body))
@@ -193,13 +192,21 @@ class Handler(SimpleHTTPRequestHandler):
             return self.end_headers()
         if self.path.split("?")[0] == "/api/config":
             try:
+                cfg = job.load_config()
+                _, steps, registry = job.pipeline.resolve(cfg["pipeline"], root=job.FACTORY.parent, provider=cfg["provider"])
+                choices = {provider: {
+                    "models": sorted(job.CODEX_MODELS if provider == "codex" else job.MODELS),
+                    "efforts": list(job.EFFORTS),
+                } for provider in sorted(job.PROVIDERS)}
                 return self.send_json(200, {
-                    "config": job.load_config(),
-                    "agentDefaults": agent_defaults("model", "inherit"),
-                    "agentEfforts": agent_defaults("effort", "session"),
-                    "models": sorted(job.MODELS - {"default"}),
-                    "efforts": [e for e in job.EFFORTS if e != "default"],
-                    "agents": list(job.AGENTS),
+                    "config": cfg,
+                    **choices[cfg["provider"]],
+                    "choices": choices,
+                    "providers": sorted(job.PROVIDERS),
+                    "agents": list(registry),
+                    "builtins": list(job.AGENTS),
+                    "pipeline": steps,
+                    "pipelineAgents": registry,
                 })
             except job.JobError as err:
                 return self.send_json(500, {"error": str(err)})
@@ -219,7 +226,7 @@ class Handler(SimpleHTTPRequestHandler):
             if m and self.command == "POST":
                 job_id, action = m.groups()
                 if action == "merge":
-                    return self.send_json(200, {"message": job.merge(job_id)})
+                    return self.send_json(200, {"message": job.merge(job_id, human=True)})
                 return self.send_json(200, {"message": job.delete(job_id, bool(body.get("force")))})
             if path == "/api/backlog" and self.command == "POST":
                 result = edit_backlog(body)
