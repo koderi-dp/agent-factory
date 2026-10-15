@@ -15,6 +15,7 @@ from typing import Any
 from agent_factory import __version__
 from agent_factory.engine import db
 from agent_factory.engine.config import RepoConfig
+from agent_factory.engine.crash import crash_at
 
 Row = Mapping[str, Any]
 TERMINAL = {"done", "failed", "stopped", "superseded"}
@@ -365,6 +366,7 @@ def advance_job(connection: sqlite3.Connection, job_id: str, *, current_head: st
         job, executions = load(connection, job_id)
         transition = advance(job, executions, results, current_head=current_head)
         _apply(connection, job_id, transition, _now())
+        crash_at("before_advance_commit")
     return transition
 
 

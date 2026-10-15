@@ -1,9 +1,13 @@
 """SQLite connections, short write transactions, and packaged SQL migrations."""
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeVar
+
+T = TypeVar("T")
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
@@ -20,8 +24,40 @@ def connect(path: str | Path) -> sqlite3.Connection:
     except BaseException:
         connection.close()
         raise
-    # TODO (plan §6.2, §6.4): the service owns one writer thread per open DB.
     return connection
+
+
+class Writer:
+    """Own a connection on one dedicated thread; never move it between threads.
+
+    Service code submits short synchronous operations. Process/file IO and waits
+    belong outside these operations. API reads use their own connections (§6.2).
+    """
+
+    def __init__(self, path: str | Path, migrations: str | Path) -> None:
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="factory-db")
+
+        def open_connection() -> sqlite3.Connection:
+            connection = connect(path)
+            try:
+                migrate(connection, migrations)
+            except BaseException:
+                connection.close()
+                raise
+            return connection
+
+        try:
+            self._connection = self._executor.submit(open_connection).result()
+        except BaseException:
+            self._executor.shutdown()
+            raise
+
+    def call(self, operation: Callable[[sqlite3.Connection], T]) -> T:
+        return self._executor.submit(operation, self._connection).result()
+
+    def close(self) -> None:
+        self.call(lambda connection: connection.close())
+        self._executor.shutdown()
 
 
 @contextmanager
