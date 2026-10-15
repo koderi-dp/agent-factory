@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a14112-d267-7442-b100-122cf0921e89"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'Write-Output LONG_START; Start-Sleep -Seconds 12; Write-Output LONG_END'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'Write-Output LONG_START; Start-Sleep -Seconds 12; Write-Output LONG_END'","aggregated_output":"LONG_START\r\nLONG_END\r\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"LONG_DONE"}}
+{"type":"turn.completed","usage":{"input_tokens":27581,"cached_input_tokens":14848,"cache_write_input_tokens":0,"output_tokens":68,"reasoning_output_tokens":0}}

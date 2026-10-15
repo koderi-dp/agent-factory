@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a14113-f5a2-7700-90e4-61a3a9c3541b"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll run the exact command once through the shell tool."}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'cmd /c echo DENIED_PROBE'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'cmd /c echo DENIED_PROBE'","aggregated_output":"DENIED_PROBE\r\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"DENIED_PROBE"}}
+{"type":"turn.completed","usage":{"input_tokens":27549,"cached_input_tokens":24064,"cache_write_input_tokens":0,"output_tokens":69,"reasoning_output_tokens":0}}

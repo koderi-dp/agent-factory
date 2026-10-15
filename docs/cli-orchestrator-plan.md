@@ -1644,6 +1644,14 @@ To be answered by Phase 0 spikes or by the maintainer:
 1. Does `claude -p --permission-mode auto` stop or continue after a denial, and how is that reported?
    Deferred to session 1.11 until Claude usage returns; partial rate-limit captures are not an answer.
 2. Is there a Codex `exec` flag for system/developer instructions?
+   Answered by session 0.2 on Windows with codex-cli 0.162.1: `-c developer_instructions=…`
+   works; `--strict-config -c system_instructions=…` exits 1 (unknown field).
+   Prepending also worked in the measured sample. Keep §8.1's prepend default:
+   no cache advantage was established, and large `-c` values exceeded the Windows
+   `codex.cmd` argument limit. Two completed consecutive shorter developer-instruction
+   runs each reported 1,792 cached / 14,357 input tokens. Commands, complete fixtures,
+   denial/continuation details and limitations are recorded in [spikes.md](spikes.md).
+   Claude spikes 1, 2, 6 and its half of 7 remain deferred to session 1.11.
 3. **Names:** is `agent-factory` free on PyPI? Is `factory` too generic a command name
    (collisions with other tools on PATH)? Proposal: package `agent-factory`, commands
    `agent-factory` and the short alias `factory`; skills call `agent-factory` to avoid any clash.
