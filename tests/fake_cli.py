@@ -95,8 +95,8 @@ def sandbox_execution(scenario: dict) -> str:
         subprocess.run(["git", "commit", "-m", title], check=True, capture_output=True)
         return "STATUS: READY\n\n## Checks run\nnode --test: PASS\n"
     subprocess.run(["node", "--test"], check=True, capture_output=True)
-    return ("APPROVE"
-            if role == "approver" else "VERDICT: PASS") + "\n\n## Checks run\nnode --test: PASS\n"
+    return ("APPROVE" if role in {"approver", "fast-approver"} else
+            "VERDICT: PASS") + "\n\n## Checks run\nnode --test: PASS\n"
 
 
 def main() -> int:

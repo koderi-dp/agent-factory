@@ -1,4 +1,4 @@
-"""Full v2 sandbox acceptance with real git/SQLite/processes and the fake Codex CLI."""
+"""Fast/Full acceptance with real git/SQLite/processes and the fake Codex CLI."""
 
 import json
 import os
@@ -10,17 +10,19 @@ from agent_factory.engine import pipeline, ports
 from test_engine_gitops import repo, add_job, context_for
 
 
-def test_full_six_jobs_across_two_repos(tmp_path_factory, monkeypatch):
+@pytest.mark.parametrize("pipeline_name, calls", [("full", 42), ("fast", 12)])
+def test_six_jobs_across_two_repos(tmp_path_factory, monkeypatch, pipeline_name, calls):
     tmp_path = tmp_path_factory.mktemp("sb")
     original_home = str(tmp_path / "unrelated-machine")
     monkeypatch.setenv("FACTORY_HOME", original_home)
     suite = tmp_path / "sandbox č with spaces"
     sandbox.new(suite)
     result = sandbox.run(suite,
+                         pipeline=pipeline_name,
                          timeout=240,
                          port_range="32000-32899" if os.name == "nt" else "33000-33899")
     assert os.environ["FACTORY_HOME"] == original_home
-    assert result["jobs"] == 6 and result["attempts"] == 42
+    assert result["jobs"] == 6 and result["attempts"] == calls
     assert result["peak_live"] == 6 and result["peak_repos"] == 2
     assert result["all_merged"]
     assert result["claude_parity"] == "pending session 1.11"
@@ -33,7 +35,7 @@ def test_full_six_jobs_across_two_repos(tmp_path_factory, monkeypatch):
             assert len(jobs) == 3 and {job["state"] for job in jobs} == {"merged"}
             executions = [dict(row) for row in connection.execute("SELECT * FROM executions")]
             attempts = [dict(row) for row in connection.execute("SELECT * FROM attempts")]
-            assert len(executions) == len(attempts) == 21
+            assert len(executions) == len(attempts) == calls // 2
             assert {row["state"] for row in attempts} == {"valid"}
             assert {row["n"] for row in attempts} == {1}
             assert {row["kind"] for row in attempts} == {"fresh"}
@@ -49,7 +51,7 @@ def test_full_six_jobs_across_two_repos(tmp_path_factory, monkeypatch):
                 browser_sessions.add(session)
                 assert packet["paths"]["artifacts_dir"] == str(directory.resolve())
                 assert packet["paths"]["ports"] == (", ".join(map(str, assigned)) or "none")
-                if execution["uses"] == "builder":
+                if execution["uses"] == "builder" and pipeline_name == "full":
                     assert "The requested feature works" in packet["acceptance_criteria"]
                 assert (directory / "report.md").exists()
         finally:
@@ -65,8 +67,8 @@ def test_full_six_jobs_across_two_repos(tmp_path_factory, monkeypatch):
     with pytest.raises(ValueError, match="already has jobs"):
         sandbox.run(suite)
     assert os.environ["FACTORY_HOME"] == original_home
-    continued = sandbox.run(suite, resume=True)
-    assert continued["attempts"] == 42 and continued["resumed"]
+    continued = sandbox.run(suite, resume=True, pipeline=pipeline_name)
+    assert continued["attempts"] == calls and continued["resumed"]
     assert continued["peak_repos"] == 2
     root = sandbox.repos(suite)[0]
     with (root / "src/app.js").open("a") as stream:
@@ -92,3 +94,32 @@ def test_resume_requires_a_six_job_suite(tmp_path):
     sandbox.new(suite)
     with pytest.raises(ValueError, match="existing six-job suite"):
         sandbox.run(suite, resume=True)
+
+
+def test_benchmark_continues_independent_jobs_after_a_blocker(tmp_path, monkeypatch):
+    original = sandbox.SandboxAdapter.prepare
+
+    def prepare(adapter, context):
+        prepared = original(adapter, context)
+        if context.execution["uses"] == "builder" and "Add button" in context.job["title"]:
+            path = context.directory / "scenario.json"
+            scenario = json.loads(path.read_text(encoding="utf-8"))
+            scenario.pop("sandbox")
+            scenario["report"] = "STATUS: BLOCKED\n\n## Blocked\nFixture blocker.\n"
+            sandbox.run_cli.atomic_json(path, scenario)
+        return prepared
+
+    monkeypatch.setattr(sandbox.SandboxAdapter, "prepare", prepare)
+    suite = tmp_path / "blocked-suite"
+    sandbox.new(suite, model="benchmark-model", effort="medium")
+    result = sandbox.run(suite,
+                         pipeline="fast",
+                         keep_going=True,
+                         timeout=240,
+                         port_range="32000-32899" if os.name == "nt" else "33000-33899")
+    assert not result["all_merged"]
+    assert len(result["failures"]) == 2
+    assert result["profiles"] == [["benchmark-model", "medium"]]
+    rows = sandbox.benchmark_rows(suite)
+    assert sum(row["state"] == "merged" for row in rows) == 4
+    assert sum(row["state"] == "needs_human" for row in rows) == 2

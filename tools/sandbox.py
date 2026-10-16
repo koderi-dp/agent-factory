@@ -8,7 +8,8 @@ uv run --locked python tools/sandbox.py status
 
 --dir is the suite directory; machine/ is its isolated FACTORY_HOME. Evidence is
 retained there. Claude/mixed-provider parity remains deferred to session 1.11.
-The bench command still reads a legacy v1 repo; v2 benchmarking is session 2.3.
+Use run --pipeline fast for Fast; new --model/--effort choose Codex profiles.
+bench --compare OTHER_SUITE compares Fast and Full by feature and repo.
 """
 
 import argparse
@@ -19,6 +20,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -63,7 +65,7 @@ def repos(suite: Path) -> list[Path]:
     return [suite / "todo-app-1", suite / "todo-app-2"]
 
 
-def new(suite: Path) -> None:
+def new(suite: Path, *, model: str = "gpt-6-luna", effort: str = "low") -> None:
     if suite.exists():
         raise ValueError(f"{suite} already exists; use a fresh --dir or clean first")
     suite.mkdir(parents=True)
@@ -84,14 +86,14 @@ def new(suite: Path) -> None:
             for steps in config["pipelines"].values():
                 for step in steps:
                     for entry in step.get("parallel", [step]):
-                        entry["profiles"]["codex"] = {"model": "gpt-6-luna", "effort": "low"}
+                        entry["profiles"]["codex"] = {"model": model, "effort": effort}
             run_cli.atomic_json(path, config)
             (root / "factory/backlog.md").write_text("# Backlog\n\n" + "".join(f"- [ ] {item}\n"
                                                                                for item in BACKLOG),
                                                      encoding="utf-8")
             gitops.checked("add", "-A", cwd=root)
             gitops.checked("commit", "-q", "-m", "Configure the v2 sandbox", cwd=root)
-    print(f"Sandbox ready: {suite} (two repos, Full, Codex Luna/Light)", flush=True)
+    print(f"Sandbox ready: {suite} (two repos, Codex {model}/{effort})", flush=True)
 
 
 class SandboxAdapter(CodexAdapter):
@@ -213,7 +215,9 @@ def run(suite: Path,
         real: bool = False,
         timeout: float = 3600,
         port_range: str | None = None,
-        resume: bool = False) -> dict:
+        resume: bool = False,
+        pipeline: str = "full",
+        keep_going: bool = False) -> dict:
     if not all((root / "factory/config.json").exists() for root in repos(suite)):
         raise ValueError("no v2 sandbox; run new first")
     with isolated_home(suite):
@@ -249,7 +253,7 @@ def run(suite: Path,
                 # Queue every feature in both repos before the first scheduling tick.
                 for identifier in runtime.scheduler.repos:
                     for _ in BACKLOG:
-                        runtime.edit_backlog(identifier, {"action": "start", "pipeline": "full"})
+                        runtime.edit_backlog(identifier, {"action": "start", "pipeline": pipeline})
             previous = None
             while time.monotonic() - started < timeout:
                 runtime.tick()
@@ -273,17 +277,21 @@ def run(suite: Path,
                     print(json.dumps(summary), flush=True)
                     previous = summary
                 failed = [row for row in summary if row[2] in {"paused", "needs_human"}]
-                if failed:
+                if failed and not keep_going:
                     raise AssertionError(f"jobs need intervention: {failed}")
-                if all(j["state"] == "merged" for jobs in states.values() for j in jobs):
+                finished = {"merged", "paused", "needs_human"} if keep_going else {"merged"}
+                if all(j["state"] in finished for jobs in states.values()
+                       for j in jobs) and not runtime.scheduler.recount():
                     break
                 time.sleep(0.1 if not real else 0.5)
             else:
                 raise TimeoutError("sandbox jobs did not finish before timeout")
-            for root in repos(suite):
-                verify_main(root)
+            all_merged = all(j["state"] == "merged" for jobs in states.values() for j in jobs)
+            if all_merged:
+                for root in repos(suite):
+                    verify_main(root)
             runtime.supervisor.sync_ports()
-            if runtime.scheduler.machine.call(
+            if all_merged and runtime.scheduler.machine.call(
                     lambda c: c.execute("SELECT count(*) FROM port_leases").fetchone()[0]):
                 raise AssertionError("merged jobs retained port leases")
             attempts = []
@@ -300,19 +308,37 @@ def run(suite: Path,
             if peak_repos != 2:
                 raise AssertionError("both repos never ran concurrently")
             result = {
-                "provider": "codex" if real else "fake",
-                "model": "gpt-6-luna",
-                "effort": "low",
-                "jobs": 6,
-                "attempts": len(attempts),
-                "wall_seconds": round(time.monotonic() - started, 2),
-                "peak_live": peak_live,
-                "peak_repos": peak_repos,
+                "provider":
+                "codex" if real else "fake",
+                "profiles": [
+                    list(profile) for profile in sorted({(e["model"], e["effort"])
+                                                         for identifier in states
+                                                         for job in states[identifier]
+                                                         for e in runtime.snapshot(
+                                                             identifier, job["id"])["executions"]})
+                ],
+                "pipeline":
+                pipeline,
+                "jobs":
+                6,
+                "attempts":
+                len(attempts),
+                "wall_seconds":
+                round(time.monotonic() - started, 2),
+                "peak_live":
+                peak_live,
+                "peak_repos":
+                peak_repos,
                 "leases": [list(row) for row in sorted(lease_history)],
-                "all_merged": True,
-                "resumed": resume,
-                "ignore_user_config": real,
-                "claude_parity": "pending session 1.11"
+                "all_merged":
+                all_merged,
+                "failures": [list(row) for row in failed],
+                "resumed":
+                resume,
+                "ignore_user_config":
+                real,
+                "claude_parity":
+                "pending session 1.11"
             }
             run_cli.atomic_json(suite / "result.json", result)
             print(json.dumps(result, indent=2), flush=True)
@@ -364,7 +390,7 @@ def clean(suite: Path) -> None:
 
 
 def _timestamp(value):
-    """Parse the UTC timestamps stored in v1 job history."""
+    """Parse UTC timestamps from v1 history or v2 attempts."""
     if not isinstance(value, str):
         return None
     try:
@@ -393,7 +419,12 @@ def _log_usage(path):
 
 
 def benchmark_rows(sandbox):
-    """Read v1 jobs and their corresponding headless logs into printable rows."""
+    """Read a v2 suite/repo, or legacy v1 jobs without modifying evidence."""
+    databases = sorted(sandbox.glob("*/factory/state/factory.db"))
+    if (sandbox / "factory/state/factory.db").is_file():
+        databases = [sandbox / "factory/state/factory.db"]
+    if databases:
+        return [row for path in databases for row in _engine_benchmark_rows(path)]
     rows = []
     jobs_dir = sandbox / "factory" / "jobs"
     for path in sorted(jobs_dir.glob("*/job.json")):
@@ -451,6 +482,85 @@ def benchmark_rows(sandbox):
     return rows
 
 
+def _sum_known(values: list[float | int | None]) -> float | int | None:
+    return sum(values) if values and all(value is not None for value in values) else None
+
+
+def _elapsed(start: str | None, end: str | None) -> float | None:
+    a, b = _timestamp(start), _timestamp(end)
+    return b - a if a is not None and b is not None and b >= a else None
+
+
+def _engine_benchmark_rows(path: Path) -> list[dict[str, Any]]:
+    # Avoid migrations, directory creation and WAL pragma changes during measurement.
+    connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    rows = []
+    try:
+        for job in connection.execute("SELECT * FROM jobs ORDER BY seq"):
+            attempts = [
+                dict(row) for row in connection.execute(
+                    "SELECT a.*, e.step_id, e.provider, e.model, e.effort FROM attempts a "
+                    "JOIN executions e ON e.id=a.execution_id WHERE e.job_id=? ORDER BY a.id", (
+                        job["id"], ))
+            ]
+            wall = (_elapsed(job["created_at"], job["updated_at"])
+                    if job["state"] in {"approved", "merged", "cancelled", "needs_human"} else None)
+            process = [_elapsed(a["t_launch"], a["t_exit"]) for a in attempts]
+            stages = {}
+            for stage in dict.fromkeys(a["step_id"] for a in attempts):
+                stages[stage] = _sum_known(
+                    [duration for a, duration in zip(attempts, process) if a["step_id"] == stage])
+            usage = [json.loads(a["usage"]) if a["usage"] else {} for a in attempts]
+            totals = {
+                key: _sum_known([u.get(key) for u in usage])
+                for key in ("input", "cached_input", "output", "cost_usd")
+            }
+            process_total = _sum_known(process)
+            rows.append({
+                "id":
+                job["id"],
+                "feature":
+                job["title"],
+                "wall":
+                wall,
+                "stages":
+                stages,
+                "agents":
+                len(attempts),
+                "tokens":
+                _sum_known([totals["input"], totals["output"]]),
+                "cost":
+                totals["cost_usd"],
+                "repo":
+                path.parents[2].name,
+                "pipeline":
+                job["pipeline_name"],
+                "state":
+                job["state"],
+                "profiles":
+                sorted({(a["provider"], a["model"], a["effort"])
+                        for a in attempts}),
+                "input":
+                totals["input"],
+                "cached_input":
+                totals["cached_input"],
+                "output":
+                totals["output"],
+                "process":
+                process_total,
+                "overhead":
+                wall - process_total if wall is not None and process_total is not None else None,
+                "startup": [_elapsed(a["t_launch"], a["t_first_event"]) for a in attempts],
+                "validation": [_elapsed(a["t_exit"], a["t_validated"]) for a in attempts],
+                "packet_bytes":
+                _sum_known([a["packet_bytes"] for a in attempts]),
+            })
+    finally:
+        connection.close()
+    return rows
+
+
 def _duration(seconds):
     return f"{seconds:.1f}s" if seconds is not None else "unknown"
 
@@ -473,29 +583,90 @@ def _benchmark_markdown(rows):
     return "\n".join(lines)
 
 
-def bench(sandbox):
+def _cell(value: object) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _number(value: float | int | None) -> str:
+    return f"{value:.0f}" if value is not None else "unknown"
+
+
+def _durations(values: list[float | None]) -> str:
+    return ", ".join(_duration(value) for value in values) or "unknown"
+
+
+def _engine_markdown(rows: list[dict[str, Any]]) -> str:
+    lines = []
+    for row in rows:
+        lines.extend([
+            f"### {_cell(row['repo'])} / {_cell(row['pipeline'])} / {_cell(row['id'])}", "",
+            f"State: {row['state']}; profiles: {_cell(row['profiles'])}.", "",
+            _benchmark_markdown([row]), "",
+            "| Input | Cached input | Output | Process | Engine overhead | Startup per attempt | Validation per attempt | Packet bytes |",
+            "|---:|---:|---:|---:|---:|---|---|---:|",
+            f"| {_number(row['input'])} | {_number(row['cached_input'])} | {_number(row['output'])} | "
+            f"{_duration(row['process'])} | {_duration(row['overhead'])} | "
+            f"{_durations(row['startup'])} | {_durations(row['validation'])} | {_number(row['packet_bytes'])} |",
+            ""
+        ])
+    lines.extend([
+        "Stage times sum CLI process durations, including retries and superseded executions; parallel stages overlap.",
+        "Engine overhead is wall minus the sum of CLI durations (§14); it can be negative for parallel Full reviews.",
+        "Tokens = input + output; cached input is a subset of input and is shown separately.",
+        "Packet bytes are summed across attempts. Missing observations remain unknown."
+    ])
+    return "\n".join(lines)
+
+
+def _comparison_markdown(rows: list[dict[str, Any]]) -> str:
+    groups: dict[tuple, dict[str, list[dict[str, Any]]]] = {}
+    for row in rows:
+        if row.get("pipeline") in {"fast", "full"}:
+            key = (row["repo"], row["feature"], tuple(map(tuple, row["profiles"])))
+            groups.setdefault(key, {}).setdefault(row["pipeline"], []).append(row)
+    lines = [
+        "### Fast vs Full", "",
+        "Pairs require the same repo, feature and provider/model/effort. Ratios require both jobs approved/merged; duplicates are ambiguous.",
+        "",
+        "| Repo / feature / profiles | Fast wall | Full wall | Fast / Full wall | Fast tokens | Full tokens | Fast / Full tokens | Fast calls | Full calls |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|"
+    ]
+    for (repo, feature, profiles), pipelines in sorted(groups.items()):
+        fast, full = (pipelines.get(name, []) for name in ("fast", "full"))
+        a, b = (values[0] if len(values) == 1 else {} for values in (fast, full))
+
+        def ratio(key: str) -> str:
+            if (a.get("state") in {"approved", "merged"}
+                    and b.get("state") in {"approved", "merged"} and a.get(key) is not None
+                    and b.get(key)):
+                return f"{a[key] / b[key]:.1%}"
+            return "unknown"
+
+        lines.append(
+            f"| {_cell((repo, feature, profiles))} | {_duration(a.get('wall'))} | "
+            f"{_duration(b.get('wall'))} | {ratio('wall')} | {_number(a.get('tokens'))} | "
+            f"{_number(b.get('tokens'))} | {ratio('tokens')} | {_number(a.get('agents'))} | {_number(b.get('agents'))} |"
+        )
+    return "\n".join(lines)
+
+
+def bench(sandbox: Path, *, compare: list[Path] | None = None) -> None:
     if not sandbox.exists():
         sys.exit("no sandbox yet; run: python tools/sandbox.py new")
-    rows = benchmark_rows(sandbox)
-    table = _benchmark_markdown(rows)
+    sources = list(dict.fromkeys([sandbox.resolve(), *(p.resolve() for p in compare or [])]))
+    if any(not source.exists() for source in sources):
+        raise ValueError("benchmark source does not exist")
+    rows = [row for source in sources for row in benchmark_rows(source)]
+    engine = [row for row in rows if "pipeline" in row]
+    table = (_engine_markdown(engine) + "\n\n" +
+             _comparison_markdown(engine) if engine else _benchmark_markdown(rows))
     print(table)
     target = ROOT / "docs" / "benchmarks.md"
-    heading = "## v1 baseline"
-    capture_heading = "### Latest capture"
+    heading = "## v2 benchmark" if engine else "## v1 baseline"
     existing = target.read_text(encoding="utf-8") if target.exists() else "# Benchmarks\n"
-    capture = capture_heading + "\n\n" + table + "\n"
-    if capture_heading in existing:
-        before, rest = existing.split(capture_heading, 1)
-        next_section = re.search(r"\n#{2,3} ", rest)
-        existing = before + capture + (rest[next_section.start():] if next_section else "")
-    elif heading in existing:
-        prefix, rest = existing.split(heading, 1)
-        next_section = re.search(r"\n## ", rest)
-        after_heading = rest[next_section.start():] if next_section else ""
-        body = rest[:next_section.start()] if next_section else rest
-        existing = prefix + heading + body.rstrip() + "\n\n" + capture + after_heading
-    else:
-        existing = existing.rstrip() + "\n\n" + heading + "\n\n" + capture
+    capture = (heading + " — " + datetime.now().astimezone().isoformat(timespec="seconds") +
+               "\n\nSources: " + ", ".join(f"`{p}`" for p in sources) + "\n\n" + table + "\n")
+    existing = existing.rstrip() + "\n\n" + capture
     target.write_text(existing, encoding="utf-8")
     print(f"\nWrote {target}")
 
@@ -505,9 +676,10 @@ def main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["new", "run", "status", "clean", "bench"])
     parser.add_argument("--dir", type=Path, default=DEFAULT_DIR)
-    parser.add_argument("--real",
-                        action="store_true",
-                        help="run Codex Luna/Light instead of the fake CLI")
+    parser.add_argument(
+        "--real",
+        action="store_true",
+        help="run Codex with the suite's configured profiles instead of the fake CLI")
     parser.add_argument("--timeout",
                         type=float,
                         default=3600,
@@ -517,14 +689,31 @@ def main() -> None:
     parser.add_argument("--resume",
                         action="store_true",
                         help="continue an existing suite, resuming paused jobs")
+    parser.add_argument("--pipeline", choices=["fast", "full"], default="full")
+    parser.add_argument("--keep-going",
+                        action="store_true",
+                        help="finish independent benchmark jobs after another needs intervention")
+    parser.add_argument("--model", default="gpt-6-luna", help="Codex model for new suites")
+    parser.add_argument("--effort", default="low", help="Codex effort for new suites")
+    parser.add_argument("--compare", type=Path, action="append", help="additional bench suite/repo")
     args = parser.parse_args()
     suite = Path(os.path.expandvars(str(args.dir))).expanduser().resolve()
     if suite == ROOT or ROOT in suite.parents or suite == Path(suite.anchor):
         parser.error("the sandbox must be outside this repo and not a filesystem root")
     if args.command == "run":
-        run(suite, real=args.real, timeout=args.timeout, port_range=args.ports, resume=args.resume)
+        run(suite,
+            real=args.real,
+            timeout=args.timeout,
+            port_range=args.ports,
+            resume=args.resume,
+            pipeline=args.pipeline,
+            keep_going=args.keep_going)
+    elif args.command == "new":
+        new(suite, model=args.model, effort=args.effort)
+    elif args.command == "bench":
+        bench(suite, compare=args.compare)
     else:
-        {"new": new, "status": status, "clean": clean, "bench": bench}[args.command](suite)
+        {"status": status, "clean": clean}[args.command](suite)
 
 
 if __name__ == "__main__":
