@@ -317,6 +317,11 @@ class Runtime:
                         raise ValueError(f"{key} must name one of the {len(slots)} queued items")
                     return n
 
+                if action in {"start", "remove", "move", "reorder"} and "key" in body:
+                    block = values[slots[index("index")]]
+                    if body["key"] != backlog.key(block):
+                        raise ValueError("Backlog item changed; refresh before trying again")
+
                 if action == "start":
                     block = values[slots[index("index")]]
                     title = backlog.ITEM.match(block["lines"][0])[2]

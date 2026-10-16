@@ -279,8 +279,8 @@ describe("dashboard rendering", () => {
     const html = await renderRoute("/repo/beta");
     expect(html).toContain("beta feature");
     expect(html).not.toContain("alpha feature");
-    expect(html).toContain('href="#/repo/beta/backlog"');
-    expect(html).toContain('href="#/repo/beta/settings"');
+    expect(html).toContain('href="/repo/beta/backlog"');
+    expect(html).toContain('href="/repo/beta/settings"');
     expect(html).toMatch(/aria-current="page"[^>]*>Board/);
     const detail = await renderRoute("/repo/beta/job/001-feature?file=review.md");
     expect(detail).toContain('aria-label="Job views"');

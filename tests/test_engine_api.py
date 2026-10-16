@@ -736,3 +736,25 @@ def test_config_preview_and_save_share_semantic_validation(api):
     assert preview.json() == save.json()
     assert "onChanges" in preview.text
     assert (root / "factory/config.json").read_bytes() == original
+
+
+@pytest.mark.parametrize("action", ["start", "remove", "reorder"])
+def test_stale_backlog_item_cannot_act_on_next_item(api, action):
+    client, runtime, repo_id, root = api
+    base = f"/api/repos/{repo_id}"
+    path = root / "factory/backlog.md"
+    path.write_text("- [ ] One\n- [ ] Two\n")
+    item = client.get(base + "/state").json()["backlog"][0]
+    body = {"action": "start", "index": item["index"], "key": item["key"]}
+    assert client.post(base + "/backlog", json=body, headers=headers()).status_code == 200
+    before = path.read_text()
+    response = client.post(base + "/backlog",
+                           json={
+                               **body, "action": action,
+                               "to": 0
+                           },
+                           headers=headers())
+    assert response.status_code == 400
+    assert "changed" in response.json()["detail"]
+    assert path.read_text() == before
+    assert len(client.get(base + "/state").json()["jobs"]) == 1

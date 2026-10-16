@@ -28,9 +28,9 @@ export function PipelineView({
   const ref = useRef<HTMLDivElement>(null),
     marker = useId().replaceAll(":", "");
   const boxes = steps.map(
-    (step) =>
-      geometry.groups.find((g) => g.id === step.id) ??
-      geometry.nodes.find((n) => n.step === step.id)!,
+    (_, i) =>
+      geometry.groups.find((g) => g.stepIndex === i) ??
+      geometry.nodes.find((n) => n.stepIndex === i)!,
   );
   const loops = geometry.edges.filter((e) => e.kind === "rework").length;
   return (
@@ -56,7 +56,7 @@ export function PipelineView({
         }}
       >
         {geometry.groups.map((group) => (
-          <GroupFrame key={group.id} group={group} />
+          <GroupFrame key={group.stepIndex} group={group} />
         ))}
         <svg
           aria-hidden
@@ -77,22 +77,22 @@ export function PipelineView({
           </defs>
           {geometry.edges.map((edge) => (
             <PipelineEdge
-              key={`${edge.kind}:${edge.from}:${edge.to}`}
+              key={`${edge.kind}:${edge.fromIndex}:${edge.toIndex}`}
               edge={edge}
-              from={boxes[steps.findIndex((s) => s.id === edge.from)]}
-              to={boxes[steps.findIndex((s) => s.id === edge.to)]}
+              from={boxes[edge.fromIndex]}
+              to={boxes[edge.toIndex]}
               running={geometry.nodes.some(
-                (n) => n.step === edge.to && n.execution?.state === "running",
+                (n) => n.stepIndex === edge.toIndex && n.execution?.state === "running",
               )}
               marker={marker}
             />
           ))}
         </svg>
         {geometry.nodes.map((node) => (
-          <div role="listitem" key={node.id}>
+          <div role="listitem" key={`${node.stepIndex}:${node.execIndex}`}>
             <PipelineNode
               node={node}
-              step={steps.find((s) => s.id === node.step)!}
+              step={steps[node.stepIndex]}
               attempts={attempts}
               activity={
                 activity.find(

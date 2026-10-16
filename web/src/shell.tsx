@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { api, keys } from "@/lib/api";
 import { connectOverview, connectRepo } from "@/lib/sse";
 import { Board } from "@/features/board/Board";
@@ -64,9 +64,9 @@ export function Shell() {
           ? repoConnection.state
           : "connecting"
         : overviewConnection;
-  const base = repo ? `#/repo/${encodeURIComponent(repo)}` : "#";
+  const base = repo ? `/repo/${encodeURIComponent(repo)}` : "";
   const nav = [
-    { label: "Overview", href: "#/", active: pathname === "/" },
+    { label: "Overview", href: "/", active: pathname === "/" },
     ...(repo
       ? [
           { label: "Board", href: base, active: pathname === `/repo/${repo}` },
@@ -78,7 +78,7 @@ export function Shell() {
           },
         ]
       : []),
-    { label: "Machine settings", href: "#/settings", active: pathname === "/settings" },
+    { label: "Machine settings", href: "/settings", active: pathname === "/settings" },
   ];
   let page;
   if (overview.isPending)
@@ -134,9 +134,9 @@ export function Shell() {
         Skip to content
       </button>
       <aside className="flex shrink-0 flex-col gap-4 border-b border-border bg-inset p-4 md:w-60 md:border-r md:border-b-0">
-        <a href="#/" className="text-lg font-medium tracking-tight">
+        <Link to="/" className="text-lg font-medium tracking-tight">
           Agent Factory
-        </a>
+        </Link>
         <label className="space-y-2 text-xs text-muted-foreground">
           Repository
           <Select
@@ -165,9 +165,9 @@ export function Shell() {
               variant={item.active ? "secondary" : "ghost"}
               className="justify-start"
             >
-              <a href={item.href} aria-current={item.active ? "page" : undefined}>
+              <Link to={item.href} aria-current={item.active ? "page" : undefined}>
                 {item.label}
-              </a>
+              </Link>
             </Button>
           ))}
         </nav>

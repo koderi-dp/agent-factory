@@ -26,7 +26,7 @@ export const PipelineNode = memo(
     onOpen?: (id: string) => void;
   }) {
     const execution = node.execution;
-    const entry = step.executions.find((e) => e.id === node.exec)!;
+    const entry = step.executions[node.execIndex];
     const attempt = execution && latestAttempt(execution, attempts);
     const profile = entry.profiles?.[entry.provider ?? ""];
     const state = paused ? "paused" : (execution?.result ?? execution?.state ?? "pending");

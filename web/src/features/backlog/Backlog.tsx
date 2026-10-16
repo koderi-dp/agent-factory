@@ -12,18 +12,24 @@ export function Backlog({ repo }: { repo: string }) {
   const [details, setDetails] = useState("");
   const [pipeline, setPipeline] = useState("");
   const [drag, setDrag] = useState<string>();
+  const [waiting, setWaiting] = useState<typeof state.data>();
   const mutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.backlog(repo, body),
+    onMutate: () => setWaiting(state.data),
+    onError: () => setWaiting(undefined),
   });
   const data = state.data;
+  // Ignore activity and unrelated events: only a changed backlog releases the controls.
+  const busy =
+    mutation.isPending ||
+    (waiting !== undefined && JSON.stringify(waiting.backlog) === JSON.stringify(data?.backlog));
   const selected =
     data && Object.hasOwn(data.config.pipelines, pipeline)
       ? pipeline
       : (data?.config.defaultPipeline ?? "");
   function move(key: string, to: number) {
     const index = data?.backlog.findIndex((item) => item.key === key) ?? -1;
-    if (index >= 0 && index !== to && !mutation.isPending)
-      mutation.mutate({ action: "reorder", index, to });
+    if (index >= 0 && index !== to && !busy) mutation.mutate({ action: "reorder", index, to, key });
   }
   return (
     <PageShell>
@@ -78,7 +84,7 @@ export function Backlog({ repo }: { repo: string }) {
                 onChange={(e) => setDetails(e.target.value)}
               />
             </label>
-            <Button loading={mutation.isPending} disabled={!title.trim() || mutation.isPending}>
+            <Button loading={busy} disabled={!title.trim() || busy}>
               Add item
             </Button>
           </form>
@@ -87,7 +93,7 @@ export function Backlog({ repo }: { repo: string }) {
             {data.backlog.map((item, i) => (
               <li
                 key={item.key}
-                draggable={!mutation.isPending}
+                draggable={!busy}
                 onDragStart={(e) => {
                   setDrag(item.key);
                   e.dataTransfer.setData("text/plain", item.key);
@@ -105,9 +111,14 @@ export function Backlog({ repo }: { repo: string }) {
                 <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.details}</p>
                 <div className="mt-3 flex gap-2">
                   <Button
-                    disabled={mutation.isPending}
+                    disabled={busy}
                     onClick={() =>
-                      mutation.mutate({ action: "start", index: item.index, pipeline: selected })
+                      mutation.mutate({
+                        action: "start",
+                        index: item.index,
+                        key: item.key,
+                        pipeline: selected,
+                      })
                     }
                   >
                     Start
@@ -115,7 +126,7 @@ export function Backlog({ repo }: { repo: string }) {
                   <Button
                     variant="outline"
                     aria-label={`Move ${item.title} up`}
-                    disabled={!i || mutation.isPending}
+                    disabled={!i || busy}
                     onClick={() => move(item.key, i - 1)}
                   >
                     ↑
@@ -123,15 +134,17 @@ export function Backlog({ repo }: { repo: string }) {
                   <Button
                     variant="outline"
                     aria-label={`Move ${item.title} down`}
-                    disabled={i === data.backlog.length - 1 || mutation.isPending}
+                    disabled={i === data.backlog.length - 1 || busy}
                     onClick={() => move(item.key, i + 1)}
                   >
                     ↓
                   </Button>
                   <Button
                     variant="ghost"
-                    disabled={mutation.isPending}
-                    onClick={() => mutation.mutate({ action: "remove", index: item.index })}
+                    disabled={busy}
+                    onClick={() =>
+                      mutation.mutate({ action: "remove", index: item.index, key: item.key })
+                    }
                   >
                     Remove
                   </Button>

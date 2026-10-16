@@ -173,3 +173,162 @@ test("dark screenshot baselines and axe contrast", async ({ page, engine }) => {
     { animations: "disabled", stylePath: screenshotStyle },
   );
 });
+
+for (const confirm of [false, true]) {
+  test(`sidebar hash navigation ${confirm ? "discards" : "preserves"} dirty settings`, async ({
+    page,
+    engine,
+  }) => {
+    const path = `${engine.url}/#/repo/${engine.repos[0]}`;
+    await page.goto(`${path}/settings`);
+    await page.getByLabel("build model", { exact: true }).fill("keep-my-edit");
+    await page.getByRole("link", { name: "Board", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Discard unsaved changes?");
+    await dialog
+      .getByRole("button", { name: confirm ? "Discard and leave" : "Cancel", exact: true })
+      .click();
+    if (confirm) {
+      await expect(page).toHaveURL(path);
+      await expect(page.getByRole("heading", { name: "alpha", exact: true })).toBeVisible();
+    } else {
+      await expect(page).toHaveURL(`${path}/settings`);
+      await expect(page.getByLabel("build model", { exact: true })).toHaveValue("keep-my-edit");
+    }
+  });
+}
+
+test("backlog stays locked after HTTP success until the backlog SSE arrives", async ({
+  page,
+  engine,
+}) => {
+  // Delay delivery to listeners while preserving the real stream and its event ordering.
+  await page.addInitScript(() => {
+    const pending: (() => void)[] = [];
+    Object.assign(window, { releaseBacklog: () => pending.splice(0).forEach((fn) => fn()) });
+    window.EventSource = new Proxy(window.EventSource, {
+      construct(Target, args) {
+        const source = new Target(...(args as [string, EventSourceInit?]));
+        const add = source.addEventListener.bind(source);
+        source.addEventListener = ((
+          type: string,
+          listener: EventListenerOrEventListenerObject | null,
+          options?: boolean | AddEventListenerOptions,
+        ) => {
+          add(
+            type,
+            (event) => {
+              const deliver = () => {
+                if (typeof listener === "function") listener.call(source, event);
+                else listener?.handleEvent(event);
+              };
+              if (type === "activity") deliver();
+              else pending.push(deliver);
+            },
+            options,
+          );
+        }) as EventSource["addEventListener"];
+        return source;
+      },
+    });
+  });
+  const repo = engine.repos[0];
+  await page.request.post(`${engine.url}/api/repos/${repo}/backlog`, {
+    headers: { "X-Factory-Token": "e2e-token" },
+    data: { action: "add", items: [{ text: "One" }, { text: "Two" }] },
+  });
+  await page.goto(`${engine.url}/#/repo/${repo}/backlog`);
+  const first = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("heading", { name: "One", exact: true }) });
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith("/backlog") && r.request().method() === "POST",
+  );
+  await first.getByRole("button", { name: "Start", exact: true }).click();
+  await (await response).finished();
+  // Hold SSE beyond HTTP completion so an HTTP-only loading state cannot pass.
+  await page.waitForTimeout(500);
+  await expect(first.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
+  await expect(first.getByRole("button", { name: "Remove", exact: true })).toBeDisabled();
+  // Give the real SSE stream time to receive the committed snapshot, then deliver it.
+  await expect
+    .poll(async () => {
+      await page.evaluate(() =>
+        (window as unknown as { releaseBacklog: () => void }).releaseBacklog(),
+      );
+      return first.count();
+    })
+    .toBe(0);
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
+  const state = await page.request
+    .get(`${engine.url}/api/repos/${repo}/state`)
+    .then((r) => r.json());
+  expect(state.jobs).toHaveLength(1);
+  expect(state.backlog.map((item: { title: string }) => item.title)).toContain("Two");
+});
+
+test("Vite authenticates same-origin mutations and rejects foreign origins and hosts", async ({
+  page,
+  engine,
+}) => {
+  const { createServer } = await import("vite");
+  const previous = process.env.API_PROXY;
+  process.env.API_PROXY = engine.url;
+  const server = await createServer({ server: { port: 0 } });
+  if (previous === undefined) delete process.env.API_PROXY;
+  else process.env.API_PROXY = previous;
+  try {
+    await server.listen();
+    const url = server.resolvedUrls!.local[0];
+    await page.goto(`${url}#/repo/${engine.repos[0]}/backlog`);
+    await page.getByLabel("Title", { exact: true }).fill("Through Vite");
+    const response = page.waitForResponse(
+      (r) => r.url().endsWith("/backlog") && r.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Add item" }).click();
+    expect((await response).status()).toBe(200);
+    await expect(page.getByRole("heading", { name: "Through Vite", exact: true })).toBeVisible();
+    const path = `${url}api/repos/${engine.repos[0]}/backlog`;
+    for (const headers of [{ Origin: "http://evil.example" }, { Host: "evil.example" }] as Record<
+      string,
+      string
+    >[]) {
+      const rejected = await page.request.post(path, {
+        headers,
+        data: { action: "add", text: "Forbidden" },
+      });
+      expect(rejected.status()).toBe(403);
+    }
+    const direct = await page.request.post(`${engine.url}/api/repos/${engine.repos[0]}/backlog`, {
+      data: { action: "add", text: "No token" },
+    });
+    expect(direct.status()).toBe(403);
+  } finally {
+    await server.close();
+  }
+});
+
+test("dashboard build ships full dependency and copied UI license notices", async ({
+  page,
+  engine,
+}) => {
+  const response = await page.request.get(`${engine.url}/THIRD_PARTY_NOTICES.txt`);
+  expect(response.status()).toBe(200);
+  const text = await response.text();
+  for (const dependency of [
+    "@fontsource/ibm-plex-sans@",
+    "@fontsource/ibm-plex-mono@",
+    "lucide-react@",
+    "react@",
+    "react-dom@",
+    "@radix-ui/react-dialog@",
+    "react-markdown@",
+    "remark-gfm@",
+    "Copyright (c) 2026 Danijel",
+    "Copyright (c) 2023 shadcn",
+    "SIL OPEN FONT LICENSE",
+    "Lucide Contributors",
+    "Permission is hereby granted",
+  ])
+    expect(text).toContain(dependency);
+});

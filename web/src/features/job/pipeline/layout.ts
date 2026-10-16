@@ -28,10 +28,19 @@ export const NODE_W = 220,
   GAP_Y = 12,
   LOOP_GAP = 40;
 export type Box = { id: string; x: number; y: number; w: number; h: number };
-export type LayoutNode = Box & { step: string; exec: string; kind: string; execution?: Execution };
+export type LayoutNode = Box & {
+  step: string;
+  stepIndex: number;
+  execIndex: number;
+  exec: string;
+  kind: string;
+  execution?: Execution;
+};
 export type LayoutEdge = {
   from: string;
+  fromIndex: number;
   to: string;
+  toIndex: number;
   kind: "flow" | "rework";
   label: string;
   lane?: number;
@@ -43,7 +52,7 @@ export function layout(steps: Step[], executions: Execution[] = []) {
   );
   const height = Math.max(NODE_H, ...heights);
   const nodes: LayoutNode[] = [],
-    groups: (Box & { label: string })[] = [],
+    groups: (Box & { label: string; stepIndex: number })[] = [],
     edges: LayoutEdge[] = [];
   steps.forEach((step, i) => {
     const x = i * (NODE_W + GAP_X),
@@ -53,6 +62,7 @@ export function layout(steps: Step[], executions: Execution[] = []) {
       const done = current.filter((e) => e.step_id === step.id && e.state === "done").length;
       groups.push({
         id: step.id,
+        stepIndex: i,
         x,
         y,
         w: NODE_W,
@@ -65,6 +75,8 @@ export function layout(steps: Step[], executions: Execution[] = []) {
       nodes.push({
         id: grouped ? `${step.id}/${entry.id}` : step.id,
         step: step.id,
+        stepIndex: i,
+        execIndex: j,
         exec: entry.id,
         x: x + (grouped ? GAP_Y : 0),
         y: y + (grouped ? 24 + GAP_Y + j * (NODE_H + GAP_Y) : 0),
@@ -74,19 +86,29 @@ export function layout(steps: Step[], executions: Execution[] = []) {
         execution: current.find((e) => e.step_id === step.id && e.exec_id === entry.id),
       });
     });
-    if (i) edges.push({ from: steps[i - 1].id, to: step.id, kind: "flow", label: "" });
+    if (i)
+      edges.push({
+        from: steps[i - 1].id,
+        to: step.id,
+        fromIndex: i - 1,
+        toIndex: i,
+        kind: "flow",
+        label: "",
+      });
   });
   const loops = steps
     .map((s, i) => ({ s, i, target: steps.findIndex((t) => t.id === s.onChanges) }))
     .filter((l) => l.target >= 0)
     .sort((a, b) => Math.abs(a.i - a.target) - Math.abs(b.i - b.target) || a.i - b.i);
-  loops.forEach(({ s }, lane) => {
+  loops.forEach(({ s, i, target }, lane) => {
     const round = Math.max(
       1,
       ...current.filter((e) => e.step_id === s.onChanges).map((e) => e.round),
     );
     edges.push({
       from: s.id,
+      fromIndex: i,
+      toIndex: target,
       to: s.onChanges!,
       kind: "rework",
       lane: height + LOOP_GAP * (lane + 1),

@@ -62,3 +62,45 @@ it("renders accessible nodes, SVG edges and validation highlighting", () => {
   expect(html).toContain("pipeline-invalid");
   expect(html).toContain("<svg");
 });
+
+it("keeps duplicate step and execution IDs editable with their own profiles and columns", () => {
+  const duplicate: Step[] = [
+    {
+      id: "build",
+      executions: [
+        {
+          id: "same",
+          uses: "builder",
+          provider: "codex",
+          profiles: { codex: { model: "builder-model", effort: "low" } },
+        },
+      ],
+    },
+    {
+      id: "build",
+      type: "review",
+      onChanges: "build",
+      executions: [
+        {
+          id: "code",
+          uses: "reviewer",
+          provider: "codex",
+          profiles: { codex: { model: "review-model", effort: "high" } },
+        },
+        { id: "code", uses: "security" },
+      ],
+    },
+  ];
+  const geometry = layout(duplicate);
+  expect(geometry.nodes.map((n) => [n.stepIndex, n.execIndex])).toEqual([
+    [0, 0],
+    [1, 0],
+    [1, 1],
+  ]);
+  expect(geometry.edges[0]).toMatchObject({ fromIndex: 0, toIndex: 1 });
+  const html = renderToStaticMarkup(<PipelineView steps={duplicate} invalidSteps={["build"]} />);
+  expect(html).toContain("builder-model");
+  expect(html).toContain("review-model");
+  expect(html).toContain("security");
+  expect(html.match(/pipeline-invalid/g)).toHaveLength(3);
+});
