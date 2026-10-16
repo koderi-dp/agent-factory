@@ -615,6 +615,46 @@ def test_sensitive_fast_merge_through_api(api, merge):
     assert client.get(base + f"/{job_id}").json()["job"]["state"] == "merged"
 
 
+@pytest.mark.parametrize("json_output", [False, True])
+def test_cli_status_with_invalid_current_roles(api, monkeypatch, capsys, json_output):
+    client, _, repo_id, root = api
+    base = f"/api/repos/{repo_id}"
+    job_id = client.post(base + "/jobs",
+                         json={
+                             "title": "Frozen job",
+                             "pipeline": "fast"
+                         },
+                         headers=headers()).json()["id"]
+    config_path = root / "factory/config.json"
+    config = json.loads(config_path.read_text())
+    config["pipelines"]["fast"][0]["uses"] = "missing-role"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    assert client.get(base + f"/jobs/{job_id}").status_code == 200
+    assert client.get(base + "/roles").status_code == 422
+    monkeypatch.setattr(service, "ensure", lambda: {"port": 5099, "token": "test-token"})
+
+    def http(data, path):
+        response = client.get(path)
+        if response.status_code >= 400:
+            raise service.ServiceError(str(response.json()["detail"]))
+        return response.json()
+
+    monkeypatch.setattr(service, "request", http)
+    args = ["status", job_id] + (["--json"] if json_output else [])
+    assert cli.main(args) == 0
+    output = capsys.readouterr()
+    assert "role provenance unavailable" in output.err
+    assert "missing-role" in output.err
+    if json_output:
+        result = json.loads(output.out)
+        job = result["job"]
+        assert job["id"] == job_id
+        assert job["title"] == "Frozen job"
+        assert "roles" not in result  # Unavailable provenance is not an empty roles list.
+    else:
+        assert f"{job_id}\tqueued\t\tFrozen job" in output.out
+
+
 def test_eject_cli_and_outdated_status(api, tmp_path, monkeypatch, capsys):
     from agent_factory.engine import roles
     client, _, repo_id, root = api

@@ -250,8 +250,13 @@ def _run(args: argparse.Namespace) -> int:
     if command == "status":
         path = f"/jobs/{quote(args.job_id)}" if args.job_id else "/state"
         result = service.request(data, base + path)
-        role_status = service.request(data, base + "/roles")["roles"]
-        result["roles"] = role_status
+        role_status = []
+        try:
+            role_status = service.request(data, base + "/roles")["roles"]
+        except (service.ServiceError, OSError) as error:
+            print(f"Warning: role provenance unavailable: {error}", file=sys.stderr)
+        else:
+            result["roles"] = role_status
         if args.json:
             print(json.dumps(result, indent=2))
         else:
