@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from agent_factory import __version__, cli, service
+from agent_factory.api import app as api_module
 from agent_factory.api.app import BODY_LIMIT, create_app
 from agent_factory.engine import db, gitops, pipeline, registry, scaffold, versioning
 from agent_factory.engine.locking import FileLock
@@ -63,6 +64,23 @@ def api(repo):
 
 def headers(**kwargs):
     return {"X-Factory-Token": "test-token", **kwargs}
+
+
+def test_dashboard_serves_index_with_token_and_static_assets(api, tmp_path, monkeypatch):
+    client, _, _, _ = api
+    dashboard = tmp_path / "dashboard"
+    (dashboard / "assets").mkdir(parents=True)
+    (dashboard / "index.html").write_text(
+        '<!doctype html><html><head></head><body><script src="/assets/app.js"></script></body></html>'
+    )
+    (dashboard / "assets" / "app.js").write_text("Dashboard primitives")
+    monkeypatch.setattr(api_module, "DASHBOARD_DIR", dashboard)
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'name="factory-token" content="test-token"' in response.text
+    assert client.get("/assets/app.js").text == "Dashboard primitives"
+    assert client.get("/missing.js").status_code == 404
 
 
 def test_security_host_origin_and_token(api):
@@ -147,8 +165,9 @@ def test_unknown_repo_and_confined_files(api, tmp_path):
         assert client.get(prefix + "link.md").status_code == 403
 
 
-def test_snapshots_config_roles_logs_and_safe_html(api):
+def test_snapshots_config_roles_logs_and_safe_html(api, tmp_path, monkeypatch):
     client, runtime, repo_id, root = api
+    monkeypatch.setattr(api_module, "DASHBOARD_DIR", tmp_path / "no-dashboard-build")
     base = f"/api/repos/{repo_id}"
     job_id = client.post(base + "/jobs",
                          json={

@@ -11,7 +11,7 @@ import secrets
 from typing import Annotated, Any
 
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 
@@ -22,6 +22,7 @@ from agent_factory.engine.config import (MachineSettings, load_config, load_mach
 from agent_factory.engine.runtime import Runtime
 
 BODY_LIMIT = 100_000
+DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard_dist"
 
 
 class Security:
@@ -173,6 +174,13 @@ def create_app(*,
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
+        dashboard = DASHBOARD_DIR / "index.html"
+        if dashboard.is_file():
+            return dashboard.read_text(encoding="utf-8").replace(
+                "</head>",
+                f'<meta name="factory-token" content="{html.escape(token, quote=True)}"></head>',
+                1,
+            )
         overview = engine().overview()
         sections = []
         for repo in overview["repos"]:
@@ -325,5 +333,12 @@ def create_app(*,
                     time.sleep(0.05)
             app.state.shutdown()
         return {"stopping": True}
+
+    @app.get("/{asset_path:path}")
+    def dashboard_asset(asset_path: str):
+        target = (DASHBOARD_DIR / asset_path).resolve()
+        if not target.is_relative_to(DASHBOARD_DIR.resolve()) or not target.is_file():
+            raise HTTPException(404, "Dashboard asset not found")
+        return FileResponse(target)
 
     return app

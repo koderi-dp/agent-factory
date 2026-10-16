@@ -1,0 +1,391 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "tailwindcss" source("./");
+@import "tw-animate-css";
+@import "sonner/dist/styles.css";
+
+@theme {
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-background: #0a0b0d;
+  --color-foreground: #eceef2;
+  --color-card: #12141a;
+  --color-card-foreground: #eceef2;
+  --color-popover: #16181f;
+  --color-popover-foreground: #eceef2;
+  --color-primary: #d7dde6;
+  --color-primary-foreground: #0a0b0d;
+  --color-secondary: #1c1e26;
+  --color-secondary-foreground: #eceef2;
+  --color-muted: #1c1e26;
+  --color-muted-foreground: #8b909c;
+  --color-accent: #1c1e26;
+  --color-accent-foreground: #eceef2;
+  --color-destructive: #c45c5c;
+  --color-border: rgb(236 238 242 / 8%);
+  --color-input: rgb(236 238 242 / 10%);
+  --color-ring: #d7dde6;
+  --color-signal: #6a8f88;
+  --color-signal-fg: #d7ece8;
+  --color-warn: #c4a35c;
+  --color-warn-fg: #f3e6c4;
+  --color-danger: #c45c5c;
+  --color-danger-fg: #f0d0d0;
+  --color-online: #6a8f88;
+  --color-degraded: #c4a35c;
+  --color-offline: #8b909c;
+  --color-term-green: #8fbc9a;
+  --color-term-cyan: #8aa4b0;
+  --color-term-amber: #c4b48a;
+  --color-term-red: #c48a8a;
+  --color-term-dim: #6b6e76;
+  --color-elevated: #181a21;
+  --color-inset: #0d0e12;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius: 0.625rem;
+
+  --shadow-border: 0 0 0 1px rgb(255 255 255 / 8%);
+  --shadow-border-hover: 0 0 0 1px rgb(255 255 255 / 13%);
+  --shadow-elevated: 0 0 0 1px rgb(255 255 255 / 8%), 0 24px 48px -16px rgb(0 0 0 / 55%);
+
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    height: 100dvh;
+    /* clip (not hidden): root must not be a scroll container — Chrome scroll
+       restoration otherwise restores documentElement.scrollTop when nested
+       panes (tree + settings) both overflow, shifting the shell up. */
+    overflow: hidden;
+    overflow: clip;
+    overscroll-behavior: none;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    background-image:
+      radial-gradient(1200px 600px at 0% -10%, rgb(106 143 136 / 7%), transparent 55%),
+      radial-gradient(900px 500px at 100% 0%, rgb(215 221 230 / 4%), transparent 50%);
+    height: 100dvh;
+    overflow: hidden;
+    overflow: clip;
+    overscroll-behavior: none;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(236 238 242 / 35%);
+    outline-offset: 2px;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+  }
+}
+
+@layer components {
+  .pylon-toaster {
+    font-family: var(--font-sans);
+    --width: 20rem;
+    --border-radius: var(--radius-sm);
+    --normal-bg: var(--color-elevated);
+    --normal-border: var(--color-border);
+    --normal-text: var(--color-foreground);
+    --success-bg: var(--color-elevated);
+    --success-border: var(--color-border);
+    --success-text: var(--color-foreground);
+    --error-bg: var(--color-elevated);
+    --error-border: var(--color-border);
+    --error-text: var(--color-foreground);
+    --warning-bg: var(--color-elevated);
+    --warning-border: var(--color-border);
+    --warning-text: var(--color-foreground);
+  }
+
+  .pylon-toaster [data-description] {
+    color: var(--color-muted-foreground);
+  }
+
+  .pylon-toast {
+    display: flex;
+    width: var(--width);
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 2.25rem 0.75rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-elevated);
+    box-shadow: var(--shadow-elevated);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+
+  .pylon-toast__content {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .pylon-toast__title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+  }
+
+  .pylon-toast__description {
+    margin-top: 0.125rem;
+    color: var(--color-muted-foreground);
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .pylon-toast__icon {
+    display: block;
+    width: 0.5rem;
+    height: 0.5rem;
+    flex: none;
+    margin-top: 0.375rem;
+    overflow: hidden;
+    border-radius: 99px;
+    background: var(--color-muted-foreground);
+    box-shadow: 0 0 10px rgb(139 144 156 / 35%);
+    color: transparent;
+  }
+
+  .pylon-toast__icon svg,
+  .pylon-toast__icon img {
+    display: none;
+  }
+
+  .pylon-toast__close {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    left: auto;
+    display: flex;
+    width: 1.5rem;
+    height: 1.5rem;
+    transform: none;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--color-muted-foreground);
+    cursor: pointer;
+    transition:
+      color 150ms var(--ease-out),
+      background-color 150ms var(--ease-out);
+  }
+
+  .pylon-toast__close:hover {
+    background: var(--color-secondary);
+    color: var(--color-foreground);
+  }
+
+  .pylon-toast--success .pylon-toast__icon {
+    background: var(--color-signal);
+    box-shadow: 0 0 10px rgb(106 143 136 / 50%);
+  }
+
+  .pylon-toast--error .pylon-toast__icon {
+    background: var(--color-danger);
+    box-shadow: 0 0 10px rgb(196 92 92 / 50%);
+  }
+
+  .pylon-toast--warning .pylon-toast__icon {
+    background: var(--color-warn);
+    box-shadow: 0 0 10px rgb(196 163 92 / 45%);
+  }
+
+  .pylon-toast--info .pylon-toast__icon {
+    background: var(--color-term-cyan);
+    box-shadow: 0 0 10px rgb(138 164 176 / 45%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes pulse-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes cursor-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes handshake-sweep {
+  from {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+  to {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+.status-pulse {
+  animation: pulse-live 1.8s var(--ease-out) infinite;
+}
+
+.term-cursor {
+  animation: cursor-blink 1.1s step-end infinite;
+}
+
+/* xterm must not be stretched to 100% — FitAddon sizes by row height, and
+   stretching clips the last row. Viewport scrolls the buffer internally. */
+.xterm {
+  overflow: hidden;
+}
+
+.xterm .xterm-viewport {
+  overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pulse,
+  .term-cursor {
+    animation: none;
+  }
+}
+.asset-markdown {
+  line-height: 1.7;
+}
+.asset-markdown > * + * {
+  margin-top: 1em;
+}
+.asset-markdown h1,
+.asset-markdown h2,
+.asset-markdown h3 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.3em 0 0.5em;
+}
+.asset-markdown h1 {
+  font-size: 1.8em;
+}
+.asset-markdown h2 {
+  font-size: 1.4em;
+}
+.asset-markdown h3 {
+  font-size: 1.15em;
+}
+.asset-markdown > :first-child {
+  margin-top: 0;
+}
+.asset-markdown ul {
+  list-style: disc;
+  padding-left: 1.6em;
+}
+.asset-markdown ol {
+  list-style: decimal;
+  padding-left: 1.6em;
+}
+.asset-markdown li + li {
+  margin-top: 0.3em;
+}
+.asset-markdown a {
+  color: var(--color-signal-fg);
+  text-decoration: underline;
+}
+.asset-markdown pre {
+  padding: 1em;
+  background: var(--color-secondary);
+  border-radius: 0.5rem;
+  overflow: auto;
+}
+.asset-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.asset-markdown :not(pre) > code {
+  background: var(--color-secondary);
+  padding: 0.15em 0.3em;
+  border-radius: 0.2rem;
+}
+.asset-markdown blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 1em;
+  color: var(--color-muted-foreground);
+}
+.asset-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+.asset-markdown th,
+.asset-markdown td {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.8em;
+}
+.asset-markdown th {
+  background: var(--color-secondary);
+  text-align: left;
+}
+.asset-markdown img {
+  max-width: 100%;
+}
+.asset-markdown hr {
+  border-color: var(--color-border);
+  margin: 1.5em 0;
+}

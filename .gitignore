@@ -11,3 +11,4 @@ __pycache__/
 .venv/
 .pytest_cache/
 /dist/
+/src/agent_factory/dashboard_dist/
