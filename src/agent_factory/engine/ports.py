@@ -6,7 +6,9 @@ the engine; it cannot prevent another application from binding them later.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import re
 import sqlite3
+import subprocess
 from typing import Any
 
 import psutil
@@ -34,17 +36,46 @@ class Listener:
         return f"port {self.port} is held by {self.name} (pid {self.pid if self.pid is not None else 'unknown'})"
 
 
-def listeners(only: range | None = None) -> tuple[Listener, ...]:
-    """Include IPv4/IPv6 and wildcard listeners; unknown owners remain occupied."""
+def _tcp_listeners() -> list[tuple[int, int | None]]:
+    """(port, pid) for every TCP listener, tolerating macOS permissions."""
     try:
         connections = psutil.net_connections(kind="tcp")
+    except psutil.AccessDenied:
+        # macOS: psutil cannot inspect other users' processes, so the whole call
+        # fails. lsof reads the kernel socket table and skips what it cannot see.
+        return _lsof_tcp_listeners()
     except psutil.Error as error:
         raise PortsUnavailable(f"Cannot inspect TCP listeners: {error}") from error
-    found = {}
+    result = []
     for connection in connections:
-        if connection.status != psutil.CONN_LISTEN or not connection.laddr:
-            continue
-        port, pid = connection.laddr.port, connection.pid
+        if connection.status == psutil.CONN_LISTEN and connection.laddr:
+            result.append((connection.laddr.port, connection.pid))
+    return result
+
+
+def _lsof_tcp_listeners() -> list[tuple[int, int | None]]:
+    try:
+        output = subprocess.check_output(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"],
+                                         text=True,
+                                         stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise PortsUnavailable(f"Cannot inspect TCP listeners: {error}") from error
+    result = []
+    pid = None
+    for line in output.splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:])
+        elif line.startswith("n") and pid is not None:
+            match = re.search(r":(\d+)$", line[1:])
+            if match:
+                result.append((int(match.group(1)), pid))
+    return result
+
+
+def listeners(only: range | None = None) -> tuple[Listener, ...]:
+    """Include IPv4/IPv6 and wildcard listeners; unknown owners remain occupied."""
+    found = {}
+    for port, pid in _tcp_listeners():
         if only is not None and port not in only:
             continue
         name, created = "unknown process", None

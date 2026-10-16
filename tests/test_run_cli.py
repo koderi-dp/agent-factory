@@ -235,7 +235,11 @@ def test_base_wrapper_captures_live_output_stdin_env_cwd_report_and_exit(
     assert proc["wrapper_create_time"] == attempt.process.create_time()
     assert proc["token"] == attempt.token
     assert winjob.owned_process(attempt.directory, attempt.token) == attempt.process
-    assert Path(attempt.process.exe()).resolve() == Path(sys._base_executable).resolve()
+    if sys.platform != "darwin":
+        # macOS framework stubs exec the real binary, so process.exe() is the
+        # framework binary rather than sys._base_executable; the pid/create_time
+        # checks above already confirm the wrapper is the launched process.
+        assert Path(attempt.process.exe()).resolve() == Path(sys._base_executable).resolve()
     argv = attempt.process.cmdline()
     assert argv[1:3] == ["-I", "-S"]
     assert Path(argv[3]).parent == winjob.install_wrapper().parent
