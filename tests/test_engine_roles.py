@@ -176,3 +176,42 @@ def test_browser_roles_use_attempt_session_and_clean_up(tmp_path, name):
     for requirement in ("browser_session", "including close", "assigned ports", "throwaway data",
                         "never kill by process name", "artifacts_dir"):
         assert requirement in role.instructions
+
+
+@pytest.mark.parametrize("provider", [None, "codex", "claude"])
+def test_eject_provenance_diff_and_outdated(tmp_path, monkeypatch, provider):
+    from agent_factory.engine import roles
+    builtins = tmp_path / "builtins"
+    write_role(builtins / "builder.md")
+    monkeypatch.setattr(roles, "BUILTIN_DIR", builtins)
+    builtin = resolve_role("builder", "codex", root=tmp_path)
+    roles.eject(tmp_path, "builder", provider)
+    role = resolve_role("builder", provider or "codex", root=tmp_path)
+    assert roles.provenance(
+        role, root=tmp_path)["ejectedFrom"] == (f"builder@{__version__}#{builtin.sha256}")
+    assert not roles.provenance(role, root=tmp_path)["outdated"]
+    assert roles.eject(tmp_path, "builder", provider, diff=True) == ""
+    role.path.write_text(role.text + "Local customisation.\n", encoding="utf-8")
+    assert not roles.provenance(resolve_role("builder", provider or "codex", root=tmp_path),
+                                root=tmp_path)["outdated"]
+    with pytest.raises(RoleError, match="already exists"):
+        roles.eject(tmp_path, "builder", provider)
+    write_role(builtins / "builder.md", builtin.text + "New builtin check.\n")
+    assert roles.provenance(role, root=tmp_path)["outdated"]
+    diff = roles.eject(tmp_path, "builder", provider, diff=True)
+    assert "+New builtin check." in diff and "-Local customisation." in diff
+    assert "ejectedFrom" not in diff
+
+
+def test_eject_shared_and_provider_variants(tmp_path, monkeypatch):
+    from agent_factory.engine import roles
+    builtins = tmp_path / "builtins"
+    write_role(builtins / "builder.md")
+    write_role(builtins / "builder.codex.md", "---\ntype: task\n---\nCodex only.\n")
+    monkeypatch.setattr(roles, "BUILTIN_DIR", builtins)
+    roles.eject(tmp_path, "builder")
+    shared = tmp_path / "factory/roles/builder.md"
+    assert "Codex only" not in shared.read_text()
+    roles.eject(tmp_path, "builder", "codex")
+    assert "Codex only" in resolve_role("builder", "codex", root=tmp_path).text
+    assert "Codex only" not in resolve_role("builder", "claude", root=tmp_path).text

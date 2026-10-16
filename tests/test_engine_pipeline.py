@@ -653,3 +653,27 @@ def test_rework_failure_rolls_back_note_and_rewind_together(engine):
         pipeline.rework_job(engine.connection, engine.job_id, "Again", current_head=engine.head)
     assert engine.load() == before
     assert not list((engine.root / "factory/jobs/001-pipe").glob("rework-*.md"))
+
+
+@pytest.mark.parametrize("changes", [0, 1, 2])
+def test_fast_happy_path_changes_loop_and_budget(engine, changes):
+    engine.raw["defaultPipeline"] = "fast"
+    engine.raw["merge"] = "auto"
+    engine.create("002-fast")
+    engine.job_id = "002-fast"
+    engine.start()
+    engine.finish()
+    for index in range(changes):
+        engine.finish({"approve": "CHANGES"})
+        job, _ = engine.load()
+        if index == 1:
+            assert (job["state"], job["pause_reason"]) == ("needs_human", "changes")
+            return
+        assert (job["current_step"], job["round"], job["returns_used"]) == ("build", 2, 1)
+        engine.head = "rebuilt-head"
+        engine.finish()
+    engine.finish()
+    job, rows = engine.load()
+    assert job["state"] == "approved"
+    assert job["approved_head"] == engine.head
+    assert len(rows) == 2 * (changes + 1)

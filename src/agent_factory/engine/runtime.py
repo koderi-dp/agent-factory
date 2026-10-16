@@ -79,7 +79,7 @@ class Runtime:
                                 writer.call(
                                     lambda connection: gitops.merge(root, connection, job["id"]))
                             except gitops.GitError as error:
-                                if not isinstance(error, gitops.Busy):
+                                if not isinstance(error, (gitops.Busy, gitops.Sensitive)):
                                     writer.call(lambda connection: gitops._state(
                                         connection, job["id"], "needs_human", "changes", str(error))
                                                 )
@@ -376,8 +376,12 @@ class Runtime:
                 # The service lock serialises this with launch and claim. No DB tx
                 # is held while git or process-tree operations run.
                 if action == "approve":
-                    message = writer.call(
-                        lambda connection: gitops.merge(root, connection, job_id, human=True))
+                    message = writer.call(lambda connection: gitops.merge(
+                        root,
+                        connection,
+                        job_id,
+                        human=True,
+                        confirm_sensitive=body.get("confirm_sensitive", False)))
                 else:
                     message = writer.call(lambda connection: gitops.delete(
                         root, connection, job_id, force=body.get("force", False)))

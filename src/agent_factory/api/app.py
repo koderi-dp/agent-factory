@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 
 from agent_factory import __version__, run_cli
-from agent_factory.engine import db, gitops, pipeline, versioning
+from agent_factory.engine import db, gitops, pipeline, roles as role_files, versioning
 from agent_factory.engine.config import (MachineSettings, load_config, load_machine_settings,
                                          save_machine_settings, validate_config)
 from agent_factory.engine.runtime import Runtime
@@ -294,9 +294,9 @@ def create_app(*,
                             "provider": role.provider,
                             "type": role.type,
                             "source": role.source,
-                            "sha256": role.sha256
+                            "sha256": role.sha256,
+                            **role_files.provenance(role, root=root)
                         }
-            # TODO (plan §5.3, session 2.2): ejected-outdated provenance/diff.
             return {"roles": list(result.values())}
 
     @app.post("/api/repos/{repo}/backlog")

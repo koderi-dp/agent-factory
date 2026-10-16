@@ -303,9 +303,8 @@ def advance(job: Row,
         elif frozen["merge"] == "verify":
             reason = "verify"
         else:
-            # TODO (plan §10.3, session 2.2): sensitive-path guard before any merge.
-            # TODO (plan §3.1/§11, session 1.9): the service consumes approved
-            # with frozen merge=auto by calling gitops.merge outside this tx.
+            # The service calls gitops.merge outside this tx; its shared guard
+            # checks sensitive paths for both automatic and human merges (§10.3).
             return Transition("approved", {
                 "state": "approved",
                 "pause_reason": None,

@@ -324,3 +324,67 @@ def test_builder_must_commit_since_base_and_be_on_its_branch(repo):
     gitops.checked("checkout", "-q", "--detach", cwd=job["worktree"])
     with pytest.raises(gitops.GitError, match="must be on"):
         gitops.validate_result(job, execution, "READY")
+
+
+@pytest.mark.parametrize("human", [False, True])
+def test_sensitive_merge_requires_explicit_human_confirmation(repo, human):
+    root, connection, _, _ = repo
+    job = add_job(repo)
+    tree = Path(job["worktree"])
+    (tree / "migrations").mkdir()
+    (tree / "migrations/001.sql").write_text("SELECT 1;\n")
+    gitops.checked("add", ".", cwd=tree)
+    gitops.checked("commit", "-qm", "sensitive change", cwd=tree)
+    current = gitops.head(tree)
+    with db.tx(connection):
+        connection.execute("UPDATE jobs SET state='running',approved_head=? WHERE id=?",
+                           (current, job["id"]))
+        connection.execute("UPDATE executions SET state='done',result='READY',head_after=?",
+                           (current, ))
+    # Complete the real approval so the guarded state can be accepted by a human.
+    pipeline.advance_job(connection, job["id"], current_head=current)
+    with db.tx(connection):
+        connection.execute(
+            "UPDATE executions SET state='done',result='APPROVE',head_after=? "
+            "WHERE type='approval'", (current, ))
+        connection.execute("UPDATE jobs SET state='approved',approved_head=? WHERE id=?",
+                           (current, job["id"]))
+    before = gitops.head(root)
+    with pytest.raises(gitops.Sensitive, match="migrations/001.sql"):
+        gitops.merge(root, connection, job["id"], human=human, confirm_sensitive=not human)
+    job, _ = pipeline.load(connection, job["id"])
+    assert (job["state"], job["pause_reason"]) == ("needs_human", "sensitive")
+    assert gitops.head(root) == before and tree.exists()
+    with pytest.raises(gitops.Sensitive):
+        gitops.merge(root, connection, job["id"], human=True)
+    gitops.merge(root, connection, job["id"], human=True, confirm_sensitive=True)
+    assert pipeline.load(connection, job["id"])[0]["state"] == "merged"
+
+
+@pytest.mark.parametrize("path,pattern,expected", [
+    ("migrations/001.sql", "**/migrations/**", True),
+    ("src/migrations/001.sql", "**/migrations/**", True),
+    ("uv.lock", "**/*.lock", True),
+    ("src/auth/key.py", "**/auth/**", True),
+    (".github/workflows/ci.yml", ".github/**", True),
+    ("src/package.json", "package.json", False),
+    ("public/authors.py", "**/auth/**", False),
+])
+def test_sensitive_globs(path, pattern, expected):
+    assert gitops._matches(path, pattern) is expected
+
+
+def test_sensitive_deletions_and_renames(repo):
+    root, connection, _, _ = repo
+    (root / "auth").mkdir()
+    (root / "auth/key.txt").write_text("secret\n")
+    (root / "old.lock").write_text("lock\n")
+    gitops.checked("add", ".", cwd=root)
+    gitops.checked("commit", "-qm", "sensitive originals", cwd=root)
+    job = add_job(repo)
+    tree = Path(job["worktree"])
+    gitops.checked("mv", "auth/key.txt", "public.txt", cwd=tree)
+    gitops.checked("rm", "old.lock", cwd=tree)
+    gitops.checked("commit", "-qm", "rename and delete", cwd=tree)
+    job["approved_head"] = gitops.head(tree)
+    assert gitops.sensitive_paths(root, job) == ["auth/key.txt", "old.lock"]

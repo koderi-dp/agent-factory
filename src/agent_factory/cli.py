@@ -10,7 +10,7 @@ import webbrowser
 
 from agent_factory import __version__
 from agent_factory import service
-from agent_factory.engine import registry, scaffold, versioning
+from agent_factory.engine import registry, roles, scaffold, versioning
 from agent_factory.paths import find_repo
 
 
@@ -174,15 +174,18 @@ def _run(args: argparse.Namespace) -> int:
     repo = _selected(args,
                      required=command in {
                          "start", "next", "status", "stop", "resume", "approve", "rework", "delete",
-                         "dashboard"
+                         "dashboard", "eject"
                      })
     if command == "version":
         print(__version__)
         return 0
     if command == "repos":
         return _repos(args)
-    if command in {"upgrade", "eject"}:
-        # TODO (plan §15.6/session 4.2 and §5.3/session 2.2 respectively).
+    if command == "eject":
+        print(roles.eject(repo, args.role, args.provider, diff=args.diff), end="\n")
+        return 0
+    if command == "upgrade":
+        # TODO (plan §15.6/session 4.2).
         print(f"not implemented yet (plan §{args.section})")
         return 1
     if command == "doctor":
@@ -247,9 +250,14 @@ def _run(args: argparse.Namespace) -> int:
     if command == "status":
         path = f"/jobs/{quote(args.job_id)}" if args.job_id else "/state"
         result = service.request(data, base + path)
+        role_status = service.request(data, base + "/roles")["roles"]
+        result["roles"] = role_status
         if args.json:
             print(json.dumps(result, indent=2))
         else:
+            for role in role_status:
+                if role["outdated"]:
+                    print(f"{role['name']} ({role['provider']}): {role['status']}")
             for job in [result["job"]] if args.job_id else result["jobs"]:
                 print(f"{job['id']}\t{job['state']}\t{job['current_step'] or ''}\t{job['title']}" +
                       (f"\t{job['pause_reason']}: {job['note'] or ''}"

@@ -1,6 +1,7 @@
 """Provider-aware role lookup and safe frontmatter parsing (plan §5.3)."""
 
 import hashlib
+import difflib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,12 +23,13 @@ class RoleError(ValueError):
 
 
 class Frontmatter(BaseModel):
-    # v1's output/tools/model/name and eject provenance are accepted, not interpreted.
+    # v1's output/tools/model/name are accepted, not interpreted.
     model_config = ConfigDict(strict=True, extra="ignore")
 
     type: RoleType
     contract: Literal["spec"] | None = None
     description: str = ""
+    ejectedFrom: str | None = None
 
     @model_validator(mode="after")
     def spec_is_task(self) -> "Frontmatter":
@@ -48,13 +50,16 @@ class Role:
     path: Path
     source: str
     sha256: str
+    ejected_from: str | None = None
 
 
 def resolve_role(name: str,
                  provider: Provider,
                  *,
                  root: str | Path,
-                 builtin_dir: Path | None = None) -> Role:
+                 builtin_dir: Path | None = None,
+                 builtin_only: bool = False,
+                 shared_only: bool = False) -> Role:
     """Resolve the first existing file; an invalid override never falls through."""
     if not NAME.fullmatch(name):
         raise RoleError(f"Invalid role name: {name!r}")
@@ -66,7 +71,11 @@ def resolve_role(name: str,
         repo_roles / f"{name}.{provider}.md", repo_roles / f"{name}.md",
         builtins / f"{name}.{provider}.md", builtins / f"{name}.md"
     ]
-    for index, path in enumerate(paths):
+    if builtin_only:
+        paths = paths[2:]
+    if shared_only:
+        paths = [path for path in paths if path.name == f"{name}.md"]
+    for path in paths:
         try:
             data = path.read_bytes()
         except FileNotFoundError:
@@ -101,9 +110,65 @@ def resolve_role(name: str,
             "review": "verdict",
             "approval": "decision"
         }[frontmatter.type]
-        source = str(path) if index < 2 else f"built-in@{__version__}"
+        source = str(path) if path.parent == repo_roles else f"built-in@{__version__}"
         return Role(name, provider, frontmatter.type, contract, frontmatter.description, text,
                     instructions, path, source,
-                    hashlib.sha256(data).hexdigest())
+                    hashlib.sha256(data).hexdigest(), frontmatter.ejectedFrom)
     raise RoleError(f"Cannot resolve role {name!r} for {provider}. Paths tried:\n" +
                     "\n".join(str(path) for path in paths))
+
+
+def provenance(role: Role, *, root: Path) -> dict[str, str | bool | None]:
+    """Compare eject provenance, not customised text, with today's built-in."""
+    origin = role.ejected_from
+    outdated = False
+    if origin:
+        try:
+            builtin = resolve_role(role.name,
+                                   role.provider,
+                                   root=root,
+                                   builtin_only=True,
+                                   shared_only=role.path.name == f"{role.name}.md")
+        except RoleError:
+            outdated = True
+        else:
+            digest = origin.rsplit("#", 1)[-1]
+            outdated = not (len(digest) >= 8 and builtin.sha256.startswith(digest))
+    return {
+        "ejectedFrom":
+        origin,
+        "outdated":
+        outdated,
+        "status": ("ejected; built-in has changed since" if outdated else "ejected") if origin else
+        ("built-in" if role.source.startswith("built-in@") else "override")
+    }
+
+
+def eject(root: Path, name: str, provider: Provider | None = None, *, diff: bool = False) -> str:
+    # Without --provider eject the shared source; never copy one provider's
+    # instructions into a shared override.
+    builtin = resolve_role(name,
+                           provider or "codex",
+                           root=root,
+                           builtin_only=True,
+                           shared_only=provider is None)
+    target = root / "factory/roles" / (f"{name}.{provider}.md" if provider else f"{name}.md")
+    if diff:
+        if not target.is_file():
+            raise RoleError(f"No ejected role at {target}")
+        text = target.read_text(encoding="utf-8-sig")
+        # Provenance is metadata, not a local instruction change.
+        text = re.sub(r"(?m)^ejectedFrom:.*\n", "", text)
+        return "".join(
+            difflib.unified_diff(text.splitlines(keepends=True),
+                                 builtin.text.replace("\r\n", "\n").splitlines(keepends=True),
+                                 fromfile=str(target),
+                                 tofile=str(builtin.path)))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = builtin.text.replace("\n", f"\nejectedFrom: {name}@{__version__}#{builtin.sha256}\n", 1)
+    try:
+        with target.open("x", encoding="utf-8", newline="\n") as stream:
+            stream.write(text)
+    except FileExistsError as exc:
+        raise RoleError(f"Role already exists: {target}; use --diff to compare") from exc
+    return f"wrote: {target}"

@@ -5,6 +5,7 @@ outside SQLite transactions; only the resulting state/events use a short tx.
 """
 
 from collections.abc import Mapping
+from fnmatch import fnmatchcase
 import os
 from pathlib import Path
 import re
@@ -24,6 +25,36 @@ class GitError(ValueError):
 
 class Busy(GitError):
     exit_code = 3
+
+
+class Sensitive(GitError):
+    pass
+
+
+def _matches(path: str, pattern: str) -> bool:
+    """Case-sensitive repo globs: ** includes zero or more directories."""
+
+    def match(parts: list[str], glob: list[str]) -> bool:
+        if not glob:
+            return not parts
+        if glob[0] == "**":
+            return match(parts, glob[1:]) or bool(parts and match(parts[1:], glob))
+        return bool(parts and fnmatchcase(parts[0], glob[0]) and match(parts[1:], glob[1:]))
+
+    return match(path.split("/"), pattern.split("/"))
+
+
+def sensitive_paths(root: Path, job: Mapping[str, Any]) -> list[str]:
+    """Check the frozen policy against both sides of renames, including deletions."""
+    frozen = job["frozen"]
+    paths = checked("diff",
+                    "--no-renames",
+                    "--name-only",
+                    "-z",
+                    f"{job['base_head']}..{job['approved_head']}",
+                    cwd=root).split("\0")
+    return sorted(path for path in paths
+                  if path and any(_matches(path, pattern) for pattern in frozen["sensitivePaths"]))
 
 
 def git(*args: str, cwd: str | Path) -> subprocess.CompletedProcess[str]:
@@ -169,6 +200,7 @@ def merge(root: str | Path,
           job_id: str,
           *,
           human: bool = False,
+          confirm_sensitive: bool = False,
           machine: sqlite3.Connection | None = None,
           repo_id: str | None = None) -> str:
     root = Path(root).resolve()
@@ -184,7 +216,11 @@ def merge(root: str | Path,
         raise GitError("the branch changed after approval; rework and review it again")
     if not branch_exists(root, branch):
         raise GitError(f"branch {branch} doesn't exist")
-    # TODO (plan §10.3, session 2.2): sensitive paths and --confirm-sensitive.
+    matching = sensitive_paths(root, job)
+    if matching and not (human and confirm_sensitive):
+        detail = "Sensitive paths: " + ", ".join(matching) + "; approve with --confirm-sensitive"
+        _state(connection, job_id, "needs_human", "sensitive", detail)
+        raise Sensitive(detail)
     try:
         checkout = checked("branch", "--show-current", cwd=root)
         if checkout != "main":

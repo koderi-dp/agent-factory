@@ -1,4 +1,4 @@
-"""Idempotent repository setup; upgrades/eject belong to sessions 4.2/2.2."""
+"""Idempotent repository setup; upgrades belong to session 4.2."""
 
 import json
 from pathlib import Path

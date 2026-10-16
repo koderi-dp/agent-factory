@@ -583,3 +583,59 @@ def test_queue_relinks_existing_job_without_recreating_worktree(api):
     assert request.read_text() == "Retain this evidence"
     assert writer.call(lambda connection: connection.execute("SELECT job_id FROM start_queue").
                        fetchone()[0]) == job_id
+
+
+@pytest.mark.parametrize("merge", ["auto", "verify"])
+def test_sensitive_fast_merge_through_api(api, merge):
+    client, runtime, repo_id, root = api
+    config_path = root / "factory/config.json"
+    config = json.loads(config_path.read_text())
+    config.update(merge=merge, sensitivePaths=["app.txt"])
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    base = f"/api/repos/{repo_id}/jobs"
+    job_id = client.post(base, json={
+        "title": "Sensitive",
+        "pipeline": "fast"
+    }, headers=headers()).json()["id"]
+    complete_fast(runtime, repo_id, job_id)
+    config["sensitivePaths"] = []
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    if merge == "auto":
+        runtime.tick()
+        job = client.get(base + f"/{job_id}").json()["job"]
+        assert (job["state"], job["pause_reason"]) == ("needs_human", "sensitive")
+        assert "app.txt" in job["note"]
+    response = client.post(base + f"/{job_id}/approve", headers=headers())
+    assert response.status_code == 400
+    assert "app.txt" in response.json()["detail"]
+    response = client.post(base + f"/{job_id}/approve",
+                           json={"confirm_sensitive": True},
+                           headers=headers())
+    assert response.status_code == 200
+    assert client.get(base + f"/{job_id}").json()["job"]["state"] == "merged"
+
+
+def test_eject_cli_and_outdated_status(api, tmp_path, monkeypatch, capsys):
+    from agent_factory.engine import roles
+    client, _, repo_id, root = api
+    builtins = tmp_path / "builtins"
+    builtins.mkdir()
+    for source in roles.BUILTIN_DIR.glob("*.md"):
+        (builtins / source.name).write_bytes(source.read_bytes())
+    monkeypatch.setattr(roles, "BUILTIN_DIR", builtins)
+    assert cli.main(["eject", "builder"]) == 0
+    capsys.readouterr()
+    assert cli.main(["eject", "builder", "--diff"]) == 0
+    assert capsys.readouterr().out.strip() == ""
+    builtin = builtins / "builder.md"
+    builtin.write_bytes(builtin.read_bytes() + b"\nNew check.\n")
+    assert cli.main(["eject", "builder", "--diff"]) == 0
+    assert "+New check." in capsys.readouterr().out
+    data = {"port": 5099, "token": "test-token"}
+    monkeypatch.setattr(service, "ensure", lambda: data)
+    monkeypatch.setattr(service, "request", lambda data, path: client.get(path).json())
+    assert cli.main(["status"]) == 0
+    assert "ejected; built-in has changed since" in capsys.readouterr().out
+    assert cli.main(["status", "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert any(role["name"] == "builder" and role["outdated"] for role in result["roles"])
