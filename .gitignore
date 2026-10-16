@@ -13,3 +13,5 @@ __pycache__/
 /dist/
 /src/agent_factory/dashboard_dist/
 /web/node_modules/
+/web/test-results/
+/web/playwright-report/

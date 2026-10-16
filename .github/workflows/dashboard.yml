@@ -1,0 +1,49 @@
+name: Dashboard E2E
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  dashboard:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          python-version: '3.11'
+      - run: uv sync --locked
+      - run: uv run --locked yapf --diff web/e2e_server.py tests/fake_cli.py
+      - run: uv run --locked pytest tests/test_engine_api.py tests/test_engine_streams.py
+      - run: npm ci
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: npm run typecheck
+        working-directory: web
+      - run: npm run lint
+        working-directory: web
+      - run: npm test
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - run: npm run e2e
+        working-directory: web
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: dashboard-failure-${{ matrix.os }}
+          path: |
+            web/test-results/
+            web/playwright-report/
+          retention-days: 7

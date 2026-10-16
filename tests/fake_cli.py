@@ -168,7 +168,9 @@ def main() -> int:
         sys.stdout.buffer.write(Path(events).read_bytes())
     else:
         for event in events:
+            time.sleep(scenario.get("event_delay", 0))
             sys.stdout.buffer.write((json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8"))
+            sys.stdout.buffer.flush()
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(scenario.get("stderr", "").encode("utf-8"))
     sys.stderr.buffer.flush()
