@@ -109,3 +109,4 @@ jobs:
           name: distributions
           path: dist
       - run: uv run --no-project --python 3.11 python tools/release_smoke.py dist
+      - run: uv run --no-project --python 3.11 python tools/upgrade_smoke.py dist

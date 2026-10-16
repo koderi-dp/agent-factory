@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import sqlite3
 import time
 from urllib.parse import quote
 import webbrowser
@@ -11,7 +12,7 @@ import webbrowser
 from agent_factory import __version__
 from agent_factory import service
 from agent_factory.engine import registry, roles, scaffold, versioning
-from agent_factory.paths import find_repo
+from agent_factory.paths import find_repo, machine_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,10 +104,15 @@ class RepoNotInitialised(ValueError):
     exit_code = 5
 
 
-def _selected(args: argparse.Namespace, *, required: bool = True) -> Path | None:
+def _selected(args: argparse.Namespace,
+              *,
+              required: bool = True,
+              check_version: bool = True,
+              register: bool = True) -> Path | None:
     selected = args.repo
-    if selected:
-        connection = registry.open_registry()
+    if selected and not Path(selected).exists() and (machine_dir() / "machine.db").is_file():
+        connection = sqlite3.connect((machine_dir() / "machine.db").as_uri() + "?mode=ro", uri=True)
+        connection.row_factory = sqlite3.Row
         try:
             row = connection.execute("SELECT path FROM repos WHERE id=?", (selected, )).fetchone()
             if row:
@@ -118,7 +124,10 @@ def _selected(args: argparse.Namespace, *, required: bool = True) -> Path | None
         if required:
             raise RepoNotInitialised("Repo is not initialised; run `factory init` first")
         return None
-    versioning.check(repo)
+    if check_version:
+        versioning.check(repo)
+    if not register:
+        return repo
     connection = registry.open_registry()
     try:
         registry.register(connection, repo)
@@ -171,6 +180,16 @@ def _run(args: argparse.Namespace) -> int:
             print('Commit the listed files. Check AGENTS.md describes dev-server ports and checks. '
                   'Then run: factory start "your feature"')
         return 0
+    if command == "upgrade":
+        repo = _selected(args, check_version=False, register=False)
+        if repo is None:
+            raise RepoNotInitialised("Repo is not initialised; run `factory init` first")
+        print(scaffold.upgrade(repo, dry_run=args.dry_run))
+        if not args.dry_run:
+            running = service.info()
+            if service.healthy(running) and running["version"] != __version__:
+                service.ensure()
+        return 0
     repo = _selected(args,
                      required=command in {
                          "start", "next", "status", "stop", "resume", "approve", "rework", "delete",
@@ -184,10 +203,6 @@ def _run(args: argparse.Namespace) -> int:
     if command == "eject":
         print(roles.eject(repo, args.role, args.provider, diff=args.diff), end="\n")
         return 0
-    if command == "upgrade":
-        # TODO (plan §15.6/session 4.2).
-        print(f"not implemented yet (plan §{args.section})")
-        return 1
     if command == "doctor":
         checks = scaffold.doctor(repo)
         for check in checks:
@@ -263,10 +278,13 @@ def _run(args: argparse.Namespace) -> int:
             for role in role_status:
                 if role["outdated"]:
                     print(f"{role['name']} ({role['provider']}): {role['status']}")
-            for job in [result["job"]] if args.job_id else result["jobs"]:
+            jobs = [result["job"]] if "job" in result else result.get("jobs", [])
+            for job in jobs:
                 print(f"{job['id']}\t{job['state']}\t{job['current_step'] or ''}\t{job['title']}" +
                       (f"\t{job['pause_reason']}: {job['note'] or ''}"
                        if job["pause_reason"] else ""))
+            for job in [result["legacy"]] if "legacy" in result else result.get("legacy_jobs", []):
+                print(f"{job['id']}\tLegacy (read-only)\t{job['stage']}\t{job['title']}")
         return 0
     body = {
         "force": getattr(args, "force", False),

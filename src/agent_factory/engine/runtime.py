@@ -11,7 +11,7 @@ import threading
 from typing import Any
 
 from agent_factory import run_cli
-from agent_factory.engine import backlog, db, gitops, packet, pipeline, registry, versioning
+from agent_factory.engine import backlog, db, gitops, legacy, packet, pipeline, registry, versioning
 from agent_factory.engine.adapters.codex import CodexAdapter
 from agent_factory.engine.config import load_config, load_machine_settings
 from agent_factory.engine.locking import FileLock
@@ -93,6 +93,9 @@ class Runtime:
             connection = pipeline.open_repo(root)
             try:
                 if job_id is not None:
+                    if connection.execute("SELECT 1 FROM jobs WHERE id=?",
+                                          (job_id, )).fetchone() is None:
+                        return {"legacy": legacy.describe(root, job_id)}
                     job, executions = pipeline.load(connection, job_id)
                     attempts = [
                         dict(row) for row in connection.execute(
@@ -134,6 +137,7 @@ class Runtime:
                 ]
                 return {
                     "jobs": jobs,
+                    "legacy_jobs": legacy.jobs(root),
                     "executions": executions,
                     "backlog": backlog.items(root / "factory/backlog.md"),
                     "config": load_config(root).model_dump(),
@@ -152,7 +156,7 @@ class Runtime:
                 status, detail = "missing" if repo.missing else "available", None
                 if not repo.missing:
                     try:
-                        versioning.check(Path(repo.path))
+                        versioning.check(Path(repo.path), new_jobs=True)
                     except versioning.VersionMismatch as error:
                         status, detail = "version_mismatch", str(error)
                     connection = pipeline.open_repo(repo.path)
@@ -184,7 +188,7 @@ class Runtime:
                 backlog_key: str | None = None) -> dict[str, Any]:
         with self.lock:
             root, writer = self.repo(repo_id)
-            versioning.check(root)
+            versioning.check(root, new_jobs=True)
             config = load_config(root)
             frozen = pipeline.freeze(config,
                                      pipeline_name,
@@ -195,12 +199,15 @@ class Runtime:
                     self.supervisor.adapter(entry["provider"])
             if not title.strip() or len(title) > 300 or "\n" in title or "\r" in title:
                 raise ValueError("title must be one line of 1 to 300 characters")
+            legacy_seq = max((int(job["id"].split("-", 1)[0]) for job in legacy.jobs(root)),
+                             default=0)
 
             def insert(connection: sqlite3.Connection) -> int:
                 with db.tx(connection):
                     seq = connection.execute(
-                        "SELECT max(n)+1 FROM (SELECT coalesce(max(seq),0) n FROM jobs "
-                        "UNION ALL SELECT coalesce(max(id),0) FROM start_queue)").fetchone()[0]
+                        "SELECT max(n)+1 FROM (SELECT ? n UNION ALL SELECT coalesce(max(seq),0) n FROM jobs "
+                        "UNION ALL SELECT coalesce(max(id),0) FROM start_queue)",
+                        (legacy_seq, )).fetchone()[0]
                     connection.execute(
                         "INSERT INTO start_queue (id,title,details,pipeline,backlog_key,created_at) "
                         "VALUES (?,?,?,?,?,?)",
@@ -240,7 +247,7 @@ class Runtime:
                 continue
             config = load_config(root)
             # Refuse new work after a version/config change; existing jobs still run.
-            versioning.check(root)
+            versioning.check(root, new_jobs=True)
             pipeline.freeze(config,
                             row["pipeline"],
                             preamble=packet.PREAMBLE,
@@ -380,6 +387,20 @@ class Runtime:
                                                                         Any]) -> dict[str, Any]:
         with self.lock:
             root, writer = self.repo(repo_id)
+            exists = writer.call(lambda connection: connection.execute(
+                "SELECT 1 FROM jobs WHERE id=?", (job_id, )).fetchone())
+            if exists is None and (legacy.folder(root, job_id) / "job.json").is_file():
+                message = legacy.action(root, job_id, action, body)
+
+                def changed(connection: sqlite3.Connection) -> None:
+                    with db.tx(connection):
+                        pipeline._event(connection, None, pipeline._now(), "job.state", {
+                            "legacy_job": job_id,
+                            "action": action
+                        })
+
+                writer.call(changed)
+                return {"message": message}
             versioning.check(root)
             if action == "stop":
                 self.supervisor.stop(repo_id, job_id)

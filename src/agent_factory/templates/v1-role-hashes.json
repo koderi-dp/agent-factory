@@ -1,0 +1,20 @@
+{
+  "claude": {
+    "approver": "0f2fb5ef308513937ee0277b98440e7f64fc9eec8de7d01b1da803251cf979b2",
+    "builder": "9d10bc0cdd03f581f48f2e5334f6387efdcddc9a01def628898fb92fe3b69bff",
+    "reviewer-code": "4b997797052ed6dd248acdf2576befb0f4e4bf8b987a914b4834aab31dc76ecf",
+    "reviewer-security": "c441505149f12be411cf49a5bafb82854fc473500d6e2515bd065d22299ca088",
+    "reviewer-ui": "c8ae6dc299781d9d9398b269bd1c25a944f00301c0ccbdc133c0e35a64a172cc",
+    "reviewer-ux": "5ccca165e2aae0137cbd49614281583fd6e78b5a116bb29e43ae4997a3cc5080",
+    "spec-writer": "f1fca82778ae243600c1e6696ec15a4332fd971e557fa2d68ec1f58fb999ec2d"
+  },
+  "codex": {
+    "approver": "32d452f2609469c44c3dc32cbbebd01673089423304c3a05bcf2ac458ad156bb",
+    "builder": "fea03e4281515634202ee21c93db212511a79aaf526a65592df74f118eb14792",
+    "reviewer-code": "ed5f50510fb54ac3d8fa88fddb2dcb4e7b44d683d7c87c4951f11704af2647f3",
+    "reviewer-security": "9eaf5779901330fedab51b5545cb11c58bae770c9fa9277c6572bafa0eeffe51",
+    "reviewer-ui": "5a0ddddbb1894a34423a4151a6195f67a8dd831240989e19a98c340ba18d5154",
+    "reviewer-ux": "c78599bceb452fe2121c90605224952d794c9f5db114eb91f30c243456016d74",
+    "spec-writer": "e4630f2fe33b7eb5b93d259e6e7fdf314174f025c0676a3b101eee1ec7018b40"
+  }
+}

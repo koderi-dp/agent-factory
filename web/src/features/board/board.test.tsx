@@ -297,6 +297,15 @@ describe("dashboard rendering", () => {
   it("renders frozen columns, parallel chips, pause details, terminal jobs and collapsed legacy section", () => {
     const client = new QueryClient();
     const state = snapshot({
+      legacy_jobs: [
+        {
+          id: "007-legacy",
+          title: "Old feature",
+          stage: "approved",
+          read_only: true,
+          reports: ["build.md"],
+        },
+      ],
       jobs: [
         job({
           state: "paused",
@@ -333,6 +342,9 @@ describe("dashboard rendering", () => {
     expect(html).toContain("A &lt;safe&gt; title");
     expect(html).toContain("#/repo/repo%20space/job/001-feature");
     expect(html).toContain("Legacy jobs · read-only");
+    expect(html).toContain("Old feature");
+    expect(html).toContain("build.md");
+    expect(html).toContain("Merge");
     expect(html).not.toContain("<details open");
     client.clear();
   });

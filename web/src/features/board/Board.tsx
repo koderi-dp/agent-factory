@@ -3,6 +3,7 @@ import { api, keys } from "@/lib/api";
 import { PageHeader } from "@/ui/page-header";
 import { PageShell } from "@/ui/page-shell";
 import { Badge } from "@/ui/primitives/badge";
+import { LegacyJobCard } from "./LegacyJobCard";
 import { JobCard } from "./JobCard";
 import { boardColumns, boardGroups, jobColumn } from "./model";
 
@@ -68,10 +69,12 @@ export function Board({ repo, name, now }: { repo: string; name: string; now: nu
       })}
       <details className="rounded-lg bg-card p-4 shadow-[var(--shadow-border)]">
         <summary className="cursor-pointer text-sm font-medium">Legacy jobs · read-only</summary>
-        {/* TODO (session 4.2, §15.6): render migrated legacy jobs when the API exposes them. */}
-        <p className="mt-3 text-sm text-muted-foreground">
-          Legacy job history will appear here after migration.
-        </p>
+        {(state.legacy_jobs ?? []).map((job) => (
+          <LegacyJobCard key={job.id} repo={repo} job={job} />
+        ))}
+        {!state.legacy_jobs?.length && (
+          <p className="mt-3 text-sm text-muted-foreground">No legacy jobs.</p>
+        )}
       </details>
     </PageShell>
   );

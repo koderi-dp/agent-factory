@@ -1,16 +1,147 @@
-"""Idempotent repository setup; upgrades belong to session 4.2."""
+"""Idempotent repository setup and reviewable upgrades (§12.2, §15.6)."""
 
 import json
+import difflib
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 from typing import Any
 
 from agent_factory import __version__
+from agent_factory import run_cli
 from agent_factory.engine import gitops, registry, versioning
-from agent_factory.engine.config import template_config
+from agent_factory.engine.config import template_config, upgrade_v1, validate_config
 
 TEMPLATES = Path(__file__).parent.parent / "templates"
+
+
+def upgrade(root: Path, *, dry_run: bool = False) -> str:
+    """Plan every file change before writing; dry-run has no registry/service side effects."""
+    root = root.resolve()
+    raw = json.loads((root / "factory/config.json").read_text(encoding="utf-8-sig"))
+    converted = upgrade_v1(raw)
+    major = int(__version__.split(".")[0])
+    converted["engine"] = f">={major}.0,<{major + 1}"
+    writes = {"factory/config.json": (json.dumps(converted, indent=2) + "\n").encode()}
+    deletes: set[str] = set()
+    clients = set()
+    hashes = json.loads((TEMPLATES / "v1-role-hashes.json").read_text(encoding="utf-8"))
+    configured_roles = {
+        entry["uses"]
+        for steps in converted["pipelines"].values()
+        for step in steps
+        for entry in step.get("parallel", [step])
+    }
+    for client, directory in (("claude", ".claude"), ("codex", ".codex")):
+        for source in sorted((root / directory / "agents").glob("*.md")):
+            name = source.stem
+            original = hashes[client].get(name)
+            if original is None and name not in configured_roles:
+                continue
+            if not source.resolve().is_relative_to(root):
+                raise ValueError(f"Upgrade path escapes repository: {source}")
+            clients.add(client)
+            data = source.read_bytes()
+            if hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest() != original:
+                target = f"factory/roles/{name}.{client}.md"
+                if (root / target).exists() and (root / target).read_bytes() != data:
+                    raise ValueError(
+                        f"Custom role conflict: {target}; preserve both files manually")
+                writes[target] = data
+            deletes.add(source.relative_to(root).as_posix())
+    for steps in converted["pipelines"].values():
+        for step in steps:
+            clients.update(e["provider"] for e in step.get("parallel", [step]))
+    for directory in (".claude", ".agents"):
+        if (root / directory / "skills/factory").exists():
+            clients.add("claude" if directory == ".claude" else "codex")
+    if raw.get("version", 1) != 2 or any(
+        (root / name).exists()
+            for name in ("factory/job.py", "factory/server.py", "factory/dashboard")):
+        for path in (root / "factory").glob("*.py"):
+            deletes.add(path.relative_to(root).as_posix())
+    trees = ["factory/dashboard", ".agents/skills/factory"]
+    trees.extend(f".claude/skills/{name}"
+                 for name in ("factory", "factory-next", "factory-watch", "factory-dashboard"))
+    for name in trees:
+        directory = root / name
+        if not directory.resolve().is_relative_to(root):
+            raise ValueError(f"Upgrade path escapes repository: {name}")
+        if directory.exists():
+            deletes.update(
+                p.relative_to(root).as_posix() for p in directory.rglob("*") if p.is_file())
+    for client in sorted(clients):
+        directory = ".claude" if client == "claude" else ".agents"
+        writes[f"{directory}/skills/factory/SKILL.md"] = (TEMPLATES /
+                                                          f"SKILL.{client}.md").read_bytes()
+    ignore = root / ".gitignore"
+    content = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+    missing = [
+        line for line in ("/factory/state/", "/factory/jobs/") if line not in content.splitlines()
+    ]
+    if missing:
+        writes[".gitignore"] = (content + ("\n" if content and not content.endswith("\n") else "") +
+                                "\n".join(missing) + "\n").encode()
+    changes = []
+    for name in sorted(deletes | writes.keys()):
+        path = root / name
+        if not path.resolve().is_relative_to(root):
+            raise ValueError(f"Upgrade path escapes repository: {name}")
+        old = path.read_bytes() if path.is_file() else b""
+        new = writes.get(name, b"")
+        if old != new or (name in deletes and name not in writes):
+            changes.append((name, old, new))
+    diff = "".join("".join(
+        difflib.unified_diff(old.decode("utf-8-sig", errors="replace").splitlines(keepends=True),
+                             new.decode("utf-8-sig", errors="replace").splitlines(keepends=True),
+                             fromfile=f"a/{name}" if old else "/dev/null",
+                             tofile=f"b/{name}" if name in writes else "/dev/null"))
+                   for name, old, new in changes)
+    # Validate the planned roles too, without modifying repository or machine state.
+    with tempfile.TemporaryDirectory(prefix="factory-upgrade-") as temporary:
+        staged = Path(temporary)
+        current_roles = root / "factory/roles"
+        if current_roles.exists():
+            shutil.copytree(current_roles, staged / "factory/roles")
+        for name, data in writes.items():
+            if name.startswith("factory/roles/"):
+                target = staged / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+        validate_config(converted, root=staged)
+    if dry_run:
+        return diff or "Already up to date."
+    # Persist customised roles before removing their v1 sources, including after a crash.
+    for name, _, new in sorted(changes, key=lambda change: change[0] not in writes):
+        path = root / name
+        if name in writes:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            run_cli.atomic_write(path, new)
+        else:
+            path.unlink()
+    # Remove only empty directories, including the v1 marker checked by init.
+    for name in trees:
+        directory = root / name
+        if directory.is_dir():
+            for path in sorted(directory.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+                if path.is_dir():
+                    try:
+                        path.rmdir()
+                    except OSError:
+                        pass
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+    connection = registry.open_registry()
+    try:
+        registry.register(connection, root)
+    finally:
+        connection.close()
+    return "\n".join(f"{'wrote' if name in writes else 'removed'}: {name}"
+                     for name, _, _ in changes) or "Already up to date."
 
 
 def check_init(root: Path) -> Path:

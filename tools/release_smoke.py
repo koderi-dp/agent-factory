@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -144,8 +145,26 @@ def smoke(directory: Path, root: Path) -> None:
             merged = json.loads(run(factory, 'status', job_id, '--json'))
             assert merged['job']['state'] == 'merged', merged['job']
             assert (repo / 'smoke.txt').read_text(encoding='utf-8').startswith('Installed wheel')
-            # TODO (§16.5/session 4.2): v1 migration, legacy read-only jobs, and
-            # previous-minor upgrade/rollback checks once migration is implemented.
+            fixture = Path(__file__).resolve().parents[1] / 'tests/fixtures/v1'
+            shutil.copytree(fixture, repo, dirs_exist_ok=True)
+            (repo / 'factory/job.py').write_text('# old runtime\n')
+            before_upgrade = snapshot(repo)
+            assert 'factory/roles/approver.claude.md' in run(factory, 'upgrade', '--dry-run')
+            assert snapshot(repo) == before_upgrade, 'upgrade --dry-run wrote files'
+            run(factory, 'upgrade')
+            after_upgrade = snapshot(repo)
+            assert after_upgrade['factory/roles/approver.claude.md'] == before_upgrade[
+                '.claude/agents/approver.md']
+            assert not (repo / '.codex/agents/builder.md').exists()
+            assert not (repo / 'factory/job.py').exists()
+            for name, content in before_upgrade.items():
+                if name.startswith('factory/jobs/') or name == 'factory/backlog.md':
+                    assert after_upgrade[name] == content, name
+            state = json.loads(run(factory, 'status', '--json'))
+            assert state['legacy_jobs'][0]['read_only'] is True
+            assert 'Legacy (read-only)' in run(factory, 'status', '007-legacy')
+            assert json.loads(run(factory, 'status', job_id, '--json'))['job']['state'] == 'merged'
+            # Live tool replacement and rollback run in tools/upgrade_smoke.py.
         finally:
             try:
                 if data is not None and server.poll() is None:

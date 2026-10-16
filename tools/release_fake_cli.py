@@ -1,6 +1,7 @@
 """Codex-shaped launcher for the installed-wheel smoke test; never calls a provider."""
 
 import json
+import os
 from pathlib import Path
 import runpy
 import subprocess
@@ -22,6 +23,10 @@ def main() -> None:
         report = 'APPROVE\n\n## Checks run\nBuilder commit verified.\n'
     scenario = report_path.parent / 'scenario.json'
     scenario.write_text(json.dumps({
+        'sleep':
+        float(os.environ.get('FACTORY_UPGRADE_SLEEP', '0')),
+        'invocation_marker':
+        os.environ.get('FACTORY_SMOKE_INVOCATIONS', str(report_path.parent / 'invocations')),
         'report_path':
         str(report_path),
         'report':

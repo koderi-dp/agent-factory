@@ -1,0 +1,113 @@
+{
+  "pipeline": [
+    {
+      "id": "spec",
+      "uses": "spec-writer",
+      "providers": {
+        "claude": {
+          "model": "opus",
+          "effort": "medium"
+        },
+        "codex": {
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        }
+      }
+    },
+    {
+      "id": "build",
+      "uses": "builder",
+      "providers": {
+        "claude": {
+          "model": "opus",
+          "effort": "medium"
+        },
+        "codex": {
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        }
+      }
+    },
+    {
+      "id": "review",
+      "parallel": [
+        {
+          "id": "reviewer-security",
+          "uses": "reviewer-security",
+          "providers": {
+            "claude": {
+              "model": "opus",
+              "effort": "medium"
+            },
+            "codex": {
+              "model": "gpt-6.1-sol",
+              "effort": "medium"
+            }
+          }
+        },
+        {
+          "id": "reviewer-ux",
+          "uses": "reviewer-ux",
+          "providers": {
+            "claude": {
+              "model": "opus",
+              "effort": "medium"
+            },
+            "codex": {
+              "model": "gpt-6.1-sol",
+              "effort": "medium"
+            }
+          }
+        },
+        {
+          "id": "reviewer-ui",
+          "uses": "reviewer-ui",
+          "providers": {
+            "claude": {
+              "model": "opus",
+              "effort": "medium"
+            },
+            "codex": {
+              "model": "gpt-6.1-sol",
+              "effort": "medium"
+            }
+          }
+        },
+        {
+          "id": "reviewer-code",
+          "uses": "reviewer-code",
+          "providers": {
+            "claude": {
+              "model": "opus",
+              "effort": "medium"
+            },
+            "codex": {
+              "model": "gpt-6.1-sol",
+              "effort": "medium"
+            }
+          }
+        }
+      ],
+      "onChanges": "build"
+    },
+    {
+      "id": "approve",
+      "uses": "approver",
+      "providers": {
+        "claude": {
+          "model": "opus",
+          "effort": "medium"
+        },
+        "codex": {
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        }
+      }
+    }
+  ],
+  "provider": "claude",
+  "merge": "auto",
+  "maxRounds": 3,
+  "start": "queue",
+  "headlessPermissions": "auto"
+}

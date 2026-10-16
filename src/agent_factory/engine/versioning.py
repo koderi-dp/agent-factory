@@ -89,11 +89,15 @@ def matches(version: str, specifier: str) -> bool:
     return True
 
 
-def check(root: Path, *, version: str = __version__) -> None:
+def check(root: Path, *, version: str = __version__, new_jobs: bool = False) -> None:
     raw = json.loads((root / "factory/config.json").read_text(encoding="utf-8-sig"))
+    if new_jobs and raw.get("version", 1) != 2:
+        raise VersionMismatch(f"{root.name} needs `factory upgrade` before starting new jobs")
     required = raw.get("engine")
     if required is None:
-        return  # v1 setup/migration is handled separately (§15.6, session 4.2).
+        if new_jobs:
+            raise VersionMismatch(f"{root.name} needs `factory upgrade` (missing engine specifier)")
+        return
     if not matches(version, required):
         minimum = re.search(r"(?:>=|~=|==)\s*(\d+)", required)
         major = minimum[1] if minimum else "1"

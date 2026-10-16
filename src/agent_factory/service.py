@@ -101,12 +101,26 @@ def spawn(port: int | None = None) -> subprocess.Popen:
 
 
 def stop(data: dict[str, Any], *, stop_running: bool = False) -> None:
+    process = None
+    try:
+        candidate = psutil.Process(data["pid"])
+        if candidate.create_time() == data["create_time"]:
+            process = candidate
+    except psutil.NoSuchProcess:
+        pass
     request(data, "/api/service/stop", {"stop_running": stop_running}, timeout=30)
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         lock = FileLock(machine_dir() / "service.lock")
         try:
             if lock.acquire():
+                # Releasing service.lock precedes interpreter exit. Wait for the
+                # verified process to release its Windows executable/log handles.
+                if process is not None:
+                    try:
+                        process.wait(timeout=max(0, deadline - time.monotonic()))
+                    except psutil.TimeoutExpired:
+                        raise ServiceError("Service released its lock but did not exit") from None
                 return
         finally:
             lock.close()
