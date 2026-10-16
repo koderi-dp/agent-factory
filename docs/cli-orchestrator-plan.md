@@ -19,7 +19,7 @@ This plan makes three changes:
    pipeline, and merges. It keeps state in SQLite and streams progress to the dashboard.
    Agents do only the work: spec, build, review, approve.
 2. **A global install.** The engine, dashboard, and built-in roles are installed **once per
-   machine** as a normal tool (`uv tool install agent-factory`). Each project repo commits only
+   machine** as a normal tool (`uv tool install agent-factory-engine`). Each project repo commits only
    its own small setup (config, backlog, role overrides, thin skill wrappers), created by
    `factory init`. One service and one dashboard serve every repo on the machine.
 3. **A React dashboard in srt-gateway's design.** It's built in CI and shipped inside the
@@ -69,7 +69,7 @@ expectation is that Fast uses ≤ 40% of Full's tokens and the engine adds < 2 s
 | Component | Today | After |
 |---|---|---|
 | Orchestration | LLM session following `workflow.md` | `agent_factory.engine` (Python) |
-| Distribution | `install.py` copies the runtime into each repo | `uv tool install agent-factory` once per machine; `factory init` per repo |
+| Distribution | `install.py` copies the runtime into each repo | `uv tool install agent-factory-engine` once per machine; `factory init` per repo |
 | Job state | `factory/jobs/<id>/job.json` + `.lock` files | SQLite per repo: `factory/state/factory.db` (gitignored) |
 | Start from dashboard | request files + `/factory watch` or a headless watcher session | engine queue, launched directly |
 | Codex headless | `codex_runner.py` wraps one long session | one `codex exec` per execution |
@@ -879,7 +879,7 @@ prints a summary and leaves the diff for the user to review and commit.
 - They run the command and relay its output: job id, dashboard link, errors.
 - They say the job keeps running if the session is closed.
 - If the `factory` command isn't found, they reply with the install command
-  (`uv tool install agent-factory`) and stop.
+  (`uv tool install agent-factory-engine`) and stop.
 - `watch` is removed, because dashboard Start runs jobs directly.
 
 ### 12.4 Backlog
@@ -1217,13 +1217,13 @@ Versioning: semver.
 
 **Once per machine:**
 ```
-uv tool install agent-factory          # or: pipx install agent-factory
+uv tool install agent-factory-engine          # or: pipx install agent-factory-engine
 factory doctor                          # checks git, claude/codex + login, agent-browser
 ```
 If uv isn't installed, the README links to uv's official install instructions. `install.py`
 remains as an optional bootstrap for users without uv:
 - it checks for uv, and if it's missing, prints the official install command and asks before running it;
-- then it runs `uv tool install agent-factory` and, with `--target`, `factory init` in that repo.
+- then it runs `uv tool install agent-factory-engine` and, with `--target`, `factory init` in that repo.
 
 It never copies the runtime into a repo any more.
 
@@ -1244,9 +1244,9 @@ first `factory` command registers it. If the engine is missing, the skill says h
 |---|---|
 | New engine release | `uv tool upgrade agent-factory`, once per machine. The next `factory` command sees that `service.json` reports an older version and restarts the service. Running attempts keep going (the wrapper uses the base Python, §3.2) and are re-adopted. Running jobs keep their frozen roles and preamble (§10.5). |
 | Release that changes repo files (major only) | The engine reports "srt-gateway needs `factory upgrade`" in the CLI and dashboard. Run it in the repo, review the small diff, commit. Until then, new jobs in that repo are refused with that message; running jobs continue. |
-| A repo requires an older engine | Its `engine` specifier doesn't match, so commands exit 4 with: "srt-gateway needs agent-factory >=1.0,<2; installed 2.1.0. Install a matching version: `uv tool install agent-factory==1.*`" (one engine per machine; use the lowest common version, or upgrade the repo). |
+| A repo requires an older engine | Its `engine` specifier doesn't match, so commands exit 4 with: "srt-gateway needs agent-factory >=1.0,<2; installed 2.1.0. Install a matching version: `uv tool install agent-factory-engine==1.*`" (one engine per machine; use the lowest common version, or upgrade the repo). |
 | An ejected role is behind the built-in | Shown in `factory status` and the dashboard's roles list; `factory eject <role> --diff` shows the change. Nothing is automatic. |
-| Roll back | `uv tool install agent-factory==<previous>`. Repo DB migrations are additive within a major version, so older 1.x engines can read DBs written by newer 1.x ones. CI tests this with the previous minor. |
+| Roll back | `uv tool install agent-factory-engine==<previous>`. Repo DB migrations are additive within a major version, so older 1.x engines can read DBs written by newer 1.x ones. CI tests this with the previous minor. |
 
 ### 15.5 Contributors
 
@@ -1615,7 +1615,7 @@ Fast + auto-merge is blocked on sensitive paths in tests.
 
 Release-candidate dry runs: push `rc` tags to TestPyPI first, which costs nothing.
 
-**Exit:** §16.5 green. On a clean Windows machine, `uv tool install agent-factory` →
+**Exit:** §16.5 green. On a clean Windows machine, `uv tool install agent-factory-engine` →
 `factory init` → dashboard Start runs a Fast job with no client session open. srt-gateway
 and pylon are both migrated and running jobs at the same time.
 
@@ -1652,8 +1652,8 @@ To be answered by Phase 0 spikes or by the maintainer:
    runs each reported 1,792 cached / 14,357 input tokens. Commands, complete fixtures,
    denial/continuation details and limitations are recorded in [spikes.md](spikes.md).
    Claude spikes 1, 2, 6 and its half of 7 remain deferred to session 1.11.
-3. **Names:** is `agent-factory` free on PyPI? Is `factory` too generic a command name
-   (collisions with other tools on PATH)? Proposal: package `agent-factory`, commands
+3. **Names:** `agent-factory` is not free on PyPI (too similar to the existing
+   `agentfactory`), so the distribution is `agent-factory-engine`. Commands stay
    `agent-factory` and the short alias `factory`; skills call `agent-factory` to avoid any clash.
 4. Should the default pipeline for new repos be `fast` or `full`? Proposal: `full` as
    `defaultPipeline` (no behaviour change for migrated repos), `fast` offered next to Start.

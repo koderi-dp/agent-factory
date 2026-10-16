@@ -19,7 +19,7 @@ for you.
 Install the engine once per machine, then initialize each repository:
 
 ```powershell
-uv tool install agent-factory
+uv tool install agent-factory-engine
 cd C:\path\to\your-project
 factory init
 ```

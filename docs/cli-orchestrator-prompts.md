@@ -626,7 +626,7 @@ Read: plan §15.3, §15.5, §17 Phase 4.
 
 Task:
 - reduce install.py to the optional uv bootstrap in §15.3;
-- rewrite README.md around `uv tool install agent-factory` + `factory init`, keeping its
+- rewrite README.md around `uv tool install agent-factory-engine` + `factory init`, keeping its
   user-facing sections (pipeline, needs-you, dashboard, what a job leaves behind) updated to
   the new behaviour;
 - remove the v1 runtime (factory/*.py, factory/dashboard/), claude/ and codex/ role sources

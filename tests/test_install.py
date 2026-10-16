@@ -17,7 +17,7 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(install.main(["--target", directory]), 0)
         self.assertEqual(run.call_args_list, [
-            call(["uv", "tool", "install", "agent-factory"], check=False),
+            call(["uv", "tool", "install", "agent-factory-engine"], check=False),
             call(["factory", "init"], cwd=Path(directory).resolve(), check=False),
         ])
 
@@ -27,7 +27,7 @@ class InstallTests(unittest.TestCase):
         run.return_value.returncode = 1
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(install.main(["--target", directory]), 1)
-        run.assert_called_once_with(["uv", "tool", "install", "agent-factory"], check=False)
+        run.assert_called_once_with(["uv", "tool", "install", "agent-factory-engine"], check=False)
 
     @patch("builtins.input", return_value="no")
     @patch("install.shutil.which", return_value=None)

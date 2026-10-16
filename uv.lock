@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
-name = "agent-factory"
+name = "agent-factory-engine"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

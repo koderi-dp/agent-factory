@@ -4,7 +4,7 @@ description: Start and manage agent-factory jobs in this repository.
 ---
 
 Use the installed `agent-factory` command.
-If it is missing, tell the user to run `uv tool install agent-factory` and stop.
+If it is missing, tell the user to run `uv tool install agent-factory-engine` and stop.
 
 Map the user's request to one command:
 - A feature description: `agent-factory start "<feature>"`.

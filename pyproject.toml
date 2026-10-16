@@ -3,7 +3,7 @@ requires = ["hatchling>=1.26", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agent-factory"
+name = "agent-factory-engine"
 dynamic = ["version"]
 description = "A deterministic engine for local coding agents"
 readme = "README.md"

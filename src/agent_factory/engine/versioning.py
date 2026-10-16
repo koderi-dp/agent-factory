@@ -103,4 +103,4 @@ def check(root: Path, *, version: str = __version__, new_jobs: bool = False) -> 
         major = minimum[1] if minimum else "1"
         raise VersionMismatch(
             f"{root.name} needs agent-factory {required}; installed {version}. "
-            f"Install a matching version: `uv tool install agent-factory=={major}.*`")
+            f"Install a matching version: `uv tool install agent-factory-engine=={major}.*`")

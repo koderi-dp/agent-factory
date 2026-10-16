@@ -51,8 +51,8 @@ def smoke(directory: Path, root: Path) -> None:
 
     print(run('uv', 'tool', 'install', '--python', sys.executable, str(wheel)), flush=True)
     factory = str(root / 'bin' / ('factory.exe' if os.name == 'nt' else 'factory'))
-    interpreter = root / 'tools/agent-factory' / ('Scripts/python.exe'
-                                                  if os.name == 'nt' else 'bin/python')
+    interpreter = root / 'tools/agent-factory-engine' / ('Scripts/python.exe'
+                                                         if os.name == 'nt' else 'bin/python')
     source = Path(__file__).resolve().with_name('release_fake_cli.py')
     launcher = root / ('fake-codex.cmd' if os.name == 'nt' else 'fake-codex')
     if os.name == 'nt':

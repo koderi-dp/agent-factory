@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if not install_uv():
         return 1
-    result = subprocess.run(["uv", "tool", "install", "agent-factory"], check=False)
+    result = subprocess.run(["uv", "tool", "install", "agent-factory-engine"], check=False)
     if result.returncode:
         return result.returncode
     if target is not None:

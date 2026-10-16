@@ -231,7 +231,7 @@ def test_init_exact_files_idempotent_and_dry_run(repo, provider, wrappers):
     }
     assert after[".gitignore"] == b"/factory/state/\n/factory/jobs/\n"
     for path in wrappers:
-        assert b"uv tool install agent-factory" in after[path]
+        assert b"uv tool install agent-factory-engine" in after[path]
         assert b"keeps running" in after[path]
     messages = scaffold.init(repo, provider)
     assert all("unchanged" in message for message in messages)
@@ -375,8 +375,9 @@ def test_cli_version_gate_exit_codes_registration_and_repo_id(repo, monkeypatch,
     monkeypatch.setattr(versioning, "__version__", "2.1.0")
     with pytest.raises(versioning.VersionMismatch) as error:
         versioning.check(repo, version="2.1.0")
-    assert str(error.value) == (f"{repo.name} needs agent-factory >=1.0,<2; installed 2.1.0. "
-                                "Install a matching version: `uv tool install agent-factory==1.*`")
+    assert str(
+        error.value) == (f"{repo.name} needs agent-factory >=1.0,<2; installed 2.1.0. "
+                         "Install a matching version: `uv tool install agent-factory-engine==1.*`")
     assert cli.main(["status"]) == 4
     assert "Install a matching version" in capsys.readouterr().err
     raw["engine"] = ">=0"
