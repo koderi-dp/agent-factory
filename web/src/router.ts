@@ -9,7 +9,6 @@ import { Shell } from "./shell";
 export function createDashboardRouter(history: RouterHistory) {
   const root = createRootRoute({ component: Shell });
   const route = (path: string) => createRoute({ getParentRoute: () => root, path });
-  // TODO (session 3.5, plan 13.3): replace backlog/settings placeholders in Shell.
   return createRouter({
     routeTree: root.addChildren([
       route("/"),

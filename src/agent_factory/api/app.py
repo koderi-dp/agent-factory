@@ -323,6 +323,23 @@ def create_app(*,
             root, _ = engine().repo(repo)
             return load_config(root).model_dump()
 
+    @app.post("/api/repos/{repo}/config/validate")
+    def preview_config(repo: str, body: dict = Body()) -> dict:
+        # Use the same validation as saving, without changing files or emitting events.
+        with engine().lock:
+            root, _ = engine().repo(repo)
+            parsed = validate_config(body, root=root)
+            if not versioning.matches(__version__, parsed.engine):
+                raise versioning.VersionMismatch(
+                    f"Config requires agent-factory {parsed.engine}; installed {__version__}")
+            return {
+                "pipelines": {
+                    name: pipeline.freeze(parsed, name, preamble="",
+                                          preamble_version="")["pipeline"]
+                    for name in parsed.pipelines
+                }
+            }
+
     @app.put("/api/repos/{repo}/config")
     def put_config(repo: str, body: dict = Body()) -> dict:
         with engine().lock:

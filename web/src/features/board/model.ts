@@ -4,7 +4,7 @@ import type { JobDetail, RepoState } from "@/lib/api";
 export type Job = RepoState["jobs"][number];
 export type Execution = RepoState["executions"][number];
 export type Attempt = JobDetail["attempts"][number];
-const stepSchema = z.object({
+export const stepSchema = z.object({
   id: z.string(),
   label: z.string().nullish(),
   type: z.enum(["task", "review", "approval"]).optional(),

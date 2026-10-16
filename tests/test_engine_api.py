@@ -698,3 +698,41 @@ def test_eject_cli_and_outdated_status(api, tmp_path, monkeypatch, capsys):
     assert cli.main(["status", "--json"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert any(role["name"] == "builder" and role["outdated"] for role in result["roles"])
+
+
+def test_config_preview_validates_without_saving_or_emitting_events(api):
+    client, _, repo_id, root = api
+    base = f"/api/repos/{repo_id}"
+    config_path = root / "factory/config.json"
+    original = config_path.read_bytes()
+    state = client.get(base + "/state").json()
+    config = state["config"]
+    name = config["defaultPipeline"]
+    config["pipelines"][name][0]["profiles"]["codex"]["model"] = "preview-only"
+    response = client.post(base + "/config/validate", json=config, headers=headers())
+    assert response.status_code == 200
+    steps = response.json()["pipelines"][name]
+    assert steps[0]["executions"][0]["profiles"]["codex"]["model"] == "preview-only"
+    assert steps[-1]["type"] == "approval"
+    assert config_path.read_bytes() == original
+    assert client.get(base + "/state").json()["last_event_id"] == state["last_event_id"]
+    config["concurrency"]["perJob"] = 17
+    invalid = client.post(base + "/config/validate", json=config, headers=headers())
+    assert invalid.status_code == 422
+    assert invalid.json()["detail"][0]["loc"] == ["concurrency", "perJob"]
+    assert config_path.read_bytes() == original
+    assert client.post(base + "/config/validate", json=config).status_code == 403
+
+
+def test_config_preview_and_save_share_semantic_validation(api):
+    client, _, repo_id, root = api
+    base = f"/api/repos/{repo_id}/config"
+    original = (root / "factory/config.json").read_bytes()
+    config = client.get(base).json()
+    config["pipelines"][config["defaultPipeline"]][-1]["onChanges"] = "missing"
+    preview = client.post(base + "/validate", json=config, headers=headers())
+    save = client.put(base, json=config, headers=headers())
+    assert preview.status_code == save.status_code == 422
+    assert preview.json() == save.json()
+    assert "onChanges" in preview.text
+    assert (root / "factory/config.json").read_bytes() == original

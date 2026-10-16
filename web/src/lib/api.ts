@@ -212,7 +212,7 @@ export const api = {
       z.union([detailSchema, z.object({ message: z.string() })]),
       { method: "POST", body: JSON.stringify(body) },
     ),
-  saveConfig: (repo: string, body: z.infer<typeof configSchema>) =>
+  saveConfig: (repo: string, body: unknown) =>
     request(`${repoPath(repo)}/config`, configSchema, {
       method: "PUT",
       body: JSON.stringify(body),
@@ -242,12 +242,12 @@ export type StatusInfo = {
   destinationName?: string | null;
 };
 
-const machineSchema = z.object({
+export const machineSchema = z.object({
   concurrency: z.object({ global: z.number().int().min(1).max(32) }),
   cli: z.object({ claude: nullableText, codex: nullableText }),
   ports: z.object({ range: z.string() }),
 });
-const rolesSchema = z.object({
+export const rolesSchema = z.object({
   roles: z.array(
     z.looseObject({
       name: z.string(),
@@ -255,6 +255,9 @@ const rolesSchema = z.object({
       type: z.enum(["task", "review", "approval"]),
       source: z.string(),
       sha256: z.string(),
+      status: z.string(),
+      ejectedFrom: nullableText,
+      outdated: z.boolean(),
     }),
   ),
 });
@@ -262,6 +265,12 @@ export const settingsApi = {
   machine: () => request("/machine/settings", machineSchema),
   saveMachine: (body: z.infer<typeof machineSchema>) =>
     request("/machine/settings", machineSchema, { method: "PUT", body: JSON.stringify(body) }),
+  validate: (repo: string, body: unknown) =>
+    request(
+      `${repoPath(repo)}/config/validate`,
+      z.object({ pipelines: z.record(z.string(), z.array(z.unknown())) }),
+      { method: "POST", body: JSON.stringify(body) },
+    ),
   roles: (repo: string) => request(`${repoPath(repo)}/roles`, rolesSchema),
 };
 export async function report(repo: string, job: string, path: string): Promise<string> {

@@ -11,6 +11,10 @@ import { Select } from "@/ui/primitives/select";
 import { PageShell } from "@/ui/page-shell";
 import { StatusBadge } from "@/ui/status";
 
+import { Backlog } from "@/features/backlog/Backlog";
+import { RepoSettings } from "@/features/settings/RepoSettings";
+import { MachineSettings } from "@/features/settings/MachineSettings";
+
 type Connection = "connecting" | "connected" | "disconnected";
 
 export function Shell() {
@@ -116,17 +120,11 @@ export function Shell() {
   else if (selected && params.job)
     page = <JobDetail key={`${repo}:${params.job}`} repo={selected.id} job={params.job} />;
   else if (pathname === "/") page = <Overview repos={overview.data.repos} />;
-  else
-    page = (
-      <PageShell>
-        <h1 className="text-2xl font-medium">
-          {params.job ? "Job detail" : pathname.endsWith("/backlog") ? "Backlog" : "Settings"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {params.job ?? "This page is coming in the next dashboard session."}
-        </p>
-      </PageShell>
-    );
+  else if (selected && pathname.endsWith("/backlog"))
+    page = <Backlog key={selected.id} repo={selected.id} />;
+  else if (selected && pathname.endsWith("/settings"))
+    page = <RepoSettings key={selected.id} repo={selected.id} />;
+  else page = <MachineSettings />;
   return (
     <div className="flex h-dvh flex-col md:flex-row">
       <button
