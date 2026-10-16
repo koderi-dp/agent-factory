@@ -84,6 +84,12 @@ Rules:
 - Work on the current branch. Commit at the end with a clear message; do not push.
 - Match the existing code style. Python 3.11+, type hints, stdlib-first, no new
   dependencies beyond plan §2 without asking.
+- YAPF is approved development tooling. Follow AGENTS.md: run `uv sync --locked`,
+  format every Python file created or modified in this session with
+  `uv run --locked yapf --in-place <files>`, then require
+  `uv run --locked yapf --diff <files>` to exit zero before running tests and committing.
+  Preserve tests/fixtures/ evidence. Do not reformat unrelated files except in the
+  initial repository-wide formatting pass explicitly assigned to session 1.10.
 - Windows is a first-class platform: paths, process handling, file locks, line endings.
 - Inspect existing code and any interrupted-session artifacts before editing. Preserve
   useful evidence; do not treat rate-limit captures as successful behaviour experiments.
@@ -380,6 +386,13 @@ repos). Run Full on the 3 features in both repos at once with the fake CLI, then
 Codex at Luna/Light. Fix whatever these runs expose; each fix gets a test. Do not run
 Claude or mixed-provider jobs here; defer them to 1.11 and record that parity is pending.
 (Astra's phase review and Sol fixes run after this session, in a separate step.)
+
+Also establish the initial YAPF baseline now that the preceding implementation sessions
+are finished: run `uv run --locked yapf --in-place --recursive .`, then require
+`uv run --locked yapf --diff --recursive .` to exit zero. The pyproject.toml exclusions
+preserve fixtures and skip environments, dependencies and build outputs. Run the full
+Python test suite with `uv run --locked pytest` after formatting. Include the formatting
+changes in this session's commit and report both the formatting check and test results.
 ```
 
 ### 1.11 Claude fixtures, adapter and parity · Sol · High (requires Claude)

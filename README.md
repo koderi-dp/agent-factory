@@ -361,6 +361,20 @@ Claude Code picks up edits to agent files in a running session; no restart neede
 
 ## Working on this repo
 
+Python uses [YAPF](https://github.com/google/yapf), pinned in the development dependencies
+with a shared style in `pyproject.toml`. Install the tooling and format changed files:
+
+```powershell
+uv sync --locked
+uv run --locked yapf --in-place path/to/file.py
+uv run --locked yapf --diff path/to/file.py
+```
+
+The `--diff` check exits zero when formatting is clean. To format or check the entire
+repository, replace the file path with `--recursive .`. Run tests after formatting.
+`AGENTS.md` and the run-plan Shared preamble require this for each session's changed
+Python files; session 1.10 performs the initial full-repository formatting pass.
+
 `claude/` is the source of the shared agent roles and workflow (`claude/skills/factory/references/workflow.md`). `codex/skills/factory/SKILL.md` is the Codex entrypoint. After changing the shared process or roles, regenerate the Codex workflow reference and seven Markdown agent files:
 
 ```bash

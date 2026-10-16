@@ -22,7 +22,12 @@ agent-factory = "agent_factory.cli:main"
 factory = "agent_factory.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "httpx>=0.27,<1"]
+dev = [
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.24,<2",
+    "httpx>=0.27,<1",
+    "yapf==0.43.0",
+]
 
 [tool.hatch.version]
 source = "vcs"
@@ -36,3 +41,18 @@ packages = ["src/agent_factory"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.yapf]
+based_on_style = "pep8"
+column_limit = 100
+indent_width = 4
+
+[tool.yapfignore]
+ignore_patterns = [
+  ".git/**",
+  ".venv/**",
+  "dist/**",
+  "node_modules/**",
+  "**/node_modules/**",
+  "tests/fixtures/**",
+]

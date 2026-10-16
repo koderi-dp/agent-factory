@@ -1,17 +1,25 @@
-"""Command skeleton; engine and service commands are filled in by later sessions."""
+"""Local setup and the authenticated service-backed factory commands (§12)."""
 
 import argparse
+import json
+from pathlib import Path
 import sys
+import time
+from urllib.parse import quote
+import webbrowser
 
 from agent_factory import __version__
-from agent_factory.engine import registry
+from agent_factory import service
+from agent_factory.engine import registry, scaffold, versioning
 from agent_factory.paths import find_repo
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="factory")
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--repo", help="Repository path or registered id", default=argparse.SUPPRESS)
+    common.add_argument("--repo",
+                        help="Repository path or registered id",
+                        default=argparse.SUPPRESS)
     parser.add_argument("--repo", help="Repository path or registered id")
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -69,14 +77,13 @@ def build_parser() -> argparse.ArgumentParser:
 def _repos(args: argparse.Namespace) -> int:
     connection = registry.open_registry()
     try:
-        # TODO (plan §12.1, session 1.9): shared repo selection, version gate,
-        # auto-registration, and HTTP dispatch for service-backed commands.
         selected = args.repo
         if selected:
-            row = connection.execute("SELECT path FROM repos WHERE id=?", (selected,)).fetchone()
+            row = connection.execute("SELECT path FROM repos WHERE id=?", (selected, )).fetchone()
             selected = row["path"] if row else selected
         repo = find_repo(selected)
         if repo is not None:
+            versioning.check(repo)
             registry.register(connection, repo)
         if args.repos_action == "remove":
             registry.remove(connection, args.id)
@@ -92,20 +99,179 @@ def _repos(args: argparse.Namespace) -> int:
         connection.close()
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    if args.command == "version":
+class RepoNotInitialised(ValueError):
+    exit_code = 5
+
+
+def _selected(args: argparse.Namespace, *, required: bool = True) -> Path | None:
+    selected = args.repo
+    if selected:
+        connection = registry.open_registry()
+        try:
+            row = connection.execute("SELECT path FROM repos WHERE id=?", (selected, )).fetchone()
+            if row:
+                selected = row["path"]
+        finally:
+            connection.close()
+    repo = find_repo(selected)
+    if repo is None:
+        if required:
+            raise RepoNotInitialised("Repo is not initialised; run `factory init` first")
+        return None
+    versioning.check(repo)
+    connection = registry.open_registry()
+    try:
+        registry.register(connection, repo)
+    finally:
+        connection.close()
+    return repo
+
+
+def _repo_id(repo: Path) -> str:
+    connection = registry.open_registry()
+    try:
+        return registry.register(connection, repo).id
+    finally:
+        connection.close()
+
+
+def _wait(data: dict, base: str, job_id: str) -> int:
+    previous = None
+    while True:
+        result = service.request(data, f"{base}/jobs/{quote(job_id)}")
+        job = result["job"]
+        state = (job["state"], job["current_step"], job["round"], job["pause_reason"])
+        if state != previous:
+            print(
+                f"{job_id}: {job['state']} · {job['current_step'] or 'queued'} · round {job['round']}"
+                + (f" ({job['pause_reason']})" if job["pause_reason"] else ""),
+                flush=True)
+            previous = state
+        if job["state"] in {"paused", "needs_human", "approved", "merged", "cancelled"}:
+            return 0
+        time.sleep(0.25)
+
+
+def _run(args: argparse.Namespace) -> int:
+    command = args.command
+    if command == "init":
+        root = scaffold.check_init(Path(args.repo or Path.cwd()).resolve())
+        provider = args.provider
+        if provider is None:
+            provider = input("Client (claude/codex/both) [codex]: ").strip() or "codex"
+            if provider not in {"claude", "codex", "both"}:
+                raise ValueError("Client must be claude, codex or both")
+        for message in scaffold.init(root, provider, dry_run=args.dry_run):
+            print(message)
+        if not args.dry_run:
+            for check in scaffold.doctor(root):
+                print(
+                    f"{check['check']}: {'ok' if check['ok'] else 'check'} {check.get('detail', '')}"
+                )
+            print('Commit the listed files. Check AGENTS.md describes dev-server ports and checks. '
+                  'Then run: factory start "your feature"')
+        return 0
+    repo = _selected(args,
+                     required=command in {
+                         "start", "next", "status", "stop", "resume", "approve", "rework", "delete",
+                         "dashboard"
+                     })
+    if command == "version":
         print(__version__)
         return 0
-    if args.command == "repos":
-        try:
-            return _repos(args)
-        except (KeyError, ValueError, OSError) as error:
-            print(str(error), file=sys.stderr)
-            return 1
-    # TODO: implement each command in its referenced plan section (sessions 1.2+).
-    print(f"not implemented yet (plan §{args.section})")
-    return 1
+    if command == "repos":
+        return _repos(args)
+    if command in {"upgrade", "eject"}:
+        # TODO (plan §15.6/session 4.2 and §5.3/session 2.2 respectively).
+        print(f"not implemented yet (plan §{args.section})")
+        return 1
+    if command == "doctor":
+        checks = scaffold.doctor(repo)
+        for check in checks:
+            print(f"{check['check']}: {'ok' if check['ok'] else 'check'} {check.get('detail', '')}")
+        return 0 if all(check["ok"] for check in checks
+                        if check["check"] in {"git", "ports"}) else 1
+    if command == "serve":
+        return service.serve(args.port)
+    if command == "service":
+        data = service.info()
+        if args.service_action == "status":
+            print(f"running {service.url(data)} ({data['version']})" if service.
+                  healthy(data) else "stopped")
+            return 0
+        if service.healthy(data):
+            service.stop(data, stop_running=getattr(args, "stop_running", False))
+        if args.service_action == "restart":
+            print(service.url(service.ensure(port=data["port"] if data else None)))
+        else:
+            print("stopped")
+        return 0
+    data = service.ensure()
+    if command == "config":
+        settings = service.request(data, "/api/machine/settings")
+        if args.settings:
+            for item in args.settings:
+                key, separator, value = item.partition("=")
+                if not separator or key not in {
+                        "concurrency.global", "cli.claude", "cli.codex", "ports.range"
+                }:
+                    raise ValueError(f"Unknown machine setting: {item}")
+                group, field = key.split(".")
+                settings[group][field] = int(value) if key == "concurrency.global" else (
+                    None if value == "null" else value)
+            settings = service.request(data, "/api/machine/settings", settings, method="PUT")
+        print(json.dumps(settings, indent=2))
+        return 0
+    repo_id = _repo_id(repo)
+    base = f"/api/repos/{quote(repo_id)}"
+    dashboard = f"{service.url(data)}/#/repo/{quote(repo_id)}"
+    if command == "dashboard":
+        webbrowser.open(dashboard)
+        print(dashboard)
+        return 0
+    if command in {"start", "next"}:
+        if command == "start":
+            details = Path(args.details_file).read_text(
+                encoding="utf-8") if args.details_file else ""
+            body = {"title": args.title, "details": details, "pipeline": args.pipeline}
+            result = service.request(data, base + "/jobs", body)
+        else:
+            result = service.request(data, base + "/backlog", {
+                "action": "start",
+                "index": 0,
+                "pipeline": args.pipeline
+            })
+        job_id = result["id"]
+        print(f"{job_id}\n{dashboard}/job/{quote(job_id)}", flush=True)
+        return _wait(data, base, job_id) if args.wait else 0
+    if command == "status":
+        path = f"/jobs/{quote(args.job_id)}" if args.job_id else "/state"
+        result = service.request(data, base + path)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            for job in [result["job"]] if args.job_id else result["jobs"]:
+                print(f"{job['id']}\t{job['state']}\t{job['current_step'] or ''}\t{job['title']}" +
+                      (f"\t{job['pause_reason']}: {job['note'] or ''}"
+                       if job["pause_reason"] else ""))
+        return 0
+    body = {
+        "force": getattr(args, "force", False),
+        "note": getattr(args, "note", ""),
+        "confirm_sensitive": getattr(args, "confirm_sensitive", False)
+    }
+    result = service.request(data, f"{base}/jobs/{quote(args.job_id)}/{command}", body)
+    print(result.get("message") or f"{args.job_id}: {result['job']['state']}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return _run(args)
+    except (KeyError, ValueError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        return getattr(error, "exit_code", 1)
 
 
 if __name__ == "__main__":

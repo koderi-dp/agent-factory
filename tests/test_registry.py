@@ -71,7 +71,8 @@ def test_distinct_paths_and_missing_restore(machine, repo, tmp_path):
     (other / "factory" / "config.json").write_text("{}", encoding="utf-8")
     assert registry.register(machine, other).id != first.id
     registry.mark_missing(machine, first.id)
-    assert machine.execute("SELECT last_seen FROM repos WHERE id=?", (first.id,)).fetchone()[0] is None
+    assert machine.execute("SELECT last_seen FROM repos WHERE id=?",
+                           (first.id, )).fetchone()[0] is None
     moved = repo.rename(repo.with_name("moved"))
     assert next(item for item in registry.list_repos(machine) if item.id == first.id).missing
     moved.rename(repo)
@@ -81,7 +82,7 @@ def test_distinct_paths_and_missing_restore(machine, repo, tmp_path):
 def test_remove_cascades_leases_and_unknown_ids_fail(machine, repo):
     item = registry.register(machine, repo)
     with db.tx(machine):
-        machine.execute("INSERT INTO port_leases VALUES (5100, ?, 'job', 'now')", (item.id,))
+        machine.execute("INSERT INTO port_leases VALUES (5100, ?, 'job', 'now')", (item.id, ))
     registry.remove(machine, item.id)
     assert registry.list_repos(machine) == []
     assert machine.execute("SELECT * FROM port_leases").fetchall() == []
@@ -110,15 +111,24 @@ def test_cli_version_and_registry(machine, repo, monkeypatch, capsys):
 
 
 @pytest.mark.parametrize("argv", [
-    ["init", "--provider", "both", "--dry-run"], ["upgrade", "--dry-run"],
-    ["eject", "builder", "--diff"], ["doctor"], ["start", "title", "--wait"],
-    ["next", "--pipeline", "fast"], ["status", "--json"], ["stop", "job"],
-    ["resume", "job"], ["approve", "job", "--confirm-sensitive"],
-    ["rework", "job", "note"], ["delete", "job", "--force"], ["dashboard"],
-    ["serve", "--port", "5099"], ["service", "status"],
-    ["service", "stop", "--stop-running"], ["service", "restart"],
+    ["init", "--provider", "both", "--dry-run"],
+    ["upgrade", "--dry-run"],
+    ["eject", "builder", "--diff"],
+    ["doctor"],
+    ["start", "title", "--wait"],
+    ["next", "--pipeline", "fast"],
+    ["status", "--json"],
+    ["stop", "job"],
+    ["resume", "job"],
+    ["approve", "job", "--confirm-sensitive"],
+    ["rework", "job", "note"],
+    ["delete", "job", "--force"],
+    ["dashboard"],
+    ["serve", "--port", "5099"],
+    ["service", "status"],
+    ["service", "stop", "--stop-running"],
+    ["service", "restart"],
     ["config", "--machine", "concurrency.global=6"],
 ])
-def test_unimplemented_commands(argv, capsys):
-    assert cli.main(argv) == 1
-    assert "not implemented yet (plan §" in capsys.readouterr().out
+def test_commands_are_registered(argv):
+    assert cli.build_parser().parse_args(argv).command == argv[0]
