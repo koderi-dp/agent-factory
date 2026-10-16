@@ -1,6 +1,7 @@
 """Deterministic execution handoffs, with a 64 KiB packet budget (§8)."""
 
 from collections.abc import Mapping, Sequence
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -14,7 +15,7 @@ MAX_PACKET_BYTES = 64 * 1024
 MAX_DIFF_BYTES = 24 * 1024
 
 # No job paths, ports, timestamps or provider sessions belong in this prefix.
-PREAMBLE_VERSION = "1"
+PREAMBLE_VERSION = "2"
 PREAMBLE = """You are executing one agent-factory pipeline execution.
 Start from the execution packet. Read further files only when you need them.
 Do not re-read earlier rounds' reports unless the packet points you to them.
@@ -22,8 +23,19 @@ Follow the project's AGENTS.md or CLAUDE.md, loaded from the worktree by your CL
 Work only in the job worktree. Never touch the main checkout. Never push.
 The first task performs the project's fresh-checkout setup when needed.
 Write the report to the absolute report path in the packet, outside the worktree.
-First line: task STATUS: READY|BLOCKED (spec: # heading), review VERDICT: PASS|CHANGES,
-approval APPROVE|ESCALATE (CHANGES only when the step has onChanges).
+A spec report starts with a Markdown heading, for example: # Feature title
+Other task reports start with exactly STATUS: READY or STATUS: BLOCKED.
+Review reports start with exactly VERDICT: PASS or VERDICT: CHANGES.
+Approval reports start with exactly APPROVE or ESCALATE (CHANGES only with onChanges).
+The packet's report_contract specifies the first line for this execution.
+Role texts still use legacy filenames such as spec.md, build.md and decision.md.
+Always substitute the packet's absolute report_path for that output filename.
+Write only that report, including for specs; do not create a second legacy report.
+There is no job.json in this engine. Use the packet's state and upstream report paths.
+Store screenshots and temporary validation files in the packet's artifacts_dir,
+outside the worktree. Parallel reviewers share the worktree; keep it clean throughout.
+Use --session with the packet's browser_session on every agent-browser call,
+including close. This overrides legacy role examples and isolates repos and attempts.
 READY tasks must leave a clean worktree. The builder must commit its changes.
 Reviews and approvals must leave the branch head unchanged and the worktree clean.
 Use only the assigned ports. Stop all servers and processes you start before returning.
@@ -77,7 +89,13 @@ def branch_state(job: Mapping[str, Any]) -> str:
         # file's hunks. Mark every file whose patch is not present in full.
         budget = MAX_DIFF_BYTES // max(1, len(names))
         for name in names:
-            patch = gitops.checked("diff", "--no-ext-diff", "--no-color", revision, "--", name, cwd=worktree)
+            patch = gitops.checked("diff",
+                                   "--no-ext-diff",
+                                   "--no-color",
+                                   revision,
+                                   "--",
+                                   name,
+                                   cwd=worktree)
             if len(patch.encode("utf-8")) > budget:
                 marker = _marker("remaining diff hunks", worktree / name)
                 patch = _prefix(patch, budget - len(marker.encode("utf-8")) - 2) + "\n" + marker
@@ -87,10 +105,14 @@ def branch_state(job: Mapping[str, Any]) -> str:
 
 
 _SECTIONS = (
-    ("job", "Job"), ("paths", "Paths"), ("request", "Request"),
-    ("acceptance_criteria", "Acceptance criteria"), ("branch_state", "Branch state"),
+    ("job", "Job"),
+    ("paths", "Paths"),
+    ("request", "Request"),
+    ("acceptance_criteria", "Acceptance criteria"),
+    ("branch_state", "Branch state"),
     ("upstream_results", "Upstream results (current round)"),
-    ("open_findings", "Open findings"), ("retry_context", "Retry context"),
+    ("open_findings", "Open findings"),
+    ("retry_context", "Retry context"),
     ("omitted_material", "Omitted material"),
 )
 
@@ -113,6 +135,7 @@ def _fit(packet: dict[str, Any], sources: Mapping[str, str]) -> None:
     Bound both saved packet.json and its rendered Markdown. If the protected
     sections alone exceed the budget, fail explicitly before spawning a CLI.
     """
+
     def size() -> int:
         return max(len(render(packet).encode("utf-8")),
                    len(json.dumps(packet, ensure_ascii=False, indent=2).encode("utf-8")) + 1)
@@ -172,14 +195,18 @@ def build(context: Claim, *, executions: Sequence[Mapping[str, Any]] | None = No
         omitted.append(str(source))
     acceptance = []
     builder_acceptance = []
-    contracts = {(s["id"], e["id"]): e["role"]["contract"]
-                 for s in frozen["pipeline"] for e in s["executions"]}
+    contracts = {
+        (s["id"], e["id"]): e["role"]["contract"]
+        for s in frozen["pipeline"]
+        for e in s["executions"]
+    }
     # Surviving spec evidence can precede the current round after a build rewind.
     for row in done:
         if row["state"] != "done":
             continue
         source, _, sections = texts[row["id"]]
-        is_spec = contracts.get((row["step_id"], row["exec_id"])) == "spec" or row["uses"] == "spec-writer"
+        is_spec = contracts.get(
+            (row["step_id"], row["exec_id"])) == "spec" or row["uses"] == "spec-writer"
         name = "Acceptance criteria" if is_spec else (
             "Acceptance" if row["uses"] == "builder" and execution["type"] == "approval" else None)
         if name and name in sections:
@@ -194,7 +221,10 @@ def build(context: Claim, *, executions: Sequence[Mapping[str, Any]] | None = No
         label = f"{row['step_id']}/{row['exec_id']} ({row['uses']})"
         if row["state"] == "done" and row["round"] == execution["round"]:
             parts = [f"{label}: {row['result']}\nReport: {source}"]
-            parts += [f"### {name}\n{sections[name]}" for name in ("Decisions", "Checks run") if name in sections]
+            parts += [
+                f"### {name}\n{sections[name]}" for name in ("Decisions", "Checks run")
+                if name in sections
+            ]
             if not sections:
                 parts.append(_marker("custom report has no handoff sections", source))
             upstream.append("\n".join(parts))
@@ -204,26 +234,65 @@ def build(context: Claim, *, executions: Sequence[Mapping[str, Any]] | None = No
             # detail; superseded previous-round evidence must remain usable.
             findings.append(f"### {label}\nReport: {source}\n{sections.get('Findings', text)}")
     request = _read(folder / "request.md")
-    reworks = [path for path in folder.glob("rework-*.md") if re.fullmatch(r"rework-[0-9]+", path.stem)]
+    reworks = [
+        path for path in folder.glob("rework-*.md") if re.fullmatch(r"rework-[0-9]+", path.stem)
+    ]
     if reworks:
         latest = max(reworks, key=lambda path: int(path.stem.split("-")[1]))
         request += f"\n\nLatest rework ({latest}):\n" + _read(latest)
     retry = ""
     if context.previous and attempt["kind"] == "contract_retry":
-        retry = "Report validation error: " + mask_secrets(context.previous.get("error_detail") or "Report missing or invalid")
+        retry = "Report validation error: " + mask_secrets(
+            context.previous.get("error_detail") or "Report missing or invalid")
     elif context.previous and attempt["kind"] == "fresh" and context.previous["state"] == "lost":
         retry = "The worktree may hold partial uncommitted work from the lost attempt. Inspect it first."
+    contract = entry["role"]["contract"]
+    first_lines = {
+        "spec":
+        "Start the report with a Markdown '# ' heading, e.g. # Feature title",
+        "status":
+        "First line exactly STATUS: READY or STATUS: BLOCKED",
+        "verdict":
+        "First line exactly VERDICT: PASS or VERDICT: CHANGES",
+        "decision":
+        "First line exactly APPROVE or ESCALATE" + (" or CHANGES" if step["onChanges"] else ""),
+    }
     packet = {
-        "job": {"id": job["id"], "title": job["title"], "pipeline": job["pipeline_name"],
-                "step": execution["step_id"], "execution": execution["exec_id"],
-                "round": execution["round"], "attempt_kind": attempt["kind"], "onChanges": step["onChanges"]},
-        "paths": {"worktree": str(Path(job["worktree"]).resolve()), "branch": job["branch"],
-                  "job_folder": str(folder), "report_path": str(report_path),
-                  "ports": ", ".join(map(str, context.ports)) or "none",
-                  "project_instructions": "AGENTS.md / CLAUDE.md in the worktree (loaded by the CLI)"},
-        "request": request, "acceptance_criteria": "\n\n".join(acceptance),
-        "branch_state": branch_state(job), "upstream_results": "\n\n".join(upstream),
-        "open_findings": "\n\n".join(findings), "retry_context": retry,
+        "job": {
+            "id": job["id"],
+            "title": job["title"],
+            "pipeline": job["pipeline_name"],
+            "step": execution["step_id"],
+            "execution": execution["exec_id"],
+            "round": execution["round"],
+            "attempt_kind": attempt["kind"],
+            "onChanges": step["onChanges"],
+            "report_contract": first_lines[contract]
+        },
+        "paths": {
+            "worktree":
+            str(Path(job["worktree"]).resolve()),
+            "branch":
+            job["branch"],
+            "job_folder":
+            str(folder),
+            "report_path":
+            str(report_path),
+            "artifacts_dir":
+            str(report_path.parent),
+            "browser_session":
+            "factory-" + hashlib.sha256(str(report_path).encode("utf-8")).hexdigest()[:24],
+            "ports":
+            ", ".join(map(str, context.ports)) or "none",
+            "project_instructions":
+            "AGENTS.md / CLAUDE.md in the worktree (loaded by the CLI)"
+        },
+        "request": request,
+        "acceptance_criteria": "\n\n".join(acceptance),
+        "branch_state": branch_state(job),
+        "upstream_results": "\n\n".join(upstream),
+        "open_findings": "\n\n".join(findings),
+        "retry_context": retry,
         "omitted_material": list(dict.fromkeys(omitted)),
     }
     _fit(packet, {"branch_state": job["worktree"], "upstream_results": str(folder / "executions")})

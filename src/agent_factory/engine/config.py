@@ -7,8 +7,8 @@ import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import (BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints,
-                      ValidationInfo, field_validator, model_validator)
+from pydantic import (BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints, ValidationInfo,
+                      field_validator, model_validator)
 
 from agent_factory import __version__
 from agent_factory.engine import db
@@ -43,7 +43,9 @@ class Execution(ConfigModel):
         if self.provider not in self.profiles:
             raise ValueError(f"profiles[{self.provider}] needs explicit model and effort")
         if self.provider == "codex" and self.maxBudgetUsd is not None:
-            warnings.warn(f"{self.id}: maxBudgetUsd is ignored for Codex", UserWarning, stacklevel=2)
+            warnings.warn(f"{self.id}: maxBudgetUsd is ignored for Codex",
+                          UserWarning,
+                          stacklevel=2)
         return self
 
 
@@ -80,15 +82,21 @@ class RepoConfig(ConfigModel):
     engine: Nonempty
     defaultPipeline: Identifier
     pipelines: dict[Identifier, Annotated[list[SingleStep | ParallelStep],
-                                        Field(min_length=1, max_length=32)]]
+                                          Field(min_length=1, max_length=32)]]
     maxRounds: Annotated[int, Field(ge=1, le=5)] = 3
     merge: Literal["auto", "verify"] = "verify"
     permissions: Literal["auto", "bypass"] = "auto"
     concurrency: RepoConcurrency = Field(default_factory=RepoConcurrency)
     timeouts: Timeouts = Field(default_factory=Timeouts)
     sensitivePaths: list[Nonempty] = Field(default_factory=lambda: [
-        "**/migrations/**", ".github/**", "**/*.lock", "package.json",
-        "pyproject.toml", "**/auth/**", "Dockerfile", "**/*.tf",
+        "**/migrations/**",
+        ".github/**",
+        "**/*.lock",
+        "package.json",
+        "pyproject.toml",
+        "**/auth/**",
+        "Dockerfile",
+        "**/*.tf",
     ])
     _roles: dict[tuple[str, str], Role] = PrivateAttr(default_factory=dict)
 
@@ -104,8 +112,9 @@ class RepoConfig(ConfigModel):
             kinds = []
             for step in steps:
                 # A single step is its own execution; count that id only once.
-                entries = [step.id] + ([e.id for e in step.parallel]
-                                       if isinstance(step, ParallelStep) else [])
+                entries = [step.id
+                           ] + ([e.id
+                                 for e in step.parallel] if isinstance(step, ParallelStep) else [])
                 for identifier in entries:
                     if identifier in ids:
                         raise ValueError(f"{name}: duplicate step or execution id: {identifier}")
@@ -171,8 +180,13 @@ def upgrade_v1(raw: dict[str, Any], *, engine_version: str = __version__) -> dic
     result.pop("start", None)
     # v1 defaulted to auto; new v2 repos default to verify in the template.
     result.setdefault("merge", "auto")
-    result.update(version=2, engine=_engine_range(engine_version), defaultPipeline="full",
-                  pipelines={"full": pipeline, "fast": copy.deepcopy(_FAST_DEFAULT)},
+    result.update(version=2,
+                  engine=_engine_range(engine_version),
+                  defaultPipeline="full",
+                  pipelines={
+                      "full": pipeline,
+                      "fast": copy.deepcopy(_FAST_DEFAULT)
+                  },
                   permissions="bypass" if permissions == "bypassPermissions" else permissions)
     return result
 
@@ -261,6 +275,7 @@ def save_machine_settings(connection: sqlite3.Connection,
             for group, fields in validated.model_dump(by_alias=True).items()
             for field, value in fields.items()]
     with db.tx(connection):
-        connection.executemany("INSERT INTO settings (key, value) VALUES (?, ?) "
-                               "ON CONFLICT(key) DO UPDATE SET value=excluded.value", rows)
+        connection.executemany(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value", rows)
     return validated

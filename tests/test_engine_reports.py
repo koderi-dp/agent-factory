@@ -5,25 +5,37 @@ from datetime import datetime, timezone
 
 import pytest
 
-from agent_factory.engine.reports import (ReportError, extract_sections, parse_report,
-                                          read_result, verdict)
+from agent_factory.engine.reports import (ReportError, extract_sections, parse_report, read_result,
+                                          verdict)
 
 
 @pytest.mark.parametrize("contract,text,expected", [
-    ("spec", "# Feature\n", "READY"), ("status", "STATUS: READY\n", "READY"),
-    ("status", "STATUS: BLOCKED\n", "BLOCKED"), ("verdict", "VERDICT: PASS\n", "PASS"),
-    ("verdict", "VERDICT: CHANGES\n", "CHANGES"), ("decision", "APPROVE\n", "APPROVE"),
-    ("decision", "ESCALATE\n", "ESCALATE"), ("status", " STATUS: READY \r\n", "READY"),
+    ("spec", "# Feature\n", "READY"),
+    ("status", "STATUS: READY\n", "READY"),
+    ("status", "STATUS: BLOCKED\n", "BLOCKED"),
+    ("verdict", "VERDICT: PASS\n", "PASS"),
+    ("verdict", "VERDICT: CHANGES\n", "CHANGES"),
+    ("decision", "APPROVE\n", "APPROVE"),
+    ("decision", "ESCALATE\n", "ESCALATE"),
+    ("status", " STATUS: READY \r\n", "READY"),
 ])
 def test_first_line_contracts(contract, text, expected):
     assert verdict(text, contract) == expected
 
 
 @pytest.mark.parametrize("contract,text", [
-    ("status", ""), ("status", "\nSTATUS: READY"), ("status", "STATUS: READY later"),
-    ("status", "READY"), ("status", "VERDICT: PASS"), ("verdict", "VERDICT: MAYBE"),
-    ("verdict", "STATUS: READY"), ("decision", "APPROVED"), ("decision", "CHANGES"),
-    ("spec", "## Feature"), ("spec", "#"), ("unknown", "APPROVE"),
+    ("status", ""),
+    ("status", "\nSTATUS: READY"),
+    ("status", "STATUS: READY later"),
+    ("status", "READY"),
+    ("status", "VERDICT: PASS"),
+    ("verdict", "VERDICT: MAYBE"),
+    ("verdict", "STATUS: READY"),
+    ("decision", "APPROVED"),
+    ("decision", "CHANGES"),
+    ("spec", "## Feature"),
+    ("spec", "#"),
+    ("unknown", "APPROVE"),
 ])
 def test_invalid_first_line_does_not_advance(contract, text):
     with pytest.raises(ReportError, match="first line"):
@@ -36,8 +48,9 @@ def test_approval_changes_requires_on_changes():
         verdict("CHANGES\n", "decision")
 
 
-@pytest.mark.parametrize("launch", [1000.0, "1970-01-01T00:16:40Z",
-                                     datetime.fromtimestamp(1000, timezone.utc)])
+@pytest.mark.parametrize(
+    "launch", [1000.0, "1970-01-01T00:16:40Z",
+               datetime.fromtimestamp(1000, timezone.utc)])
 def test_fresh_report_and_missing_report(tmp_path, launch):
     path = tmp_path / "report.md"
     with pytest.raises(ReportError, match="cannot read"):
@@ -68,8 +81,10 @@ def test_report_must_be_utf8_and_launch_timezone_explicit(tmp_path):
 
 
 def test_extract_sections_for_all_builtin_handoffs():
-    names = ["Acceptance criteria", "Pages to check", "Changes", "Decisions", "Acceptance",
-             "Checks run", "Findings", "Reasons", "Follow-ups"]
+    names = [
+        "Acceptance criteria", "Pages to check", "Changes", "Decisions", "Acceptance", "Checks run",
+        "Findings", "Reasons", "Follow-ups"
+    ]
     text = "STATUS: READY\n\n" + "\n".join(f"## {name}\nContent for {name}.\n" for name in names)
     assert extract_sections(text) == {name: f"Content for {name}." for name in names}
 

@@ -16,6 +16,7 @@ import server
 
 
 class CodexTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
         self.addCleanup(self.repo.close)
@@ -23,8 +24,14 @@ class CodexTests(unittest.TestCase):
     def test_settings_keep_clients_separate(self):
         cfg = job.check_config({"provider": "codex"})
         cfg["pipeline"][1]["providers"] = {
-            "claude": {"model": "sonnet", "effort": "medium"},
-            "codex": {"model": "gpt-6-luna", "effort": "high"},
+            "claude": {
+                "model": "sonnet",
+                "effort": "medium"
+            },
+            "codex": {
+                "model": "gpt-6-luna",
+                "effort": "high"
+            },
         }
         cfg = job.save_config(cfg)
         self.assertEqual(cfg["pipeline"][1]["providers"]["codex"]["model"], "gpt-6-luna")
@@ -32,8 +39,19 @@ class CodexTests(unittest.TestCase):
         cfg["provider"] = "claude"
         job.save_config(cfg)
         self.assertEqual(job.load_config()["pipeline"][1]["providers"]["codex"]["effort"], "high")
-        for bad in ({"provider": "other"}, {"codexModels": {"builder": "opus"}},
-                    {"codexEfforts": {"builder": "turbo"}}, {"codexModels": []}):
+        for bad in ({
+                "provider": "other"
+        }, {
+                "codexModels": {
+                    "builder": "opus"
+                }
+        }, {
+                "codexEfforts": {
+                    "builder": "turbo"
+                }
+        }, {
+                "codexModels": []
+        }):
             with self.assertRaises(job.JobError):
                 job.check_config(bad)
 
@@ -75,14 +93,21 @@ class CodexTests(unittest.TestCase):
         events = '{"type":"thread.started","thread_id":"exact-session-123"}\n'
         fake = Mock(pid=42, stdout=io.StringIO(events + "diagnostic\n"))
         fake.wait.return_value = 1
-        with patch.object(job, "repo_root", return_value=self.repo.path), patch.object(codex_runner.subprocess, "Popen", return_value=fake):
+        with patch.object(job, "repo_root",
+                          return_value=self.repo.path), patch.object(codex_runner.subprocess,
+                                                                     "Popen",
+                                                                     return_value=fake):
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(codex_runner.run(session, "auto"), 1)
         state = json.loads(session.read_text())
-        self.assertEqual((state["sessionId"], state["status"], state["exitCode"]), ("exact-session-123", "failed", 1))
+        self.assertEqual((state["sessionId"], state["status"], state["exitCode"]),
+                         ("exact-session-123", "failed", 1))
         fake = Mock(pid=43, stdout=io.StringIO('{"type":"turn.completed"}\n'))
         fake.wait.return_value = 0
-        with patch.object(job, "repo_root", return_value=self.repo.path), patch.object(codex_runner.subprocess, "Popen", return_value=fake) as launch:
+        with patch.object(job, "repo_root",
+                          return_value=self.repo.path), patch.object(codex_runner.subprocess,
+                                                                     "Popen",
+                                                                     return_value=fake) as launch:
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(codex_runner.run(session, resume=True), 0)
         args = launch.call_args.args[0]
@@ -93,7 +118,9 @@ class CodexTests(unittest.TestCase):
 
     @patch.object(codex_runner.shutil, "which", return_value="codex")
     def test_runner_stops_child_and_records_stream_failure(self, _which):
+
         class FailedStream(io.StringIO):
+
             def __next__(self):
                 raise OSError("event stream failed")
 
@@ -101,7 +128,10 @@ class CodexTests(unittest.TestCase):
         fake = Mock(pid=42, stdout=FailedStream())
         fake.poll.return_value = None
         fake.wait.return_value = 0
-        with patch.object(job, "repo_root", return_value=self.repo.path), patch.object(codex_runner.subprocess, "Popen", return_value=fake):
+        with patch.object(job, "repo_root",
+                          return_value=self.repo.path), patch.object(codex_runner.subprocess,
+                                                                     "Popen",
+                                                                     return_value=fake):
             with self.assertRaisesRegex(OSError, "event stream failed"):
                 codex_runner.run(session, "auto")
         fake.terminate.assert_called_once()
@@ -111,10 +141,13 @@ class CodexTests(unittest.TestCase):
     def test_server_launches_selected_client(self):
         for provider in ("claude", "codex"):
             job.save_config({"provider": provider})
-            skill = self.repo.path / (".agents/skills/factory/SKILL.md" if provider == "codex" else ".claude/skills/factory/SKILL.md")
+            skill = self.repo.path / (".agents/skills/factory/SKILL.md"
+                                      if provider == "codex" else ".claude/skills/factory/SKILL.md")
             skill.parent.mkdir(parents=True, exist_ok=True)
             skill.write_text("installed", encoding="utf-8")
-            with patch.object(job, "repo_root", return_value=self.repo.path), patch.object(server.shutil, "which", return_value=provider), patch.object(server.subprocess, "Popen") as launch:
+            with patch.object(job, "repo_root", return_value=self.repo.path), patch.object(
+                    server.shutil, "which",
+                    return_value=provider), patch.object(server.subprocess, "Popen") as launch:
                 log = server.start_headless("auto")
             args = launch.call_args.args[0]
             self.assertTrue(log.endswith(".log"))
@@ -129,13 +162,17 @@ class CodexTests(unittest.TestCase):
         backlog = self.repo.factory / "backlog.md"
         backlog.write_text("- [ ] Try again\n", encoding="utf-8")
         job.save_config({"provider": "codex", "start": "headless"})
-        with patch.object(server, "BACKLOG", backlog), patch.object(server, "start_headless", side_effect=job.JobError("missing tool")):
+        with patch.object(server, "BACKLOG",
+                          backlog), patch.object(server,
+                                                 "start_headless",
+                                                 side_effect=job.JobError("missing tool")):
             with self.assertRaisesRegex(job.JobError, "missing tool"):
                 server.edit_backlog({"action": "start", "index": 0})
         self.assertEqual(job.pending_requests(), [])
 
 
 class GeneratedCodexTests(unittest.TestCase):
+
     def test_generated_files_are_current_and_roles_parse(self):
         spec = importlib.util.spec_from_file_location("sync_codex", ROOT / "tools/sync_codex.py")
         module = importlib.util.module_from_spec(spec)
@@ -147,9 +184,9 @@ class GeneratedCodexTests(unittest.TestCase):
         for role in job.AGENTS:
             data = job.pipeline.agent_file(repo.path, "codex", role)
             self.assertIn(data["type"], {"task", "review", "approval"})
-            self.assertIn("Your file is the hand-off", (repo.path / data["instructions"]).read_text(encoding="utf-8"))
+            self.assertIn("Your file is the hand-off",
+                          (repo.path / data["instructions"]).read_text(encoding="utf-8"))
             self.assertFalse((ROOT / f"codex/agents/{role}.toml").exists())
-
 
 
 if __name__ == "__main__":

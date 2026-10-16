@@ -16,6 +16,7 @@ from helpers import ROOT, Repo
 
 
 class InstallTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo(agents=False)
         self.addCleanup(self.repo.close)
@@ -59,18 +60,27 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), self.files["factory/job.py"])
 
     def test_dry_run_writes_nothing(self):
-        before = {p.relative_to(self.repo.path): p.read_bytes()
-                  for p in self.repo.path.rglob("*") if p.is_file()}
+        before = {
+            p.relative_to(self.repo.path): p.read_bytes()
+            for p in self.repo.path.rglob("*") if p.is_file()
+        }
         self.run_install(dry_run=True)
-        after = {p.relative_to(self.repo.path): p.read_bytes()
-                 for p in self.repo.path.rglob("*") if p.is_file()}
+        after = {
+            p.relative_to(self.repo.path): p.read_bytes()
+            for p in self.repo.path.rglob("*") if p.is_file()
+        }
         self.assertEqual(before, after)
 
     def test_local_cli_installs_without_a_download(self):
         result = subprocess.run(
-            [sys.executable, str(ROOT / "install.py"),
-             "--target", str(self.repo.path), "--source", str(ROOT)],
-            capture_output=True, text=True,
+            [
+                sys.executable,
+                str(ROOT / "install.py"), "--target",
+                str(self.repo.path), "--source",
+                str(ROOT)
+            ],
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Installed:", result.stdout)
@@ -79,7 +89,9 @@ class InstallTests(unittest.TestCase):
     def test_install_in_non_git_folder_without_git_available(self):
         with tempfile.TemporaryDirectory() as folder:
             target = Path(folder)
-            with patch.object(subprocess, "run", side_effect=AssertionError("Git must not be invoked")):
+            with patch.object(subprocess,
+                              "run",
+                              side_effect=AssertionError("Git must not be invoked")):
                 with redirect_stdout(io.StringIO()) as output:
                     result = installer.main(["--source", str(ROOT), "--target", str(target)])
             self.assertEqual(result, 0)
@@ -93,14 +105,20 @@ class InstallTests(unittest.TestCase):
             with self.subTest(provider=provider), tempfile.TemporaryDirectory() as folder:
                 target = Path(folder)
                 with redirect_stdout(io.StringIO()):
-                    result = installer.main(["--source", str(ROOT), "--target", folder, "--provider", provider])
+                    result = installer.main(
+                        ["--source",
+                         str(ROOT), "--target", folder, "--provider", provider])
                 self.assertEqual(result, 0)
                 for name in installer.required_files(provider):
                     self.assertTrue((target / name).is_file(), name)
                 config = json.loads((target / "factory/config.json").read_text())
-                self.assertEqual(config.get("provider", "claude"), "codex" if provider == "codex" else "claude")
+                self.assertEqual(config.get("provider", "claude"),
+                                 "codex" if provider == "codex" else "claude")
                 self.assertEqual((target / ".claude").exists(), provider == "both")
-                result = subprocess.run([sys.executable, str(target / "factory/job.py"), "config"], capture_output=True, text=True)
+                result = subprocess.run(
+                    [sys.executable, str(target / "factory/job.py"), "config"],
+                    capture_output=True,
+                    text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("customAgents", json.loads(result.stdout))
                 self.assertFalse(list((target / ".codex/agents").glob("*.toml")))
@@ -110,7 +128,10 @@ class InstallTests(unittest.TestCase):
         config = self.repo.factory / "config.json"
         original = config.read_bytes()
         with redirect_stdout(io.StringIO()):
-            installer.install(self.repo.path, installer.payload(ROOT, provider="both"), force=True, provider="both")
+            installer.install(self.repo.path,
+                              installer.payload(ROOT, provider="both"),
+                              force=True,
+                              provider="both")
         self.assertEqual(config.read_bytes(), original)
         self.assertTrue((self.repo.path / ".agents/skills/factory/SKILL.md").is_file())
 
@@ -148,17 +169,22 @@ class InstallTests(unittest.TestCase):
                 archive.writestr("agent-factory-main/" + source_name, content)
             archive.writestr("agent-factory-main/factory/jobs/001/job.json", "private")
             archive.writestr("agent-factory-main/claude/launch.json", "unrelated")
-        with patch.object(installer.urllib.request, "urlopen", return_value=io.BytesIO(data.getvalue())) as fetch:
+        with patch.object(installer.urllib.request,
+                          "urlopen",
+                          return_value=io.BytesIO(data.getvalue())) as fetch:
             with redirect_stdout(io.StringIO()):
                 files = installer.payload()
         self.assertEqual(files, self.files)
-        self.assertEqual(fetch.call_args.args[0], f"https://codeload.github.com/{installer.REPOSITORY}/zip/refs/heads/main")
+        self.assertEqual(fetch.call_args.args[0],
+                         f"https://codeload.github.com/{installer.REPOSITORY}/zip/refs/heads/main")
 
     def test_incomplete_download_and_unsafe_paths_are_refused(self):
         data = io.BytesIO()
         with zipfile.ZipFile(data, "w") as archive:
             archive.writestr("agent-factory-main/factory/job.py", "partial")
-        with patch.object(installer.urllib.request, "urlopen", return_value=io.BytesIO(data.getvalue())):
+        with patch.object(installer.urllib.request,
+                          "urlopen",
+                          return_value=io.BytesIO(data.getvalue())):
             with redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(installer.InstallError, "Incomplete source"):
                     installer.payload()

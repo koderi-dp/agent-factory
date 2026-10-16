@@ -47,33 +47,44 @@ def free_range(blocks=2):
 
 def configure_range(scheduler, base, blocks=2):
     scheduler.machine.call(lambda connection: save_machine_settings(
-        connection, {"ports": {"range": f"{base}-{base + 10 * blocks - 1}"}}))
+        connection, {"ports": {
+            "range": f"{base}-{base + 10 * blocks - 1}"
+        }}))
 
 
 def leases(scheduler):
-    return scheduler.machine.call(lambda connection: [dict(row) for row in connection.execute(
-        "SELECT * FROM port_leases ORDER BY base")])
+    return scheduler.machine.call(
+        lambda connection:
+        [dict(row) for row in connection.execute("SELECT * FROM port_leases ORDER BY base")])
 
 
 def edit(scheduler, identifier, sql, args=()):
+
     def apply(connection):
         with db.tx(connection):
             connection.execute(sql, args)
+
     scheduler.repos[identifier][1].call(apply)
 
 
 def poll_stopped(supervisor, scheduler, identifier, attempt_id):
+
     def check():
         supervisor.poll()
         return scheduler.context(identifier, attempt_id).attempt["state"] == "stopped"
+
     wait_for(check)
 
 
 def members(context):
     ready = wait_for(lambda: read_json(context.directory / "ready.json"))
     server = wait_for(lambda: read_json(context.directory / "server.json"))
-    processes = [psutil.Process(ready["proc"]["wrapper_pid"]), psutil.Process(ready["pid"]),
-                 psutil.Process(ready["child_pid"]), psutil.Process(server["pid"])]
+    processes = [
+        psutil.Process(ready["proc"]["wrapper_pid"]),
+        psutil.Process(ready["pid"]),
+        psutil.Process(ready["child_pid"]),
+        psutil.Process(server["pid"])
+    ]
     return processes, server["port"]
 
 
@@ -83,6 +94,7 @@ def test_concurrent_leases_never_overlap_across_repos_and_are_idempotent(tmp_pat
     scheduler = Scheduler()
     base = free_range(6)
     configure_range(scheduler, base, 6)
+
     # Independent machine connections exercise the actual SQLite serialization.
     def reserve(index):
         connection = db.connect(tmp_path / "machine/machine.db")
@@ -90,6 +102,7 @@ def test_concurrent_leases_never_overlap_across_repos_and_are_idempotent(tmp_pat
             return ports.lease(connection, identifiers[index // 3], f"{index % 3 + 1:03}-job", ())
         finally:
             connection.close()
+
     try:
         with ThreadPoolExecutor(max_workers=12) as pool:
             first = list(pool.map(reserve, range(6)))
@@ -99,7 +112,8 @@ def test_concurrent_leases_never_overlap_across_repos_and_are_idempotent(tmp_pat
         assert len(leases(scheduler)) == 6
         configure_range(scheduler, base + 5, 7)
         # A shifted range must not overlap an older block.
-        seventh = scheduler.machine.call(lambda connection: ports.lease(connection, identifiers[0], "new", ()))
+        seventh = scheduler.machine.call(
+            lambda connection: ports.lease(connection, identifiers[0], "new", ()))
         assert seventh == base + 65
     finally:
         scheduler.close()
@@ -129,13 +143,13 @@ def test_release_on_merge_cancel_delete_but_keep_needs_human_and_paused(store, t
     initial = leases(scheduler)
     assert len(initial) == 1
     for retained in ("needs_human", "paused", "approved"):
-        edit(scheduler, identifier, "UPDATE jobs SET state=?", (retained,))
+        edit(scheduler, identifier, "UPDATE jobs SET state=?", (retained, ))
         supervisor.sync_ports()
         assert leases(scheduler) == initial
     if terminal == "deleted":
         edit(scheduler, identifier, "DELETE FROM jobs")
     else:
-        edit(scheduler, identifier, "UPDATE jobs SET state=?", (terminal,))
+        edit(scheduler, identifier, "UPDATE jobs SET state=?", (terminal, ))
     supervisor.sync_ports()
     assert leases(scheduler) == []
     if terminal != "deleted":
@@ -161,7 +175,8 @@ def test_missing_repo_keeps_lease_and_deleted_job_is_reconciled_after_restart(st
     assert leases(scheduler) == []
 
 
-def test_exhaustion_pauses_without_launch_and_explicit_resume_reuses_pending_execution(tmp_path, monkeypatch):
+def test_exhaustion_pauses_without_launch_and_explicit_resume_reuses_pending_execution(
+        tmp_path, monkeypatch):
     monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
     identifier = create_repo(tmp_path / "repo", jobs=2)
     scheduler = Scheduler()
@@ -171,7 +186,8 @@ def test_exhaustion_pauses_without_launch_and_explicit_resume_reuses_pending_exe
     try:
         supervisor.start()
         jobs = rows(scheduler, identifier, "jobs")
-        assert [(job["state"], job["pause_reason"]) for job in jobs] == [("running", None), ("paused", "ports")]
+        assert [(job["state"], job["pause_reason"]) for job in jobs] == [("running", None),
+                                                                         ("paused", "ports")]
         assert "No free 10-port block" in jobs[1]["note"]
         assert rows(scheduler, identifier, "attempts") == []
         edit(scheduler, identifier, "UPDATE jobs SET state='cancelled' WHERE id='001-job'")
@@ -196,9 +212,15 @@ def test_foreign_listener_in_existing_lease_pauses_with_owner_and_is_never_signa
     configure_range(scheduler, base, 1)
     supervisor.sync_ports()
     script = Path(__file__).with_name("fake_cli.py").resolve()
-    foreign = subprocess.Popen([sys._base_executable, "-I", "-S", str(script),
-                                "--server", str(root / "foreign.json"), "--port", str(base + 3)],
-                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    foreign = subprocess.Popen([
+        sys._base_executable, "-I", "-S",
+        str(script), "--server",
+        str(root / "foreign.json"), "--port",
+        str(base + 3)
+    ],
+                               stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
     try:
         wait_for(lambda: read_json(root / "foreign.json"))
         supervisor.tick()
@@ -228,16 +250,22 @@ def test_restart_repairs_job_port_base_from_durable_machine_lease(store):
 def test_assignment_retains_task_ux_ui_slots_without_giving_code_review_ports():
     for role, kind, offset in [("builder", "task", 0), ("custom-task", "task", 0),
                                ("reviewer-ux", "review", 3), ("reviewer-ui", "review", 6)]:
-        assert ports.assigned(5100, {"uses": role, "type": kind}) == tuple(range(5100 + offset, 5103 + offset))
+        assert ports.assigned(5100, {
+            "uses": role,
+            "type": kind
+        }) == tuple(range(5100 + offset, 5103 + offset))
     assert ports.assigned(5100, {"uses": "reviewer-code", "type": "review"}) == ()
 
 
 def test_listener_inspection_includes_ipv6_unknown_owners_and_fails_closed(monkeypatch):
-    monkeypatch.setattr(psutil, "net_connections", lambda **kwargs: [
-        SimpleNamespace(status=psutil.CONN_LISTEN, laddr=SimpleNamespace(port=5101), pid=None),
-        SimpleNamespace(status=psutil.CONN_ESTABLISHED, laddr=SimpleNamespace(port=5102), pid=None)])
+    monkeypatch.setattr(
+        psutil, "net_connections", lambda **kwargs: [
+            SimpleNamespace(status=psutil.CONN_LISTEN, laddr=SimpleNamespace(port=5101), pid=None),
+            SimpleNamespace(
+                status=psutil.CONN_ESTABLISHED, laddr=SimpleNamespace(port=5102), pid=None)
+        ])
     found = ports.listeners()
-    assert found == (ports.Listener(5101, None, "unknown process", None),)
+    assert found == (ports.Listener(5101, None, "unknown process", None), )
     assert ports.foreign(found, 5100, []) == found[0]
     monkeypatch.setattr(psutil, "net_connections", Mock(side_effect=psutil.AccessDenied()))
     with pytest.raises(ports.PortsUnavailable, match="Cannot inspect"):
@@ -247,7 +275,11 @@ def test_listener_inspection_includes_ipv6_unknown_owners_and_fails_closed(monke
 @pytest.mark.parametrize("fallback", [False, True])
 def test_stop_kills_grandchild_frees_port_and_preserves_foreign_process(store, fallback):
     root, identifier, scheduler, supervisor = store
-    run_cli.atomic_json(root / "scenario.json", {"hang": True, "spawn_child_listening_on_port": True, "ignore_sigterm": True})
+    run_cli.atomic_json(root / "scenario.json", {
+        "hang": True,
+        "spawn_child_listening_on_port": True,
+        "ignore_sigterm": True
+    })
     claim = scheduler.claim_next()
     supervisor.launch(claim)
     tree, port = members(claim)
@@ -276,7 +308,8 @@ def test_stop_kills_grandchild_frees_port_and_preserves_foreign_process(store, f
                 tree[0].resume()
 
 
-def test_stopping_parallel_group_keeps_completed_result_and_resume_exact_session(tmp_path, monkeypatch):
+def test_stopping_parallel_group_keeps_completed_result_and_resume_exact_session(
+        tmp_path, monkeypatch):
     monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
     root = tmp_path / "repo"
     identifier = create_repo(root, parallel=2)
@@ -296,11 +329,13 @@ def test_stopping_parallel_group_keeps_completed_result_and_resume_exact_session
         supervisor.poll()
         supervisor.stop(identifier, "001-job", attempt_id=second.attempt["id"])
         poll_stopped(supervisor, scheduler, identifier, second.attempt["id"])
-        assert [e["state"] for e in rows(scheduler, identifier, "executions")] == ["done", "stopped"]
+        assert [e["state"]
+                for e in rows(scheduler, identifier, "executions")] == ["done", "stopped"]
         scheduler.resume(identifier, "001-job")
         resumed = scheduler.claim_next()
         assert resumed.execution["id"] == second.execution["id"]
-        assert resumed.attempt["kind"] == "resume" and resumed.attempt["session_id"] == "fake-session"
+        assert resumed.attempt["kind"] == "resume" and resumed.attempt[
+            "session_id"] == "fake-session"
         assert rows(scheduler, identifier, "executions")[0]["state"] == "done"
     finally:
         for child in supervisor._children.values():
@@ -309,14 +344,18 @@ def test_stopping_parallel_group_keeps_completed_result_and_resume_exact_session
 
 
 @pytest.mark.parametrize("override,restart", [(False, False), (True, False), (True, True)])
-def test_timeout_uses_frozen_default_or_execution_override_and_survives_restart(store, override, restart):
+def test_timeout_uses_frozen_default_or_execution_override_and_survives_restart(
+        store, override, restart):
     root, identifier, scheduler, supervisor = store
-    run_cli.atomic_json(root / "scenario.json", {"hang": True, "spawn_child_listening_on_port": True})
+    run_cli.atomic_json(root / "scenario.json", {
+        "hang": True,
+        "spawn_child_listening_on_port": True
+    })
     frozen = json.loads(rows(scheduler, identifier, "jobs")[0]["frozen"])
     frozen["timeouts"]["executionMinutes"] = 60 if override else 1.0
     if override:
         frozen["pipeline"][0]["executions"][0]["timeoutMinutes"] = 1.0
-    edit(scheduler, identifier, "UPDATE jobs SET frozen=?", (json.dumps(frozen),))
+    edit(scheduler, identifier, "UPDATE jobs SET frozen=?", (json.dumps(frozen), ))
     claim = scheduler.claim_next()
     supervisor.launch(claim)
     tree, port = members(claim)
@@ -344,7 +383,8 @@ def test_stop_intent_recovered_even_if_engine_dies_before_writing_stop_flag(stor
     supervisor.launch(claim)
     wait_for(lambda: (claim.directory / "ready.json").exists())
     # Crash immediately after the durable intent transaction.
-    monkeypatch.setattr(supervisor, "_stop_attempt", Mock(side_effect=RuntimeError("engine crashed")))
+    monkeypatch.setattr(supervisor, "_stop_attempt",
+                        Mock(side_effect=RuntimeError("engine crashed")))
     with pytest.raises(RuntimeError, match="engine crashed"):
         supervisor.stop(identifier, "001-job")
     assert not (claim.directory / "stop").exists()
@@ -362,8 +402,12 @@ def test_mismatched_wrapper_identity_never_allows_a_foreign_signal(store):
     claim = scheduler.claim_next()
     claim.directory.mkdir(parents=True)
     process = psutil.Process()
-    run_cli.atomic_json(claim.directory / "proc.json", {
-        "wrapper_pid": process.pid, "wrapper_create_time": process.create_time(), "token": claim.attempt["owner_token"]})
+    run_cli.atomic_json(
+        claim.directory / "proc.json", {
+            "wrapper_pid": process.pid,
+            "wrapper_create_time": process.create_time(),
+            "token": claim.attempt["owner_token"]
+        })
     supervisor.stop(identifier, "001-job")
     assert process.is_running()
     assert not (claim.directory / "stop").exists()
@@ -391,7 +435,7 @@ def test_long_execution_override_wins_over_short_default(store):
     frozen = json.loads(rows(scheduler, identifier, "jobs")[0]["frozen"])
     frozen["timeouts"]["executionMinutes"] = 0.00001
     frozen["pipeline"][0]["executions"][0]["timeoutMinutes"] = 60
-    edit(scheduler, identifier, "UPDATE jobs SET frozen=?", (json.dumps(frozen),))
+    edit(scheduler, identifier, "UPDATE jobs SET frozen=?", (json.dumps(frozen), ))
     claim = scheduler.claim_next()
     supervisor.launch(claim)
     wait_for(lambda: (claim.directory / "ready.json").exists())
@@ -406,6 +450,7 @@ def test_fresh_launch_time_uses_engine_clock_instead_of_kernel_boot_time(store, 
     run_cli.atomic_json(root / "scenario.json", {"hang": True})
     claim = scheduler.claim_next()
     recorded = supervisor._record
+
     def skewed(context, process):
         # Keep the real ownership checks, but simulate the skewed kernel clock
         # seen under WSL when recording launch time for the timer.
@@ -413,6 +458,7 @@ def test_fresh_launch_time_uses_engine_clock_instead_of_kernel_boot_time(store, 
         proxy.pid = process.pid
         proxy.create_time.return_value = process.create_time() - 30
         recorded(context, proxy)
+
     monkeypatch.setattr(supervisor, "_record", skewed)
     before = datetime.now(timezone.utc)
     supervisor.launch(claim)
@@ -424,7 +470,8 @@ def test_fresh_launch_time_uses_engine_clock_instead_of_kernel_boot_time(store, 
 
 
 @pytest.mark.parametrize("mode", ["tree", "orphan", "session"])
-def test_owned_listener_is_allowed_while_parallel_peer_starts_and_is_freed_on_stop(tmp_path, monkeypatch, mode):
+def test_owned_listener_is_allowed_while_parallel_peer_starts_and_is_freed_on_stop(
+        tmp_path, monkeypatch, mode):
     monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
     root = tmp_path / "repo"
     identifier = create_repo(root, parallel=2)
@@ -434,17 +481,26 @@ def test_owned_listener_is_allowed_while_parallel_peer_starts_and_is_freed_on_st
     supervisor.start()
     try:
         base = rows(scheduler, identifier, "jobs")[0]["port_base"]
-        run_cli.atomic_json(root / "scenario.json", {"hang": True, "spawn_child_listening_on_port": True,
-                                                   "server_port": base, "orphan_server": mode == "orphan",
-                                                   "server_new_session": mode == "session"})
+        run_cli.atomic_json(
+            root / "scenario.json", {
+                "hang": True,
+                "spawn_child_listening_on_port": True,
+                "server_port": base,
+                "orphan_server": mode == "orphan",
+                "server_new_session": mode == "session"
+            })
         first = scheduler.claim_next()
         supervisor.launch(first)
         if mode == "orphan":
             ready = wait_for(lambda: read_json(first.directory / "ready.json"))
             server = wait_for(lambda: read_json(first.directory / "server.json"))
-            tree = [psutil.Process(ready["proc"]["wrapper_pid"]), psutil.Process(ready["pid"]), psutil.Process(server["pid"])]
-            wait_for(lambda: not psutil.pid_exists(ready["child_pid"]) if os.name == "nt"
-                     else psutil.Process(server["pid"]).ppid() != ready["child_pid"])
+            tree = [
+                psutil.Process(ready["proc"]["wrapper_pid"]),
+                psutil.Process(ready["pid"]),
+                psutil.Process(server["pid"])
+            ]
+            wait_for(lambda: not psutil.pid_exists(ready["child_pid"]) if os.name == "nt" else
+                     psutil.Process(server["pid"]).ppid() != ready["child_pid"])
             port = server["port"]
         else:
             tree, port = members(first)
@@ -468,3 +524,20 @@ def test_owned_listener_is_allowed_while_parallel_peer_starts_and_is_freed_on_st
         for child in supervisor._children.values():
             child.wait(timeout=15)
         scheduler.close()
+
+
+@pytest.mark.parametrize("still_listening", [False, True])
+def test_parallel_peer_exits_between_listener_snapshot_and_ownership_check(
+        store, monkeypatch, still_listening):
+    _, identifier, scheduler, supervisor = store
+    claim = scheduler.claim_next()
+    base = rows(scheduler, identifier, "jobs")[0]["port_base"]
+    stale = ports.Listener(base + 3, 99999999, "exited peer", 1.0)
+    snapshots = iter([(stale, ), (stale, ) if still_listening else ()])
+    monkeypatch.setattr(ports, "listeners", lambda only=None: next(snapshots))
+    monkeypatch.setattr(winjob, "owned_tree", lambda *args: [])
+    if still_listening:
+        with pytest.raises(ports.PortsUnavailable, match="exited peer"):
+            supervisor._check_ports(claim)
+    else:
+        supervisor._check_ports(claim)

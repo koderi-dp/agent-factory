@@ -42,14 +42,38 @@ def repo(tmp_path, monkeypatch):
 def add_job(repo, job_id="001-test", *, state="approved", change=True):
     root, connection, _, _ = repo
     profile = {"codex": {"model": "fake", "effort": "low"}}
-    config = RepoConfig.model_validate({
-        "version": 2, "engine": ">=0", "defaultPipeline": "fast", "pipelines": {"fast": [
-            {"id": "build", "uses": "builder", "provider": "codex", "profiles": profile},
-            {"id": "approve", "uses": "fast-approver", "provider": "codex", "profiles": profile},
-        ]}}, context={"root": root})
+    config = RepoConfig.model_validate(
+        {
+            "version": 2,
+            "engine": ">=0",
+            "defaultPipeline": "fast",
+            "pipelines": {
+                "fast": [
+                    {
+                        "id": "build",
+                        "uses": "builder",
+                        "provider": "codex",
+                        "profiles": profile
+                    },
+                    {
+                        "id": "approve",
+                        "uses": "fast-approver",
+                        "provider": "codex",
+                        "profiles": profile
+                    },
+                ]
+            }
+        },
+        context={"root": root})
     worktree, base = gitops.create_worktree(root, job_id)
-    pipeline.create_job(connection, job_id, "Do a thing", config=config, worktree=str(worktree),
-                        branch="factory/" + job_id, base_head=base, preamble=packet.PREAMBLE,
+    pipeline.create_job(connection,
+                        job_id,
+                        "Do a thing",
+                        config=config,
+                        worktree=str(worktree),
+                        branch="factory/" + job_id,
+                        base_head=base,
+                        preamble=packet.PREAMBLE,
                         preamble_version=packet.PREAMBLE_VERSION)
     folder = root / "factory/jobs" / job_id
     folder.mkdir(parents=True)
@@ -60,15 +84,20 @@ def add_job(repo, job_id="001-test", *, state="approved", change=True):
     current = gitops.head(worktree)
     pipeline.advance_job(connection, job_id, current_head=current)
     with db.tx(connection):
-        connection.execute("UPDATE jobs SET state=?,approved_head=? WHERE id=?", (state, current, job_id))
+        connection.execute("UPDATE jobs SET state=?,approved_head=? WHERE id=?",
+                           (state, current, job_id))
     return pipeline.load(connection, job_id)[0]
 
 
 def context_for(repo, job):
     root, connection, _, repo_id = repo
     execution = pipeline.load(connection, job["id"])[1][0]
-    return Claim(repo_id, root, job, execution,
-                 {"id": 1, "n": 1, "dir": "executions/build.build/r1/a1", "kind": "fresh"})
+    return Claim(repo_id, root, job, execution, {
+        "id": 1,
+        "n": 1,
+        "dir": "executions/build.build/r1/a1",
+        "kind": "fresh"
+    })
 
 
 def test_merge_cleans_worktree_branch_and_releases_lease(repo):
@@ -186,14 +215,28 @@ def test_cleanup_stops_owned_tree_but_foreign_listener_survives(repo, action):
     foreign.bind(("127.0.0.1", 0))
     foreign.listen()
     run_cli.atomic_json(context.directory / "scenario.json", {
-        "sleep": 60, "spawn_child_listening_on_port": True, "server_port": port})
+        "sleep": 60,
+        "spawn_child_listening_on_port": True,
+        "server_port": port
+    })
     fake = Path(__file__).with_name("fake_cli.py").resolve()
-    run_cli.atomic_json(context.directory / "command.json", {
-        "argv": [sys._base_executable, "-I", "-S", str(fake), "--scenario", str(context.directory / "scenario.json")],
-        "cwd": job["worktree"], "env": {}, "stdin": None})
+    run_cli.atomic_json(
+        context.directory / "command.json", {
+            "argv": [
+                sys._base_executable, "-I", "-S",
+                str(fake), "--scenario",
+                str(context.directory / "scenario.json")
+            ],
+            "cwd":
+            job["worktree"],
+            "env": {},
+            "stdin":
+            None
+        })
     with db.tx(connection):
-        connection.execute("INSERT INTO attempts (execution_id,n,kind,state,owner_token,dir) VALUES (?,1,'fresh','running',?,?)",
-                           (context.execution["id"], token, context.attempt["dir"]))
+        connection.execute(
+            "INSERT INTO attempts (execution_id,n,kind,state,owner_token,dir) VALUES (?,1,'fresh','running',?,?)",
+            (context.execution["id"], token, context.attempt["dir"]))
     wrapper = winjob.spawn_wrapper(context.directory, token)
     try:
         deadline = time.monotonic() + 15
@@ -224,7 +267,7 @@ def test_remove_refuses_a_path_outside_expected_worktree(repo):
     root, connection, _, _ = repo
     job = add_job(repo)
     with db.tx(connection):
-        connection.execute("UPDATE jobs SET worktree=?", (str(root),))
+        connection.execute("UPDATE jobs SET worktree=?", (str(root), ))
     with pytest.raises(gitops.GitError, match="outside"):
         gitops.delete(root, connection, job["id"])
     assert (root / "app.txt").exists()
@@ -235,12 +278,14 @@ def test_windows_removal_retries_file_locks(repo, monkeypatch):
     job = add_job(repo)
     original = gitops.git
     calls = []
+
     def locked(*args, cwd):
         if args[:2] == ("worktree", "remove"):
             calls.append(args)
             if len(calls) < 6:
                 return subprocess.CompletedProcess(args, 1, "", "file is locked")
         return original(*args, cwd=cwd)
+
     monkeypatch.setattr(gitops, "git", locked)
     # Patch the module reference, not the global os.name used by pathlib.
     monkeypatch.setattr(gitops, "os", type("OS", (), {"name": "nt"}))
@@ -250,7 +295,8 @@ def test_windows_removal_retries_file_locks(repo, monkeypatch):
     assert len(calls) == 6 and sleeps == [1] * 5
 
 
-@pytest.mark.parametrize("type_,result", [("review", "PASS"), ("approval", "APPROVE"), ("task", "READY")])
+@pytest.mark.parametrize("type_,result", [("review", "PASS"), ("approval", "APPROVE"),
+                                          ("task", "READY")])
 def test_git_report_validation_requires_clean_worktree(repo, type_, result):
     job = add_job(repo)
     execution = {"type": type_, "uses": "custom", "head_before": gitops.head(job["worktree"])}

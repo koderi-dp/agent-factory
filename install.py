@@ -16,23 +16,35 @@ REPOSITORY = "koderi-dp/agent-factory"
 IGNORE = "/factory/jobs/"
 SEEDS = {"factory/config.json", "factory/backlog.md"}
 COMMON_REQUIRED = {
-    "factory/job.py", "factory/pipeline.py", "factory/server.py", "factory/codex_runner.py", "factory/dashboard/index.html",
-    "factory/dashboard/dashboard.js", "factory/dashboard/dashboard.css",
-    "factory/dashboard/sortable.min.js", *SEEDS,
+    "factory/job.py",
+    "factory/pipeline.py",
+    "factory/server.py",
+    "factory/codex_runner.py",
+    "factory/dashboard/index.html",
+    "factory/dashboard/dashboard.js",
+    "factory/dashboard/dashboard.css",
+    "factory/dashboard/sortable.min.js",
+    *SEEDS,
 }
 ROLES = (
-    "spec-writer", "builder", "reviewer-security", "reviewer-ux",
-    "reviewer-ui", "reviewer-code", "approver",
+    "spec-writer",
+    "builder",
+    "reviewer-security",
+    "reviewer-ux",
+    "reviewer-ui",
+    "reviewer-code",
+    "approver",
 )
 CLAUDE_REQUIRED = {
     ".claude/skills/factory/references/workflow.md",
     *(f".claude/agents/{name}.md" for name in ROLES),
-    *(f".claude/skills/{name}/SKILL.md" for name in (
-        "factory", "factory-next", "factory-watch", "factory-dashboard")),
+    *(f".claude/skills/{name}/SKILL.md"
+      for name in ("factory", "factory-next", "factory-watch", "factory-dashboard")),
 }
 CODEX_REQUIRED = {
     *(f".codex/agents/{name}.md" for name in ROLES),
-    ".agents/skills/factory/SKILL.md", ".agents/skills/factory/references/workflow.md",
+    ".agents/skills/factory/SKILL.md",
+    ".agents/skills/factory/references/workflow.md",
 }
 REQUIRED = COMMON_REQUIRED | CLAUDE_REQUIRED
 
@@ -40,7 +52,8 @@ REQUIRED = COMMON_REQUIRED | CLAUDE_REQUIRED
 def required_files(provider):
     if provider not in {"claude", "codex", "both"}:
         raise InstallError(f"Unknown provider: {provider}")
-    return COMMON_REQUIRED | (CLAUDE_REQUIRED if provider == "claude" else CODEX_REQUIRED if provider == "codex" else CLAUDE_REQUIRED | CODEX_REQUIRED)
+    return COMMON_REQUIRED | (CLAUDE_REQUIRED if provider == "claude" else CODEX_REQUIRED
+                              if provider == "codex" else CLAUDE_REQUIRED | CODEX_REQUIRED)
 
 
 class InstallError(Exception):
@@ -56,9 +69,11 @@ def destination(name, provider="claude"):
         return None
     if path.suffix in {".pyc", ".tmp"} or path.name == ".lock":
         return None
-    if provider in {"claude", "both"} and name.startswith("claude/agents/") and path.suffix == ".md":
+    if provider in {"claude", "both"
+                    } and name.startswith("claude/agents/") and path.suffix == ".md":
         return "." + name
-    if provider in {"claude", "both"} and len(path.parts) >= 4 and path.parts[:2] == ("claude", "skills"):
+    if provider in {"claude", "both"} and len(
+            path.parts) >= 4 and path.parts[:2] == ("claude", "skills"):
         if path.parts[2] in {"factory", "factory-next", "factory-watch", "factory-dashboard"}:
             return "." + name
     if provider in {"codex", "both"}:
@@ -66,7 +81,10 @@ def destination(name, provider="claude"):
             return "." + name
         if name.startswith("codex/skills/factory/"):
             return name.replace("codex/skills/", ".agents/skills/", 1)
-    if name in {"factory/job.py", "factory/pipeline.py", "factory/server.py", "factory/codex_runner.py", "factory/README.md", *SEEDS}:
+    if name in {
+            "factory/job.py", "factory/pipeline.py", "factory/server.py", "factory/codex_runner.py",
+            "factory/README.md", *SEEDS
+    }:
         return name
     if name.startswith("factory/dashboard/"):
         return name
@@ -157,44 +175,60 @@ def install(target, files, force=False, dry_run=False, provider="claude"):
     content = ignore.read_bytes() if ignore.exists() else b""
     if IGNORE.encode() not in content.splitlines():
         newline = b"\r\n" if b"\r\n" in content else b"\n"
-        writes[ignore] = content + (newline if content and not content.endswith(b"\n") else b"") + IGNORE.encode() + newline
+        writes[ignore] = content + (newline if content and not content.endswith(b"\n") else
+                                    b"") + IGNORE.encode() + newline
     if conflicts:
         raise InstallError(
-            "Existing files differ (no files changed):\n  " + "\n  ".join(conflicts)
-            + "\nReview them, then use --force to replace factory files. Settings and backlog are always preserved."
+            "Existing files differ (no files changed):\n  " + "\n  ".join(conflicts) +
+            "\nReview them, then use --force to replace factory files. Settings and backlog are always preserved."
         )
     for path, content in writes.items():
         print(f"{'Would write' if dry_run else 'Write'} {path.relative_to(target).as_posix()}")
         if not dry_run:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(content)
-    print(f"{'Dry run' if dry_run else 'Installed'}: {len(writes)} file(s), {preserved} existing settings/backlog file(s) preserved.")
+    print(
+        f"{'Dry run' if dry_run else 'Installed'}: {len(writes)} file(s), {preserved} existing settings/backlog file(s) preserved."
+    )
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", type=Path, default=Path.cwd(), help="Existing project folder (default: current folder)")
-    parser.add_argument("--provider", choices=("claude", "codex", "both"), default="claude", help="Client support to install (default: claude)")
+    parser.add_argument("--target",
+                        type=Path,
+                        default=Path.cwd(),
+                        help="Existing project folder (default: current folder)")
+    parser.add_argument("--provider",
+                        choices=("claude", "codex", "both"),
+                        default="claude",
+                        help="Client support to install (default: claude)")
     parser.add_argument("--repo", default=REPOSITORY, help="GitHub owner/repository")
-    parser.add_argument("--source", type=Path, help="Install from a local agent-factory checkout without downloading")
-    parser.add_argument("--force", action="store_true", help="Replace differing factory files; preserve settings and backlog")
+    parser.add_argument("--source",
+                        type=Path,
+                        help="Install from a local agent-factory checkout without downloading")
+    parser.add_argument("--force",
+                        action="store_true",
+                        help="Replace differing factory files; preserve settings and backlog")
     parser.add_argument("--dry-run", action="store_true", help="Show changes without writing files")
     args = parser.parse_args(argv)
     try:
         target = args.target.expanduser().resolve()
         check_target(target)
-        files = payload(args.source.expanduser().resolve() if args.source else None, args.repo, args.provider)
+        files = payload(args.source.expanduser().resolve() if args.source else None, args.repo,
+                        args.provider)
         install(target, files, args.force, args.dry_run, args.provider)
     except (InstallError, OSError, ValueError, urllib.error.URLError, zipfile.BadZipFile) as exc:
         print(f"Install failed: {exc}", file=sys.stderr)
         return 1
     if not args.dry_run:
-        clients = ("claude", "codex") if args.provider == "both" else (args.provider,)
+        clients = ("claude", "codex") if args.provider == "both" else (args.provider, )
         for executable in (*clients, "agent-browser"):
             if not shutil.which(executable):
                 print(f"Missing runtime tool: {executable} (see README requirements).")
         print("Next: describe setup, dev server ports and validation in AGENTS.md or CLAUDE.md.")
-        print("Before running the factory, make this folder a Git repository with a local main branch and at least one commit.")
+        print(
+            "Before running the factory, make this folder a Git repository with a local main branch and at least one commit."
+        )
         print("Commit the installed agent/skill files, factory/ and .gitignore.")
         if args.provider in {"codex", "both"}:
             print("Open Codex in your project and run $factory <feature>.")

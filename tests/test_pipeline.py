@@ -8,21 +8,38 @@ from helpers import Repo, execution, git, job, write_agent
 
 import pipeline
 
-
 CUSTOM = {
-    "writer": {"type": "task", "output": "draft.md"},
-    "quality": {"type": "review", "output": "quality.md"},
-    "risk": {"type": "review", "output": "risk.md"},
-    "gate": {"type": "approval", "output": "signoff.md"},
+    "writer": {
+        "type": "task",
+        "output": "draft.md"
+    },
+    "quality": {
+        "type": "review",
+        "output": "quality.md"
+    },
+    "risk": {
+        "type": "review",
+        "output": "risk.md"
+    },
+    "gate": {
+        "type": "approval",
+        "output": "signoff.md"
+    },
 }
 STEPS = [
     execution("draft", "writer"),
-    {"id": "checks", "parallel": [execution("quality", "quality"), execution("risk", "risk")], "onChanges": "draft"},
+    {
+        "id": "checks",
+        "parallel": [execution("quality", "quality"),
+                     execution("risk", "risk")],
+        "onChanges": "draft"
+    },
     execution("signoff", "gate"),
 ]
 
 
 class PipelineTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
         self.addCleanup(self.repo.close)
@@ -37,7 +54,11 @@ class PipelineTests(unittest.TestCase):
 
     def finish(self, overrides=None):
         for task in self.plan()["tasks"]:
-            first = {"task": "STATUS: READY", "review": "VERDICT: PASS", "approval": "APPROVE"}[task["type"]]
+            first = {
+                "task": "STATUS: READY",
+                "review": "VERDICT: PASS",
+                "approval": "APPROVE"
+            }[task["type"]]
             first = (overrides or {}).get(task["agent"], first)
             Path(task["output"]).write_text(first + "\n\nEvidence.\n", encoding="utf-8")
         return job.advance("001-pipe")
@@ -70,7 +91,9 @@ class PipelineTests(unittest.TestCase):
 
     def test_pipeline_and_model_settings_are_frozen(self):
         self.cfg["pipeline"][0]["providers"]["claude"]["model"] = "sonnet"
-        self.cfg.update(pipeline=[self.cfg["pipeline"][0], self.cfg["pipeline"][-1]], merge="auto", maxRounds=5)
+        self.cfg.update(pipeline=[self.cfg["pipeline"][0], self.cfg["pipeline"][-1]],
+                        merge="auto",
+                        maxRounds=5)
         job.save_config(self.cfg)
         plan = self.plan()
         self.assertEqual(plan["tasks"][0]["model"], "opus")
@@ -160,7 +183,9 @@ class PipelineTests(unittest.TestCase):
         (self.repo.path / ".claude/agents/writer.md").unlink()
         self.repo.add_job("002-codex", stage="draft", provider="codex")
         task = job.step_plan("002-codex")["tasks"][0]
-        self.assertEqual(Path(task["instructions"]).resolve(), (self.repo.path / ".codex/agents/writer.md").resolve())
+        self.assertEqual(
+            Path(task["instructions"]).resolve(),
+            (self.repo.path / ".codex/agents/writer.md").resolve())
         self.assertEqual(Path(task["output"]).name, "codex-draft.md")
         self.assertNotIn("custom", task)
 
@@ -205,7 +230,12 @@ class PipelineTests(unittest.TestCase):
         for expected in ("build", "review", "approve", "approved"):
             plan = job.step_plan("002-default")
             for task in plan["tasks"]:
-                first = {"spec": "# Spec", "status": "STATUS: READY", "verdict": "VERDICT: PASS", "decision": "APPROVE"}[task["contract"]]
+                first = {
+                    "spec": "# Spec",
+                    "status": "STATUS: READY",
+                    "verdict": "VERDICT: PASS",
+                    "decision": "APPROVE"
+                }[task["contract"]]
                 Path(task["output"]).write_text(first + "\n\nEvidence\n", encoding="utf-8")
             self.assertEqual(job.advance("002-default")["stage"], expected)
 
@@ -216,12 +246,15 @@ class PipelineTests(unittest.TestCase):
         for _ in range(3):
             plan = job.step_plan("002-late-task")
             if plan["stage"] == "polish":
-                (self.repo.tmp / "app-factory/002-late-task/app.txt").write_text("polished\n", encoding="utf-8")
+                (self.repo.tmp / "app-factory/002-late-task/app.txt").write_text("polished\n",
+                                                                                 encoding="utf-8")
                 worktree = self.repo.tmp / "app-factory/002-late-task"
                 git("add", "app.txt", cwd=worktree)
                 git("commit", "-qm", "Polish after review", cwd=worktree)
             for task in plan["tasks"]:
-                Path(task["output"]).write_text(("VERDICT: PASS" if task["type"] == "review" else "STATUS: READY") + "\n", encoding="utf-8")
+                Path(task["output"]).write_text(
+                    ("VERDICT: PASS" if task["type"] == "review" else "STATUS: READY") + "\n",
+                    encoding="utf-8")
             job.advance("002-late-task")
         plan = job.step_plan("002-late-task")
         Path(plan["tasks"][0]["output"]).write_text("APPROVE\n", encoding="utf-8")
@@ -230,6 +263,7 @@ class PipelineTests(unittest.TestCase):
 
 
 class PipelineValidationTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
         self.addCleanup(self.repo.close)
@@ -261,25 +295,56 @@ class PipelineValidationTests(unittest.TestCase):
 
     def test_quoted_frontmatter_values_are_supported(self):
         path = self.repo.path / ".claude/agents/writer.md"
-        path.write_text('---\ntype: "task" # role\noutput: \'draft.md\'\n---\nInstructions.\n', encoding="utf-8")
+        path.write_text('---\ntype: "task" # role\noutput: \'draft.md\'\n---\nInstructions.\n',
+                        encoding="utf-8")
         cfg = job.check_config({"pipeline": STEPS})
         self.assertEqual(cfg["pipeline"][0]["uses"], "writer")
 
     def test_provider_settings_are_explicit_and_validated(self):
-        for selection in ({}, {"model": "opus"}, {"model": "default", "effort": "medium"},
-                          {"model": "opus", "effort": "default"},
-                          {"model": "gpt-6-luna", "effort": "low"},
-                          {"model": [], "effort": "medium"}):
+        for selection in ({}, {
+                "model": "opus"
+        }, {
+                "model": "default",
+                "effort": "medium"
+        }, {
+                "model": "opus",
+                "effort": "default"
+        }, {
+                "model": "gpt-6-luna",
+                "effort": "low"
+        }, {
+                "model": [],
+                "effort": "medium"
+        }):
             step = execution("spec", "spec-writer")
             step["providers"]["claude"] = selection
             with self.subTest(selection=selection), self.assertRaises(job.JobError):
                 job.check_config({"pipeline": [step, execution("gate", "approver")]})
         invalid = [
-            {"id": "spec", "uses": "spec-writer"},
-            {**execution("spec", "spec-writer"), "providers": {}},
-            {**execution("spec", "spec-writer"), "providers": {"other": {"model": "opus", "effort": "medium"}}},
-            {"id": "checks", "parallel": ["reviewer-code"]},
-            {"id": "checks", "parallel": [execution("same", "reviewer-code"), execution("same", "reviewer-ui")]},
+            {
+                "id": "spec",
+                "uses": "spec-writer"
+            },
+            {
+                **execution("spec", "spec-writer"), "providers": {}
+            },
+            {
+                **execution("spec", "spec-writer"), "providers": {
+                    "other": {
+                        "model": "opus",
+                        "effort": "medium"
+                    }
+                }
+            },
+            {
+                "id": "checks",
+                "parallel": ["reviewer-code"]
+            },
+            {
+                "id": "checks",
+                "parallel": [execution("same", "reviewer-code"),
+                             execution("same", "reviewer-ui")]
+            },
         ]
         for step in invalid:
             with self.subTest(step=step), self.assertRaises(job.JobError):
@@ -288,22 +353,34 @@ class PipelineValidationTests(unittest.TestCase):
     def test_defaults_and_builtin_selection(self):
         cfg = job.check_config({})
         self.assertEqual(cfg["pipeline"], pipeline.DEFAULT)
-        cfg = job.check_config({"pipeline": [execution("code", "builder"), execution("gate", "approver")]})
+        cfg = job.check_config(
+            {"pipeline": [execution("code", "builder"),
+                          execution("gate", "approver")]})
         self.assertEqual(cfg["pipeline"][0]["id"], "code")
 
     def test_invalid_graphs_and_paths_are_rejected(self):
-        bad = [[], [{"id": "x", "uses": "unknown"}], [STEPS[0], STEPS[0], STEPS[-1]],
-               [{"id": "merged", "uses": "writer"}, STEPS[-1]],
-               [STEPS[0], {"id": "check", "parallel": ["writer", "quality"]}, STEPS[-1]],
-               [STEPS[0], {"id": "check", "uses": "quality", "onChanges": "signoff"}, STEPS[-1]],
-               [STEPS[-1], STEPS[0]], [STEPS[0]]]
+        bad = [[], [{
+            "id": "x",
+            "uses": "unknown"
+        }], [STEPS[0], STEPS[0], STEPS[-1]], [{
+            "id": "merged",
+            "uses": "writer"
+        }, STEPS[-1]], [STEPS[0], {
+            "id": "check",
+            "parallel": ["writer", "quality"]
+        }, STEPS[-1]],
+               [STEPS[0], {
+                   "id": "check",
+                   "uses": "quality",
+                   "onChanges": "signoff"
+               }, STEPS[-1]], [STEPS[-1], STEPS[0]], [STEPS[0]]]
         for steps in bad:
             with self.subTest(steps=steps), self.assertRaises(job.JobError):
                 job.check_config({"pipeline": steps})
-        for name in ("../outside", "/absolute", "C:/outside", "factory/../outside", "accessibility.md"):
+        for name in ("../outside", "/absolute", "C:/outside", "factory/../outside",
+                     "accessibility.md"):
             with self.subTest(name=name), self.assertRaises(job.JobError):
                 job.check_config({"pipeline": [execution("unsafe", name), STEPS[-1]]})
-
 
 
 if __name__ == "__main__":

@@ -10,7 +10,6 @@ import ctypes
 from ctypes import wintypes
 import os
 
-
 if os.name != "nt":
     raise OSError("winjob_proto requires Windows")
 
@@ -26,29 +25,22 @@ WAIT_TIMEOUT = 258
 
 class BasicLimitInformation(ctypes.Structure):
     _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
-                ("PerJobUserTimeLimit", ctypes.c_int64),
-                ("LimitFlags", wintypes.DWORD),
-                ("MinimumWorkingSetSize", SIZE_T),
-                ("MaximumWorkingSetSize", SIZE_T),
-                ("ActiveProcessLimit", wintypes.DWORD),
-                ("Affinity", SIZE_T),
-                ("PriorityClass", wintypes.DWORD),
-                ("SchedulingClass", wintypes.DWORD)]
+                ("PerJobUserTimeLimit", ctypes.c_int64), ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", SIZE_T), ("MaximumWorkingSetSize", SIZE_T),
+                ("ActiveProcessLimit", wintypes.DWORD), ("Affinity", SIZE_T),
+                ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD)]
 
 
 class IoCounters(ctypes.Structure):
-    _fields_ = [(name, ctypes.c_uint64) for name in
-                ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
-                 "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+    _fields_ = [(name, ctypes.c_uint64)
+                for name in ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                             "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
 
 
 class ExtendedLimitInformation(ctypes.Structure):
-    _fields_ = [("BasicLimitInformation", BasicLimitInformation),
-                ("IoInfo", IoCounters),
-                ("ProcessMemoryLimit", SIZE_T),
-                ("JobMemoryLimit", SIZE_T),
-                ("PeakProcessMemoryUsed", SIZE_T),
-                ("PeakJobMemoryUsed", SIZE_T)]
+    _fields_ = [("BasicLimitInformation", BasicLimitInformation), ("IoInfo", IoCounters),
+                ("ProcessMemoryLimit", SIZE_T), ("JobMemoryLimit", SIZE_T),
+                ("PeakProcessMemoryUsed", SIZE_T), ("PeakJobMemoryUsed", SIZE_T)]
 
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -66,9 +58,10 @@ for name, restype, argtypes in (
     ("OpenProcess", wintypes.HANDLE, [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]),
     ("WaitForSingleObject", wintypes.DWORD, [wintypes.HANDLE, wintypes.DWORD]),
     ("QueryFullProcessImageNameW", wintypes.BOOL,
-     [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]),
-    ("GetHandleInformation", wintypes.BOOL,
-     [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]),
+     [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+      ctypes.POINTER(wintypes.DWORD)]),
+    ("GetHandleInformation", wintypes.BOOL, [wintypes.HANDLE,
+                                             ctypes.POINTER(wintypes.DWORD)]),
 ):
     function = getattr(kernel32, name)
     function.restype = restype
@@ -82,6 +75,7 @@ def checked(value: int) -> int:
 
 
 class Job:
+
     def __init__(self, handle: int) -> None:
         self.handle = handle
 
@@ -92,8 +86,9 @@ class Job:
         try:
             limits = ExtendedLimitInformation()
             limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            checked(kernel32.SetInformationJobObject(
-                job.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)))
+            checked(
+                kernel32.SetInformationJobObject(job.handle, 9, ctypes.byref(limits),
+                                                 ctypes.sizeof(limits)))
         except BaseException:
             job.close()
             raise
@@ -101,8 +96,8 @@ class Job:
 
     @classmethod
     def open(cls, name: str) -> Job:
-        return cls(checked(kernel32.OpenJobObjectW(
-            JOB_OBJECT_QUERY | JOB_OBJECT_TERMINATE, False, name)))
+        return cls(
+            checked(kernel32.OpenJobObjectW(JOB_OBJECT_QUERY | JOB_OBJECT_TERMINATE, False, name)))
 
     def assign_current_process(self) -> None:
         checked(kernel32.AssignProcessToJobObject(self.handle, kernel32.GetCurrentProcess()))
@@ -110,13 +105,14 @@ class Job:
     def process_ids(self) -> list[int]:
         capacity = 16
         while True:
+
             class ProcessIdList(ctypes.Structure):
                 _fields_ = [("assigned", wintypes.DWORD), ("count", wintypes.DWORD),
                             ("ids", SIZE_T * capacity)]
 
             data = ProcessIdList()
-            if kernel32.QueryInformationJobObject(
-                    self.handle, 3, ctypes.byref(data), ctypes.sizeof(data), None):
+            if kernel32.QueryInformationJobObject(self.handle, 3, ctypes.byref(data),
+                                                  ctypes.sizeof(data), None):
                 return list(data.ids[:data.count])
             if ctypes.get_last_error() != 234:  # ERROR_MORE_DATA
                 raise ctypes.WinError(ctypes.get_last_error())
@@ -146,8 +142,8 @@ class Process:
     """Hold a process handle across termination so PID reuse cannot fool the probe."""
 
     def __init__(self, pid: int) -> None:
-        self.handle = checked(kernel32.OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid))
+        self.handle = checked(
+            kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid))
         self.pid = pid
 
     def image(self) -> str:

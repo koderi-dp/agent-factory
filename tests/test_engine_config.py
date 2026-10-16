@@ -60,8 +60,9 @@ def test_step_and_execution_id_patterns(raw, tmp_path, identifier, parallel):
         validate(raw, tmp_path)
 
 
-@pytest.mark.parametrize("collision", ["step-step", "child-child", "child-step", "child-group",
-                                       "across-groups", "child-later-step"])
+@pytest.mark.parametrize(
+    "collision",
+    ["step-step", "child-child", "child-step", "child-group", "across-groups", "child-later-step"])
 def test_ids_are_unique_within_pipeline(raw, tmp_path, collision):
     full = raw["pipelines"]["full"]
     group = full[2]
@@ -114,10 +115,22 @@ def test_provider_must_be_known(raw, tmp_path):
         validate(raw, tmp_path)
 
 
-@pytest.mark.parametrize("selection", [None, {}, {"model": "opus"}, {"effort": "medium"},
-                                        {"model": "", "effort": "medium"},
-                                        {"model": "opus", "effort": " "},
-                                        {"model": [], "effort": "medium"}])
+@pytest.mark.parametrize("selection", [
+    None, {}, {
+        "model": "opus"
+    }, {
+        "effort": "medium"
+    }, {
+        "model": "",
+        "effort": "medium"
+    }, {
+        "model": "opus",
+        "effort": " "
+    }, {
+        "model": [],
+        "effort": "medium"
+    }
+])
 def test_selected_profile_needs_explicit_model_and_effort(raw, tmp_path, selection):
     execution = raw["pipelines"]["fast"][0]
     if selection is None:
@@ -131,7 +144,8 @@ def test_selected_profile_needs_explicit_model_and_effort(raw, tmp_path, selecti
 def test_unselected_profile_is_optional_and_preserved(raw, tmp_path):
     selected = raw["pipelines"]["fast"][0]
     selected["profiles"]["codex"] = {"model": "future-codex-model", "effort": "high"}
-    assert validate(raw, tmp_path).pipelines["fast"][0].profiles["codex"].model == "future-codex-model"
+    assert validate(raw,
+                    tmp_path).pipelines["fast"][0].profiles["codex"].model == "future-codex-model"
     del selected["profiles"]["codex"]
     validate(raw, tmp_path)
 
@@ -154,7 +168,8 @@ def test_roles_can_repeat_inside_parallel_group(raw, tmp_path):
     validate(raw, tmp_path)
 
 
-@pytest.mark.parametrize("case", ["empty", "no-approval", "two-approvals", "approval-first", "too-many"])
+@pytest.mark.parametrize("case",
+                         ["empty", "no-approval", "two-approvals", "approval-first", "too-many"])
 def test_pipeline_ends_with_exactly_one_approval_and_at_most_32_steps(raw, tmp_path, case):
     full = raw["pipelines"]["full"]
     if case == "empty":
@@ -166,8 +181,9 @@ def test_pipeline_ends_with_exactly_one_approval_and_at_most_32_steps(raw, tmp_p
     elif case == "approval-first":
         full.append(full.pop(0))
     else:
-        raw["pipelines"]["full"] = [{**copy.deepcopy(full[0]), "id": f"task-{i}"}
-                                     for i in range(32)] + [full[-1]]
+        raw["pipelines"]["full"] = [{
+            **copy.deepcopy(full[0]), "id": f"task-{i}"
+        } for i in range(32)] + [full[-1]]
     with pytest.raises(ValidationError):
         validate(raw, tmp_path)
 
@@ -175,8 +191,9 @@ def test_pipeline_ends_with_exactly_one_approval_and_at_most_32_steps(raw, tmp_p
 def test_pipeline_accepts_32_steps_and_16_executions(raw, tmp_path):
     full = raw["pipelines"]["full"]
     group = full[2]
-    group["parallel"] = [{**copy.deepcopy(group["parallel"][0]), "id": f"check-{i}"}
-                         for i in range(16)]
+    group["parallel"] = [{
+        **copy.deepcopy(group["parallel"][0]), "id": f"check-{i}"
+    } for i in range(16)]
     full[2:2] = [{**copy.deepcopy(full[0]), "id": f"task-{i}"} for i in range(28)]
     validate(raw, tmp_path)
 
@@ -184,8 +201,9 @@ def test_pipeline_accepts_32_steps_and_16_executions(raw, tmp_path):
 @pytest.mark.parametrize("count", [0, 17])
 def test_parallel_group_has_one_to_16_executions(raw, tmp_path, count):
     group = raw["pipelines"]["full"][2]
-    group["parallel"] = [{**copy.deepcopy(group["parallel"][0]), "id": f"check-{i}"}
-                         for i in range(count)]
+    group["parallel"] = [{
+        **copy.deepcopy(group["parallel"][0]), "id": f"check-{i}"
+    } for i in range(count)]
     with pytest.raises(ValidationError):
         validate(raw, tmp_path)
 
@@ -204,7 +222,8 @@ def test_parallel_group_cannot_also_be_an_execution(raw, tmp_path, field):
 
 
 @pytest.mark.parametrize("index,target", [(2, "approve"), (2, "review"), (3, "review"),
-                                         (2, "security"), (2, "missing"), (1, "spec"), (1, "build")])
+                                          (2, "security"), (2, "missing"), (1, "spec"),
+                                          (1, "build")])
 def test_on_changes_requires_earlier_task_from_review_or_approval(raw, tmp_path, index, target):
     raw["pipelines"]["full"][index]["onChanges"] = target
     with pytest.raises(ValidationError, match="onChanges"):
@@ -262,7 +281,8 @@ def test_codex_budget_warns_and_claude_budget_is_preserved(raw, tmp_path):
     assert config.pipelines["fast"][1].maxBudgetUsd == 4
 
 
-@pytest.mark.parametrize("field,value", [("version", 3), ("merge", "other"), ("permissions", "other"),
+@pytest.mark.parametrize("field,value", [("version", 3),
+                                         ("merge", "other"), ("permissions", "other"),
                                          ("maxRounds", 0), ("maxRounds", 6), ("engine", "")])
 def test_schema_fields_are_validated(raw, tmp_path, field, value):
     raw[field] = value
@@ -292,8 +312,9 @@ def test_upgrade_current_v1_config_is_pure(tmp_path):
 
 def test_upgrade_readme_example_with_custom_role(tmp_path):
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    raw = next(json.loads(block) for block in re.findall(r"```json\n(.*?)\n```", readme, re.S)
-               if '"docs-writer"' in block)
+    raw = next(
+        json.loads(block) for block in re.findall(r"```json\n(.*?)\n```", readme, re.S)
+        if '"docs-writer"' in block)
     role = next(block for block in re.findall(r"```markdown\n(.*?)\n```", readme, re.S)
                 if "name: docs-writer" in block)
     directory = tmp_path / "factory" / "roles"
@@ -307,14 +328,19 @@ def test_upgrade_readme_example_with_custom_role(tmp_path):
     assert config.role_for("full", "docs").type == "task"
 
 
-@pytest.mark.parametrize("permissions,expected", [("auto", "auto"), ("bypassPermissions", "bypass")])
+@pytest.mark.parametrize("permissions,expected", [("auto", "auto"),
+                                                  ("bypassPermissions", "bypass")])
 def test_upgrade_omitted_pipeline_and_permissions(tmp_path, permissions, expected):
-    upgraded = upgrade_v1({"provider": "codex", "headlessPermissions": permissions, "start": "session"})
+    upgraded = upgrade_v1({
+        "provider": "codex",
+        "headlessPermissions": permissions,
+        "start": "session"
+    })
     config = validate(upgraded, tmp_path)
     assert config.permissions == expected
     assert config.merge == "auto"
-    assert [e.id for e in config.pipelines["full"][2].executions] == [
-        "reviewer-security", "reviewer-ux", "reviewer-ui", "reviewer-code"]
+    assert [e.id for e in config.pipelines["full"][2].executions
+            ] == ["reviewer-security", "reviewer-ux", "reviewer-ui", "reviewer-code"]
     assert all(e.provider == "codex" for s in config.pipelines["full"] for e in s.executions)
 
 
@@ -360,9 +386,17 @@ def test_machine_settings_defaults_and_persistence_respect_factory_home(tmp_path
         assert defaults.concurrency.global_ == 6
         assert defaults.ports.range == "5100-5999"
         assert defaults.cli.claude is None and defaults.cli.codex is None
-        settings = MachineSettings.model_validate({"concurrency": {"global": 32},
-            "cli": {"codex": str(tmp_path / "CLI with spaces" / "codex.exe")},
-            "ports": {"range": "6000-6999"}})
+        settings = MachineSettings.model_validate({
+            "concurrency": {
+                "global": 32
+            },
+            "cli": {
+                "codex": str(tmp_path / "CLI with spaces" / "codex.exe")
+            },
+            "ports": {
+                "range": "6000-6999"
+            }
+        })
         with db.tx(connection):
             connection.execute("INSERT INTO settings VALUES ('future.key', 'kept')")
         assert save_machine_settings(connection, settings) == settings
@@ -414,8 +448,9 @@ def test_machine_settings_write_is_atomic(tmp_path, monkeypatch):
     connection = open_registry()
     try:
         with db.tx(connection):
-            connection.execute("CREATE TRIGGER reject_cli BEFORE INSERT ON settings "
-                               "WHEN NEW.key = 'cli.codex' BEGIN SELECT RAISE(ABORT, 'rejected'); END")
+            connection.execute(
+                "CREATE TRIGGER reject_cli BEFORE INSERT ON settings "
+                "WHEN NEW.key = 'cli.codex' BEGIN SELECT RAISE(ABORT, 'rejected'); END")
         with pytest.raises(sqlite3.IntegrityError, match="rejected"):
             save_machine_settings(connection, MachineSettings())
         assert connection.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0

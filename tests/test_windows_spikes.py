@@ -10,15 +10,15 @@ from unittest.mock import patch
 
 from spikes.windows import process_spikes
 
-
 FIXTURES = Path(__file__).parent / "fixtures" / "windows"
 
 
 class WindowsSpikeEvidenceTests(unittest.TestCase):
+
     def test_tree_evidence_covers_detachment_and_all_three_stop_paths(self):
         evidence = json.loads((FIXTURES / "tree.json").read_text(encoding="utf-8"))
-        self.assertEqual({case["mode"] for case in evidence["cases"]},
-                         {"terminate", "stop", "close"})
+        self.assertEqual({case["mode"]
+                          for case in evidence["cases"]}, {"terminate", "stop", "close"})
         for case in evidence["cases"]:
             with self.subTest(mode=case["mode"]):
                 launcher = case["launcher"]
@@ -30,8 +30,10 @@ class WindowsSpikeEvidenceTests(unittest.TestCase):
                 self.assertIn(case["wrapper"]["npm_pid"], pids)
                 self.assertIn(case["server"]["pid"], pids)
                 self.assertNotIn(launched["launcher_pid"], pids)
-                self.assertGreaterEqual(sum(PureWindowsPath(member["image"]).name.lower()
-                                            == "node.exe" for member in case["members"]), 2)
+                self.assertGreaterEqual(
+                    sum(
+                        PureWindowsPath(member["image"]).name.lower() == "node.exe"
+                        for member in case["members"]), 2)
                 self.assertFalse(case["wrapper"]["handle_inheritable"])
                 self.assertTrue(case["launcher_exited_tree_survived"])
                 self.assertEqual(case["http_after_launcher_exit"], "200 OK")
@@ -94,13 +96,17 @@ class WindowsSpikeEvidenceTests(unittest.TestCase):
             with patch.object(process_spikes.os, "replace", side_effect=replace):
                 process_spikes.write_json(path, {"ready": True})
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"ready": True})
-            with patch.object(Path, "read_text", side_effect=[
-                    PermissionError("transient sharing violation"), '{"ready": true}']):
+            with patch.object(
+                    Path,
+                    "read_text",
+                    side_effect=[PermissionError("transient sharing violation"),
+                                 '{"ready": true}']):
                 self.assertEqual(process_spikes.read_json(path), {"ready": True})
 
 
 @unittest.skipUnless(os.name == "nt", "Job Objects require Windows")
 class WindowsSpikeLiveTests(unittest.TestCase):
+
     @unittest.skipUnless(shutil.which("npm.cmd"), "npm.cmd is required")
     def test_real_npm_tree_survives_launcher_and_all_stop_paths_release_port(self):
         # Space/non-ASCII paths exercise Windows argv and path handling too.

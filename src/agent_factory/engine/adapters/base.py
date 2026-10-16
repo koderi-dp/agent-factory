@@ -58,12 +58,26 @@ class Adapter(Protocol):
     Engine timeouts are passed as exit_info['reason'] == 'timeout'.
     """
 
-    def prepare(self, context: Claim) -> Prepared: ...
-    def parse_event(self, line: bytes, *, context: Claim | None = None,
-                    quiet_seconds: float = 0) -> EventUpdate: ...
-    def summarize(self, event: Mapping[str, Any], *, worktree: Path | None = None,
-                  report_path: Path | None = None, quiet_seconds: float = 0) -> str | None: ...
-    def classify(self, context: Claim, exit_info: Mapping[str, Any]) -> ExitOutcome: ...
+    def prepare(self, context: Claim) -> Prepared:
+        ...
+
+    def parse_event(self,
+                    line: bytes,
+                    *,
+                    context: Claim | None = None,
+                    quiet_seconds: float = 0) -> EventUpdate:
+        ...
+
+    def summarize(self,
+                  event: Mapping[str, Any],
+                  *,
+                  worktree: Path | None = None,
+                  report_path: Path | None = None,
+                  quiet_seconds: float = 0) -> str | None:
+        ...
+
+    def classify(self, context: Claim, exit_info: Mapping[str, Any]) -> ExitOutcome:
+        ...
 
 
 class UnsupportedProviderError(ValueError):

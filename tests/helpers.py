@@ -16,13 +16,20 @@ import job  # noqa: E402  (needs the path above)
 
 
 def execution(eid, uses, **extra):
-    return {"id": eid, "uses": uses, "providers": copy.deepcopy(job.pipeline.PROVIDER_DEFAULTS), **extra}
+    return {
+        "id": eid,
+        "uses": uses,
+        "providers": copy.deepcopy(job.pipeline.PROVIDER_DEFAULTS),
+        **extra
+    }
 
 
 def write_agent(repo, role, kind, output, provider="claude"):
     path = repo.path / f".{provider}/agents/{role}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"---\ntype: {kind}\noutput: {output}\n---\n\nFollow the dispatched report contract.\n", encoding="utf-8")
+    path.write_text(
+        f"---\ntype: {kind}\noutput: {output}\n---\n\nFollow the dispatched report contract.\n",
+        encoding="utf-8")
     return path
 
 
@@ -34,6 +41,7 @@ def git(*args, cwd):
 
 
 class Repo:
+
     def __init__(self, agents=True):
         self.tmp = Path(tempfile.mkdtemp(prefix="factory-test-"))
         self.path = self.tmp / "app"
@@ -54,12 +62,24 @@ class Repo:
         self._saved = (job.FACTORY, job.JOBS, job.CONFIG)
         job.FACTORY, job.JOBS, job.CONFIG = self.factory, self.factory / "jobs", self.factory / "config.json"
 
-    def add_job(self, job_id, stage="approved", file="app.txt", line="from the job\n", provider="claude"):
+    def add_job(self,
+                job_id,
+                stage="approved",
+                file="app.txt",
+                line="from the job\n",
+                provider="claude"):
         """A job with its own worktree and one commit on its branch."""
         worktree = self.tmp / "app-factory" / job_id
         (job.JOBS / job_id).mkdir()
         job.new(job_id, f"feature {job_id}", str(worktree), provider=provider)
-        git("worktree", "add", "-q", "-b", f"factory/{job_id}", str(worktree), "main", cwd=self.path)
+        git("worktree",
+            "add",
+            "-q",
+            "-b",
+            f"factory/{job_id}",
+            str(worktree),
+            "main",
+            cwd=self.path)
         with open(worktree / file, "a", encoding="utf-8") as f:
             f.write(line)
         git("add", file, cwd=worktree)
@@ -67,7 +87,11 @@ class Repo:
         # These fixtures exercise merge/delete, with an already completed approval.
         if stage in {"approved", "needs-human", "approve"}:
             state = job.load(job_id)
-            state.update(pipelineComplete=True, approval={"verdict": "APPROVE", "head": git("rev-parse", "HEAD", cwd=worktree)})
+            state.update(pipelineComplete=True,
+                         approval={
+                             "verdict": "APPROVE",
+                             "head": git("rev-parse", "HEAD", cwd=worktree)
+                         })
             job.save(state)
         job.update(job_id, [("stage", stage)])
         return worktree
@@ -76,15 +100,19 @@ class Repo:
         job.FACTORY, job.JOBS, job.CONFIG = self._saved
         for line in git("worktree", "list", "--porcelain", cwd=self.path).splitlines():
             if line.startswith("worktree ") and Path(line[9:]) != self.path:
-                subprocess.run(["git", "worktree", "remove", "--force", line[9:]], cwd=self.path, capture_output=True)
+                subprocess.run(["git", "worktree", "remove", "--force", line[9:]],
+                               cwd=self.path,
+                               capture_output=True)
         remove_tree(self.tmp)
 
 
 def remove_tree(path):
     """Delete a folder, including git's read-only object files, which Windows won't delete as they are."""
+
     def unlock(func, p, _):
         os.chmod(p, stat.S_IWRITE)
         func(p)
+
     if sys.version_info >= (3, 12):
         shutil.rmtree(path, onexc=unlock)
     else:

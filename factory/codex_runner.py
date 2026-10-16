@@ -36,10 +36,15 @@ def command(repo, permissions, session_id=None):
     if session_id:
         if not re.fullmatch(r"[a-zA-Z0-9-]+", session_id) or session_id.startswith("-"):
             raise job.JobError("invalid Codex session ID")
-        args += ["resume", "--json", session_id,
-                 "Continue the factory session. If a job was interrupted, use $factory resume for that job after checking its state; otherwise use $factory watch --once."]
+        args += [
+            "resume", "--json", session_id,
+            "Continue the factory session. If a job was interrupted, use $factory resume for that job after checking its state; otherwise use $factory watch --once."
+        ]
     else:
-        args += ["--json", "$factory watch --once. Use the installed factory skill and delegate its roles to subagents."]
+        args += [
+            "--json",
+            "$factory watch --once. Use the installed factory skill and delegate its roles to subagents."
+        ]
     return args
 
 
@@ -57,8 +62,13 @@ def run(path, permissions=None, resume=False):
     else:
         if path.exists():
             raise job.JobError("session file already exists; use resume to continue it")
-        state = {"provider": "codex", "repo": str(repo), "permissions": permissions,
-                 "sessionId": None, "created": job.now()}
+        state = {
+            "provider": "codex",
+            "repo": str(repo),
+            "permissions": permissions,
+            "sessionId": None,
+            "created": job.now()
+        }
     args = command(repo, permissions, state.get("sessionId") if resume else None)
     state.pop("exitCode", None)
     state.pop("error", None)
@@ -66,10 +76,18 @@ def run(path, permissions=None, resume=False):
     job.write_json(path, state)
     process = None
     try:
-        process = subprocess.Popen(args, cwd=repo, stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
-                                   text=True, encoding="utf-8", errors="replace")
+        process = subprocess.Popen(args,
+                                   cwd=repo,
+                                   stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT,
+                                   env={
+                                       **os.environ, "PYTHONUTF8": "1",
+                                       "PYTHONIOENCODING": "utf-8"
+                                   },
+                                   text=True,
+                                   encoding="utf-8",
+                                   errors="replace")
         state["pid"] = process.pid
         job.write_json(path, state)
         for line in process.stdout:
@@ -78,7 +96,9 @@ def run(path, permissions=None, resume=False):
                 event = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(event, dict) and event.get("type") == "thread.started" and event.get("thread_id"):
+            if isinstance(
+                    event,
+                    dict) and event.get("type") == "thread.started" and event.get("thread_id"):
                 state["sessionId"] = event["thread_id"]
                 job.write_json(path, state)
         code = process.wait()
@@ -91,7 +111,8 @@ def run(path, permissions=None, resume=False):
             if process.stdout:
                 process.stdout.close()
         state.update(status="interrupted" if isinstance(exc, KeyboardInterrupt) else "failed",
-                     error=str(exc), updated=job.now())
+                     error=str(exc),
+                     updated=job.now())
         job.write_json(path, state)
         raise
     state.update(status="finished" if code == 0 else "failed", exitCode=code, updated=job.now())

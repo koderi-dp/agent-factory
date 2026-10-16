@@ -7,6 +7,7 @@ from tools import sandbox
 
 
 class SandboxBenchTests(unittest.TestCase):
+
     def test_benchmark_parses_job_history_and_headless_usage(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -17,7 +18,8 @@ class SandboxBenchTests(unittest.TestCase):
             (job_dir / "job.json").write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
             (jobs / "headless-20260101.log").write_text(
                 '{"usage":{"input_tokens":120,"output_tokens":30,"cache_read_input_tokens":50},'
-                '"total_cost_usd":0.0123}\n', encoding="utf-8")
+                '"total_cost_usd":0.0123}\n',
+                encoding="utf-8")
 
             row = sandbox.benchmark_rows(root)[0]
 
@@ -27,7 +29,8 @@ class SandboxBenchTests(unittest.TestCase):
         self.assertEqual(row["agents"], 4)
         self.assertEqual(row["tokens"], 200)
         self.assertAlmostEqual(row["cost"], 0.0123)
-        self.assertIn("| 001-feature | A small fixture feature | 180.0s |", sandbox._benchmark_markdown([row]))
+        self.assertIn("| 001-feature | A small fixture feature | 180.0s |",
+                      sandbox._benchmark_markdown([row]))
 
 
 if __name__ == "__main__":

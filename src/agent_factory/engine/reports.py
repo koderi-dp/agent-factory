@@ -25,9 +25,11 @@ def verdict(text: str, contract: str, *, on_changes: bool = False) -> str:
     first = text.splitlines()[0].strip() if text.splitlines() else ""
     if contract == "spec" and first.startswith("# "):
         return "READY"
-    allowed = {"status": {"STATUS: READY", "STATUS: BLOCKED"},
-               "verdict": {"VERDICT: PASS", "VERDICT: CHANGES"},
-               "decision": {"APPROVE", "ESCALATE"} | ({"CHANGES"} if on_changes else set())}
+    allowed = {
+        "status": {"STATUS: READY", "STATUS: BLOCKED"},
+        "verdict": {"VERDICT: PASS", "VERDICT: CHANGES"},
+        "decision": {"APPROVE", "ESCALATE"} | ({"CHANGES"} if on_changes else set())
+    }
     if first in allowed.get(contract, set()):
         return first.split(": ")[-1]
     raise ReportError(f"invalid first line for {contract}: {first!r}")
@@ -63,7 +65,10 @@ def parse_report(text: str, contract: str, *, on_changes: bool = False) -> Repor
     return Report(verdict(text, contract, on_changes=on_changes), text, extract_sections(text))
 
 
-def read_result(path: str | Path, contract: str, *, t_launch: str | datetime | float,
+def read_result(path: str | Path,
+                contract: str,
+                *,
+                t_launch: str | datetime | float,
                 on_changes: bool = False) -> Report:
     """Require a report written strictly after launch, then parse its contract."""
     if isinstance(t_launch, str):

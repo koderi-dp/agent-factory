@@ -8,13 +8,14 @@ from unittest.mock import patch
 
 from spikes import cli_behaviour
 
-
 FIXTURES = Path(__file__).parent / "fixtures" / "codex"
 
 
 def events(case: str) -> list[dict]:
-    return [json.loads(line) for line in (FIXTURES / f"{case}.jsonl").read_text(
-        encoding="utf-8").splitlines()]
+    return [
+        json.loads(line)
+        for line in (FIXTURES / f"{case}.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
 
 
 def metadata(case: str) -> dict:
@@ -22,6 +23,7 @@ def metadata(case: str) -> dict:
 
 
 class CliSpikeTests(unittest.TestCase):
+
     def test_all_captures_are_complete_and_have_companion_files(self):
         for path in FIXTURES.glob("*.meta.json"):
             case = path.name.removesuffix(".meta.json")
@@ -47,8 +49,10 @@ class CliSpikeTests(unittest.TestCase):
         self.assertIn("codex-empty-home", metadata("auth")["env_overrides"]["CODEX_HOME"])
 
     def test_long_command_pairs_started_and_completed(self):
-        commands = [event for event in events("long")
-                    if event.get("item", {}).get("type") == "command_execution"]
+        commands = [
+            event for event in events("long")
+            if event.get("item", {}).get("type") == "command_execution"
+        ]
         self.assertEqual([event["type"] for event in commands], ["item.started", "item.completed"])
         self.assertEqual(commands[0]["item"]["id"], commands[1]["item"]["id"])
         self.assertIsNone(commands[0]["item"]["exit_code"])
@@ -61,16 +65,16 @@ class CliSpikeTests(unittest.TestCase):
         stream = events("denial-home")
         self.assertEqual(metadata("denial-home")["exit_code"], 0)
         self.assertEqual(stream[2]["item"]["text"], "DENIAL_CONTINUED")
-        self.assertFalse(any(event.get("item", {}).get("type") == "command_execution"
-                             for event in stream))
-        self.assertIn("policy forbids commands starting with", (FIXTURES /
-                      "denial-home.stderr").read_text(encoding="utf-8"))
+        self.assertFalse(
+            any(event.get("item", {}).get("type") == "command_execution" for event in stream))
+        self.assertIn("policy forbids commands starting with",
+                      (FIXTURES / "denial-home.stderr").read_text(encoding="utf-8"))
 
     def test_instruction_and_cache_observations(self):
         self.assertEqual(events("developer")[2]["item"]["text"], "DEVELOPER_WINS")
         self.assertEqual(events("prepend")[2]["item"]["text"], "PREPEND_WINS")
-        self.assertIn("unknown configuration field `system_instructions`", (FIXTURES /
-                      "system.stderr").read_text(encoding="utf-8"))
+        self.assertIn("unknown configuration field `system_instructions`",
+                      (FIXTURES / "system.stderr").read_text(encoding="utf-8"))
         self.assertEqual(metadata("cache-short1")["argv"], metadata("cache-short2")["argv"])
         for case in ("cache-short1", "cache-short2"):
             self.assertEqual(events(case)[-1]["usage"]["cached_input_tokens"], 1792)

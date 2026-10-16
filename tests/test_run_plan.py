@@ -10,12 +10,14 @@ import unittest
 from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location(
-    "run_plan", Path(__file__).resolve().parents[1] / "tools" / "run_plan.py")
+    "run_plan",
+    Path(__file__).resolve().parents[1] / "tools" / "run_plan.py")
 runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
 
 
 class PlanRunnerTests(unittest.TestCase):
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -44,8 +46,13 @@ class PlanRunnerTests(unittest.TestCase):
     def test_review_uses_native_command_astra_and_captures_final(self):
         launch = self.fake_codex()
         report = self.repo / "docs" / "reviews" / "phase-1.md"
-        ok, reason = runner.run_codex("review", "Review git diff abc..HEAD", runner.MODELS["Astra"],
-                                      "xhigh", "auto", 1, review_report=report)
+        ok, reason = runner.run_codex("review",
+                                      "Review git diff abc..HEAD",
+                                      runner.MODELS["Astra"],
+                                      "xhigh",
+                                      "auto",
+                                      1,
+                                      review_report=report)
         self.assertTrue(ok, reason)
         args = launch.call_args.args[0]
         self.assertEqual(args[1], "exec")
@@ -59,15 +66,17 @@ class PlanRunnerTests(unittest.TestCase):
     def test_failed_review_does_not_publish_report(self):
         self.fake_codex(code=1)
         report = self.repo / "phase.md"
-        self.assertFalse(runner.run_codex("review", "Review", "astra", "high", "bypass", 1,
-                                          review_report=report)[0])
+        self.assertFalse(
+            runner.run_codex("review", "Review", "astra", "high", "bypass", 1,
+                             review_report=report)[0])
         self.assertFalse(report.exists())
 
     def test_empty_review_does_not_publish_report(self):
         self.fake_codex(final="  ")
         report = self.repo / "phase.md"
-        self.assertFalse(runner.run_codex("review", "Review", "astra", "high", "bypass", 1,
-                                          review_report=report)[0])
+        self.assertFalse(
+            runner.run_codex("review", "Review", "astra", "high", "bypass", 1,
+                             review_report=report)[0])
         self.assertFalse(report.exists())
 
     def test_build_still_requires_result_marker(self):
@@ -90,8 +99,10 @@ class PlanRunnerTests(unittest.TestCase):
     def test_claude_nonzero_exit_does_not_publish_report_or_fix(self):
         self.patch(patch.object(runner, "git", side_effect=["", "abc123"]))
         self.patch(patch.object(runner.shutil, "which", return_value="claude"))
-        self.patch(patch.object(runner.subprocess, "run", return_value=
-                              subprocess.CompletedProcess([], 1, "rate limit", "")))
+        self.patch(
+            patch.object(runner.subprocess,
+                         "run",
+                         return_value=subprocess.CompletedProcess([], 1, "rate limit", "")))
         fix = self.patch(patch.object(runner, "run_codex"))
         self.assertFalse(runner.review_and_fix(1, [{"id": "1.1"}], "auto", 1, "claude"))
         fix.assert_not_called()
@@ -100,8 +111,10 @@ class PlanRunnerTests(unittest.TestCase):
     def test_claude_timeout_stops_cleanly(self):
         self.patch(patch.object(runner, "git", side_effect=["", "abc123"]))
         self.patch(patch.object(runner.shutil, "which", return_value="claude"))
-        self.patch(patch.object(runner.subprocess, "run", side_effect=
-                              subprocess.TimeoutExpired("claude", 60)))
+        self.patch(
+            patch.object(runner.subprocess,
+                         "run",
+                         side_effect=subprocess.TimeoutExpired("claude", 60)))
         fix = self.patch(patch.object(runner, "run_codex"))
         self.assertFalse(runner.review_and_fix(1, [{"id": "1.1"}], "auto", 1, "claude"))
         fix.assert_not_called()
@@ -112,8 +125,13 @@ class PlanRunnerTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_parity_has_separate_review_marker(self):
-        self.assertNotEqual(runner.review_marker(1, [{"id": "1.1"}]),
-                            runner.review_marker(1, [{"id": "1.1"}, {"id": "1.11"}]))
+        self.assertNotEqual(runner.review_marker(1, [{
+            "id": "1.1"
+        }]), runner.review_marker(1, [{
+            "id": "1.1"
+        }, {
+            "id": "1.11"
+        }]))
 
     def test_dirty_fixes_are_failure(self):
         report = self.repo / "docs/reviews/phase-1.md"
@@ -138,8 +156,14 @@ class PlanRunnerTests(unittest.TestCase):
 
     @staticmethod
     def session(sid="1.1", requires_claude=False):
-        return dict(id=sid, phase=1, title="test", model="sol", effort="high", manual=False,
-                    astra_fallback=False, requires_claude=requires_claude)
+        return dict(id=sid,
+                    phase=1,
+                    title="test",
+                    model="sol",
+                    effort="high",
+                    manual=False,
+                    astra_fallback=False,
+                    requires_claude=requires_claude)
 
     def test_default_skips_claude_sessions(self):
         regular, deferred = self.session(), self.session("1.11", True)

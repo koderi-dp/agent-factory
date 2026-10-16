@@ -50,7 +50,10 @@ class Role:
     sha256: str
 
 
-def resolve_role(name: str, provider: Provider, *, root: str | Path,
+def resolve_role(name: str,
+                 provider: Provider,
+                 *,
+                 root: str | Path,
                  builtin_dir: Path | None = None) -> Role:
     """Resolve the first existing file; an invalid override never falls through."""
     if not NAME.fullmatch(name):
@@ -59,8 +62,10 @@ def resolve_role(name: str, provider: Provider, *, root: str | Path,
         raise RoleError(f"Unknown provider: {provider!r}")
     repo_roles = Path(root).resolve() / "factory" / "roles"
     builtins = BUILTIN_DIR if builtin_dir is None else Path(builtin_dir).resolve()
-    paths = [repo_roles / f"{name}.{provider}.md", repo_roles / f"{name}.md",
-             builtins / f"{name}.{provider}.md", builtins / f"{name}.md"]
+    paths = [
+        repo_roles / f"{name}.{provider}.md", repo_roles / f"{name}.md",
+        builtins / f"{name}.{provider}.md", builtins / f"{name}.md"
+    ]
     for index, path in enumerate(paths):
         try:
             data = path.read_bytes()
@@ -91,10 +96,14 @@ def resolve_role(name: str, provider: Provider, *, root: str | Path,
                 raise ValueError("role instructions are empty")
         except (UnicodeError, ValueError, yaml.YAMLError) as exc:
             raise RoleError(f"Invalid role {path}: {exc}") from exc
-        contract = frontmatter.contract or {"task": "status", "review": "verdict",
-                                           "approval": "decision"}[frontmatter.type]
+        contract = frontmatter.contract or {
+            "task": "status",
+            "review": "verdict",
+            "approval": "decision"
+        }[frontmatter.type]
         source = str(path) if index < 2 else f"built-in@{__version__}"
-        return Role(name, provider, frontmatter.type, contract, frontmatter.description,
-                    text, instructions, path, source, hashlib.sha256(data).hexdigest())
-    raise RoleError(f"Cannot resolve role {name!r} for {provider}. Paths tried:\n"
-                    + "\n".join(str(path) for path in paths))
+        return Role(name, provider, frontmatter.type, contract, frontmatter.description, text,
+                    instructions, path, source,
+                    hashlib.sha256(data).hexdigest())
+    raise RoleError(f"Cannot resolve role {name!r} for {provider}. Paths tried:\n" +
+                    "\n".join(str(path) for path in paths))

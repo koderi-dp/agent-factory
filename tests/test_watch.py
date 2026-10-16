@@ -9,6 +9,7 @@ import server
 
 
 class WatchTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
 
@@ -35,7 +36,7 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(job.idle_watchers(), ["w-test02"])
 
     def test_wait_picks_up_a_request_made_while_waiting(self):
-        threading.Timer(1.0, job.request_start, args=("Late one",)).start()
+        threading.Timer(1.0, job.request_start, args=("Late one", )).start()
         self.assertEqual(job.wait("w-test03", timeout=6)["item"], "Late one")
 
     def test_two_watchers_never_get_the_same_request(self):
@@ -49,8 +50,7 @@ class WatchTests(unittest.TestCase):
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [threading.Thread(target=claim, args=(w,))
-                   for w in ("w-a", "w-b")]
+        threads = [threading.Thread(target=claim, args=(w, )) for w in ("w-a", "w-b")]
         for t in threads:
             t.start()
         for t in threads:
@@ -73,13 +73,15 @@ class WatchTests(unittest.TestCase):
 
 
 class StartButtonTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
         self._backlog, self._start = server.BACKLOG, server.start_headless
         server.BACKLOG = self.repo.factory / "backlog.md"
         server.BACKLOG.write_text("# Backlog\n\n- [ ] First\n- [ ] Second\n", encoding="utf-8")
         self.launched = []
-        server.start_headless = lambda permissions: self.launched.append(permissions) or "headless-test.log"
+        server.start_headless = lambda permissions: self.launched.append(permissions
+                                                                         ) or "headless-test.log"
 
     def tearDown(self):
         server.BACKLOG, server.start_headless = self._backlog, self._start
@@ -100,7 +102,11 @@ class StartButtonTests(unittest.TestCase):
 
     def test_headless_mode_leaves_it_to_a_ready_watcher(self):
         job.save_config({"start": "headless", "headlessPermissions": "bypassPermissions"})
-        job.write_json(job.JOBS / "watcher-w-ready.json", {"watcher": "w-ready", "at": job.now(), "busy": None})
+        job.write_json(job.JOBS / "watcher-w-ready.json", {
+            "watcher": "w-ready",
+            "at": job.now(),
+            "busy": None
+        })
         server.edit_backlog({"action": "start", "index": 0})
         self.assertEqual(self.launched, [])
 

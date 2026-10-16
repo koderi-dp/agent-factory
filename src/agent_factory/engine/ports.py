@@ -73,12 +73,14 @@ def lease(connection: sqlite3.Connection, repo_id: str, job_id: str,
             # Also protects against overlap after ports.range was changed.
             if any(base < other + BLOCK_SIZE and other < base + BLOCK_SIZE for other in leased):
                 continue
-            conflict = next((item for item in occupied if base <= item.port < base + BLOCK_SIZE), None)
+            conflict = next((item for item in occupied if base <= item.port < base + BLOCK_SIZE),
+                            None)
             if conflict:
                 blocked = blocked or conflict
                 continue
-            connection.execute("INSERT INTO port_leases (base,repo_id,job_id,leased_at) VALUES (?,?,?,?)",
-                               (base, repo_id, job_id, pipeline._now()))
+            connection.execute(
+                "INSERT INTO port_leases (base,repo_id,job_id,leased_at) VALUES (?,?,?,?)",
+                (base, repo_id, job_id, pipeline._now()))
             return base
     detail = f"; {blocked.detail}" if blocked else ""
     raise PortsUnavailable(f"No free 10-port block in {start}-{end}{detail}")
@@ -87,7 +89,8 @@ def lease(connection: sqlite3.Connection, repo_id: str, job_id: str,
 def release(connection: sqlite3.Connection, repo_id: str, job_id: str) -> None:
     """Called only for a merged/cancelled/deleted job, never merely on pause."""
     with db.tx(connection):
-        connection.execute("DELETE FROM port_leases WHERE repo_id=? AND job_id=?", (repo_id, job_id))
+        connection.execute("DELETE FROM port_leases WHERE repo_id=? AND job_id=?",
+                           (repo_id, job_id))
 
 
 def assigned(base: int | None, execution: Mapping[str, Any]) -> tuple[int, ...]:
@@ -109,5 +112,5 @@ def foreign(occupied: Sequence[Listener], base: int,
                 identities.add((process.pid, process.create_time()))
         except psutil.Error:
             continue
-    return next((item for item in occupied if base <= item.port < base + BLOCK_SIZE
-                 and (item.create_time is None or (item.pid, item.create_time) not in identities)), None)
+    return next((item for item in occupied if base <= item.port < base + BLOCK_SIZE and (
+        item.create_time is None or (item.pid, item.create_time) not in identities)), None)

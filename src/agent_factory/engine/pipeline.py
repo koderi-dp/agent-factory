@@ -19,8 +19,11 @@ from agent_factory.engine.crash import crash_at
 
 Row = Mapping[str, Any]
 TERMINAL = {"done", "failed", "stopped", "superseded"}
-RESULTS = {"task": {"READY", "BLOCKED"}, "review": {"PASS", "CHANGES"},
-           "approval": {"APPROVE", "ESCALATE", "CHANGES"}}
+RESULTS = {
+    "task": {"READY", "BLOCKED"},
+    "review": {"PASS", "CHANGES"},
+    "approval": {"APPROVE", "ESCALATE", "CHANGES"}
+}
 
 
 class PipelineError(ValueError):
@@ -46,28 +49,39 @@ class Transition:
     rework_note: str | None = None
 
 
-def freeze(config: RepoConfig, pipeline: str | None = None, *, preamble: str,
+def freeze(config: RepoConfig,
+           pipeline: str | None = None,
+           *,
+           preamble: str,
            preamble_version: str) -> dict[str, Any]:
     """Snapshot resolved roles and all execution policy; never re-read role files."""
     name = pipeline or config.defaultPipeline
     if name not in config.pipelines:
         raise PipelineError(f"unknown pipeline: {name}")
     frozen = config.model_dump(exclude={"pipelines", "defaultPipeline"}, exclude_none=True)
-    frozen.update(pipeline_name=name, engine_version=__version__,
-                  preamble=preamble, preamble_version=preamble_version)
+    frozen.update(pipeline_name=name,
+                  engine_version=__version__,
+                  preamble=preamble,
+                  preamble_version=preamble_version)
     steps = []
     for step in config.pipelines[name]:
         entries = []
         for execution in step.executions:
             role = config.role_for(name, execution.id)
             entry = execution.model_dump(exclude_none=True)
-            entry["role"] = {key: getattr(role, key) for key in (
-                "name", "provider", "type", "contract", "description", "text",
-                "instructions", "source", "sha256")}
+            entry["role"] = {
+                key: getattr(role, key)
+                for key in ("name", "provider", "type", "contract", "description", "text",
+                            "instructions", "source", "sha256")
+            }
             entries.append(entry)
-        steps.append({"id": step.id, "label": step.label or step.id,
-                      "type": entries[0]["role"]["type"], "onChanges": step.onChanges,
-                      "executions": entries})
+        steps.append({
+            "id": step.id,
+            "label": step.label or step.id,
+            "type": entries[0]["role"]["type"],
+            "onChanges": step.onChanges,
+            "executions": entries
+        })
     frozen["pipeline"] = steps
     return frozen
 
@@ -78,8 +92,10 @@ def _frozen(job: Row) -> dict[str, Any]:
 
 
 def _rows(executions: Sequence[Row], step_id: str, round_: int) -> list[Row]:
-    return [e for e in executions if e["step_id"] == step_id and e["round"] == round_
-            and e["state"] != "superseded"]
+    return [
+        e for e in executions
+        if e["step_id"] == step_id and e["round"] == round_ and e["state"] != "superseded"
+    ]
 
 
 def _evidence(steps: list[dict[str, Any]], executions: Sequence[Row]) -> dict[str, list[Row]]:
@@ -95,7 +111,9 @@ def _evidence(steps: list[dict[str, Any]], executions: Sequence[Row]) -> dict[st
 
 def _complete(step: Row, rows: Sequence[Row]) -> bool:
     return (len(rows) == len(step["executions"])
-            and {e["exec_id"] for e in rows} == {e["id"] for e in step["executions"]}
+            and {e["exec_id"]
+                 for e in rows} == {e["id"]
+                                    for e in step["executions"]}
             and all(e["state"] == "done" and e["result"] in RESULTS[step["type"]] for e in rows))
 
 
@@ -112,10 +130,18 @@ def _pending(step: Row, round_: int, head: str) -> tuple[dict[str, Any], ...]:
     rows = []
     for entry in step["executions"]:
         profile = entry["profiles"][entry["provider"]]
-        rows.append({"step_id": step["id"], "exec_id": entry["id"], "round": round_,
-                     "type": entry["role"]["type"], "uses": entry["uses"],
-                     "provider": entry["provider"], "model": profile["model"],
-                     "effort": profile["effort"], "state": "pending", "head_before": head})
+        rows.append({
+            "step_id": step["id"],
+            "exec_id": entry["id"],
+            "round": round_,
+            "type": entry["role"]["type"],
+            "uses": entry["uses"],
+            "provider": entry["provider"],
+            "model": profile["model"],
+            "effort": profile["effort"],
+            "state": "pending",
+            "head_before": head
+        })
     return tuple(rows)
 
 
@@ -132,16 +158,25 @@ def step_plan(job: Row, executions: Sequence[Row]) -> tuple[dict[str, Any], ...]
     step = steps[index]
     entries = {e["id"]: e for e in step["executions"]}
     rows = _rows(executions, step["id"], job["round"])
-    return tuple({**dict(row), "role": copy.deepcopy(entries[row["exec_id"]]["role"]),
-                  "profiles": copy.deepcopy(entries[row["exec_id"]]["profiles"]),
-                  "timeoutMinutes": entries[row["exec_id"]].get(
-                      "timeoutMinutes", frozen["timeouts"]["executionMinutes"]),
-                  "maxBudgetUsd": entries[row["exec_id"]].get("maxBudgetUsd")}
-                 for row in rows if row["state"] == "pending")
+    return tuple({
+        **dict(row), "role":
+        copy.deepcopy(entries[row["exec_id"]]["role"]),
+        "profiles":
+        copy.deepcopy(entries[row["exec_id"]]["profiles"]),
+        "timeoutMinutes":
+        entries[row["exec_id"]].get("timeoutMinutes", frozen["timeouts"]["executionMinutes"]),
+        "maxBudgetUsd":
+        entries[row["exec_id"]].get("maxBudgetUsd")
+    } for row in rows if row["state"] == "pending")
 
 
-def rewind(job: Row, executions: Sequence[Row], target: str, *, current_head: str,
-           automatic: bool = True, note: str | None = None) -> Transition:
+def rewind(job: Row,
+           executions: Sequence[Row],
+           target: str,
+           *,
+           current_head: str,
+           automatic: bool = True,
+           note: str | None = None) -> Transition:
     """Create a new round, retaining completed evidence as immutable history."""
     frozen = _frozen(job)
     steps = frozen["pipeline"]
@@ -153,11 +188,18 @@ def rewind(job: Row, executions: Sequence[Row], target: str, *, current_head: st
     supersede = tuple(e["id"] for e in executions
                       if e["step_id"] in downstream and e["state"] not in TERMINAL)
     round_ = job["round"] + 1
-    return Transition("rewind", {"state": "running", "current_step": target,
-                                "round": round_, "pause_reason": None, "note": None,
-                                "approved_head": None,
-                                "returns_used": job["returns_used"] + 1 if automatic else 0},
-                      _pending(steps[index], round_, current_head), supersede, rework_note=note)
+    return Transition("rewind", {
+        "state": "running",
+        "current_step": target,
+        "round": round_,
+        "pause_reason": None,
+        "note": None,
+        "approved_head": None,
+        "returns_used": job["returns_used"] + 1 if automatic else 0
+    },
+                      _pending(steps[index], round_, current_head),
+                      supersede,
+                      rework_note=note)
 
 
 def rework(job: Row, executions: Sequence[Row], note: str, *, current_head: str) -> Transition:
@@ -177,12 +219,19 @@ def rework(job: Row, executions: Sequence[Row], note: str, *, current_head: str)
         if not _complete(prior, rows) or any(e["result"] not in {"READY", "PASS"} for e in rows):
             target = prior
             break
-    return rewind(job, executions, target["id"], current_head=current_head,
-                  automatic=False, note=note)
+    return rewind(job,
+                  executions,
+                  target["id"],
+                  current_head=current_head,
+                  automatic=False,
+                  note=note)
 
 
-def advance(job: Row, executions: Sequence[Row], results: Mapping[int, Completion] | None = None,
-            *, current_head: str) -> Transition:
+def advance(job: Row,
+            executions: Sequence[Row],
+            results: Mapping[int, Completion] | None = None,
+            *,
+            current_head: str) -> Transition:
     """Pure aggregation: accept validated results, wait, advance, rewind or decide."""
     if job["state"] not in {"queued", "running"}:
         if results:
@@ -193,9 +242,12 @@ def advance(job: Row, executions: Sequence[Row], results: Mapping[int, Completio
     if job["state"] == "queued":
         if results:
             raise PipelineError("a queued job cannot have results")
-        return Transition("advance", {"state": "running", "current_step": steps[0]["id"],
-                                      "pause_reason": None, "note": None},
-                          _pending(steps[0], job["round"], current_head))
+        return Transition("advance", {
+            "state": "running",
+            "current_step": steps[0]["id"],
+            "pause_reason": None,
+            "note": None
+        }, _pending(steps[0], job["round"], current_head))
     index = next((i for i, step in enumerate(steps) if step["id"] == job["current_step"]), None)
     if index is None:
         raise PipelineError(f"unknown current step: {job['current_step']}")
@@ -211,7 +263,9 @@ def advance(job: Row, executions: Sequence[Row], results: Mapping[int, Completio
             result = supplied[row["id"]]
             if row["state"] != "running":
                 raise PipelineError("only a running execution can accept a result")
-            row.update(state="done", result=result.result, head_after=result.head_after,
+            row.update(state="done",
+                       result=result.result,
+                       head_after=result.head_after,
                        report_path=result.report_path)
             completed.append(row)
         if row["state"] == "done":
@@ -241,8 +295,8 @@ def advance(job: Row, executions: Sequence[Row], results: Mapping[int, Completio
     elif step["type"] == "approval":
         evidence = _evidence(steps, executions)
         for reviewed in steps[:index]:
-            if reviewed["type"] == "review" and any(
-                    e["head_after"] != current_head for e in evidence[reviewed["id"]]):
+            if reviewed["type"] == "review" and any(e["head_after"] != current_head
+                                                    for e in evidence[reviewed["id"]]):
                 raise PipelineError(f"the branch changed after {reviewed['id']}; rework required")
         if "ESCALATE" in values:
             reason = "escalate"
@@ -252,19 +306,30 @@ def advance(job: Row, executions: Sequence[Row], results: Mapping[int, Completio
             # TODO (plan §10.3, session 2.2): sensitive-path guard before any merge.
             # TODO (plan §3.1/§11, session 1.9): the service consumes approved
             # with frozen merge=auto by calling gitops.merge outside this tx.
-            return Transition("approved", {"state": "approved", "pause_reason": None,
-                                            "note": None, "approved_head": current_head},
+            return Transition("approved", {
+                "state": "approved",
+                "pause_reason": None,
+                "note": None,
+                "approved_head": current_head
+            },
                               completed=tuple(completed))
     if reason:
-        updates = {"state": "needs_human", "pause_reason": reason,
-                   "note": f"{step['id']}: {reason}"}
+        updates = {
+            "state": "needs_human",
+            "pause_reason": reason,
+            "note": f"{step['id']}: {reason}"
+        }
         if reason in {"verify", "escalate"}:
             updates["approved_head"] = current_head
         return Transition("needs_human", updates, completed=tuple(completed))
     next_step = steps[index + 1]
-    return Transition("advance", {"current_step": next_step["id"], "note": None,
-                                  "pause_reason": None},
-                      _pending(next_step, job["round"], current_head), completed=tuple(completed))
+    return Transition("advance", {
+        "current_step": next_step["id"],
+        "note": None,
+        "pause_reason": None
+    },
+                      _pending(next_step, job["round"], current_head),
+                      completed=tuple(completed))
 
 
 def check_human_approval(job: Row, executions: Sequence[Row], *, current_head: str) -> None:
@@ -275,7 +340,8 @@ def check_human_approval(job: Row, executions: Sequence[Row], *, current_head: s
     steps = _frozen(job)["pipeline"]
     _prerequisites(job, executions, len(steps) - 1)
     rows = _evidence(steps, executions)[steps[-1]["id"]]
-    if not _complete(steps[-1], rows) or any(e["result"] not in {"APPROVE", "ESCALATE"} for e in rows):
+    if not _complete(steps[-1], rows) or any(e["result"] not in {"APPROVE", "ESCALATE"}
+                                             for e in rows):
         raise PipelineError("every step must finish before human approval")
     if not job["approved_head"] or current_head != job["approved_head"]:
         raise PipelineError("the branch changed after approval")
@@ -300,9 +366,17 @@ def _event(connection: sqlite3.Connection, job_id: str, ts: str, type_: str, pay
                        (job_id, ts, type_, json.dumps(dict(payload))))
 
 
-def create_job(connection: sqlite3.Connection, job_id: str, title: str, *, config: RepoConfig,
-               worktree: str, branch: str, base_head: str, preamble: str,
-               preamble_version: str, pipeline: str | None = None) -> dict[str, Any]:
+def create_job(connection: sqlite3.Connection,
+               job_id: str,
+               title: str,
+               *,
+               config: RepoConfig,
+               worktree: str,
+               branch: str,
+               base_head: str,
+               preamble: str,
+               preamble_version: str,
+               pipeline: str | None = None) -> dict[str, Any]:
     if not re.fullmatch(r"[0-9]+-[a-z0-9][a-z0-9-]*", job_id):
         raise PipelineError(f"invalid job id: {job_id!r}")
     snapshot = freeze(config, pipeline, preamble=preamble, preamble_version=preamble_version)
@@ -318,25 +392,34 @@ def create_job(connection: sqlite3.Connection, job_id: str, title: str, *, confi
     return job
 
 
-def load(connection: sqlite3.Connection, job_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+def load(connection: sqlite3.Connection,
+         job_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id, )).fetchone()
     if row is None:
         raise PipelineError(f"unknown job: {job_id}")
     job = dict(row)
     job["frozen"] = json.loads(job["frozen"])
-    rows = connection.execute("SELECT * FROM executions WHERE job_id=? ORDER BY id", (job_id,))
+    rows = connection.execute("SELECT * FROM executions WHERE job_id=? ORDER BY id", (job_id, ))
     return job, [dict(e) for e in rows]
 
 
-def _apply(connection: sqlite3.Connection, job_id: str, transition: Transition, now: str,
-           *, rework_floor: int = 0) -> None:
+def _apply(connection: sqlite3.Connection,
+           job_id: str,
+           transition: Transition,
+           now: str,
+           *,
+           rework_floor: int = 0) -> None:
     for row in transition.completed:
-        connection.execute("UPDATE executions SET state='done', result=?, head_after=?, report_path=? WHERE id=?",
-                           (row["result"], row["head_after"], row["report_path"], row["id"]))
+        connection.execute(
+            "UPDATE executions SET state='done', result=?, head_after=?, report_path=? WHERE id=?",
+            (row["result"], row["head_after"], row["report_path"], row["id"]))
         _event(connection, job_id, now, "execution.state", row)
     for identifier in transition.supersede:
-        connection.execute("UPDATE executions SET state='superseded' WHERE id=?", (identifier,))
-        _event(connection, job_id, now, "execution.state", {"id": identifier, "state": "superseded"})
+        connection.execute("UPDATE executions SET state='superseded' WHERE id=?", (identifier, ))
+        _event(connection, job_id, now, "execution.state", {
+            "id": identifier,
+            "state": "superseded"
+        })
     for row in transition.pending:
         columns = ["job_id", *row.keys(), "created_at"]
         cursor = connection.execute(
@@ -348,18 +431,30 @@ def _apply(connection: sqlite3.Connection, job_id: str, transition: Transition, 
         connection.execute(f"UPDATE jobs SET {', '.join(key + '=?' for key in updates)} WHERE id=?",
                            (*updates.values(), job_id))
         job, _ = load(connection, job_id)
-        _event(connection, job_id, now, "job.state", {key: job[key] for key in (
-            "state", "current_step", "round", "returns_used", "pause_reason", "note", "approved_head")})
+        _event(
+            connection, job_id, now, "job.state", {
+                key: job[key]
+                for key in ("state", "current_step", "round", "returns_used", "pause_reason",
+                            "note", "approved_head")
+            })
     if transition.rework_note is not None:
         # Durable source for rework-<k>.md, materialised outside the tx.
-        previous = [json.loads(row[0]).get("number", 0) for row in connection.execute(
-            "SELECT payload FROM events WHERE job_id=? AND type='note'", (job_id,))]
+        previous = [
+            json.loads(row[0]).get("number", 0) for row in connection.execute(
+                "SELECT payload FROM events WHERE job_id=? AND type='note'", (job_id, ))
+        ]
         number = max([rework_floor, *previous]) + 1
-        _event(connection, job_id, now, "note", {"kind": "rework", "number": number,
-                                               "text": transition.rework_note})
+        _event(connection, job_id, now, "note", {
+            "kind": "rework",
+            "number": number,
+            "text": transition.rework_note
+        })
 
 
-def advance_job(connection: sqlite3.Connection, job_id: str, *, current_head: str,
+def advance_job(connection: sqlite3.Connection,
+                job_id: str,
+                *,
+                current_head: str,
                 results: Mapping[int, Completion] | None = None) -> Transition:
     """Read, decide, record results/history and enqueue the next step atomically."""
     # Git inspection/report IO must happen before entry; no subprocess or await in tx.
@@ -371,11 +466,14 @@ def advance_job(connection: sqlite3.Connection, job_id: str, *, current_head: st
     return transition
 
 
-def rework_job(connection: sqlite3.Connection, job_id: str, note: str, *, current_head: str) -> Transition:
+def rework_job(connection: sqlite3.Connection, job_id: str, note: str, *,
+               current_head: str) -> Transition:
     # Inspect files before entering tx. Existing files preserve numbering after event pruning.
     folder = _job_folder(connection, job_id)
-    numbers = [int(path.stem.split("-", 1)[1]) for path in folder.glob("rework-*.md")
-               if re.fullmatch(r"rework-[0-9]+", path.stem)]
+    numbers = [
+        int(path.stem.split("-", 1)[1]) for path in folder.glob("rework-*.md")
+        if re.fullmatch(r"rework-[0-9]+", path.stem)
+    ]
     with db.tx(connection):
         job, executions = load(connection, job_id)
         transition = rework(job, executions, note, current_head=current_head)
@@ -393,8 +491,10 @@ def _job_folder(connection: sqlite3.Connection, job_id: str) -> Path:
 def materialize_rework_notes(connection: sqlite3.Connection, job_id: str) -> None:
     """Replay durable notes after commit; a crash cannot lose a human's request."""
     folder = _job_folder(connection, job_id)
-    notes = [json.loads(row[0]) for row in connection.execute(
-        "SELECT payload FROM events WHERE job_id=? AND type='note' ORDER BY id", (job_id,))]
+    notes = [
+        json.loads(row[0]) for row in connection.execute(
+            "SELECT payload FROM events WHERE job_id=? AND type='note' ORDER BY id", (job_id, ))
+    ]
     notes = [note for note in notes if note.get("kind") == "rework"]
     for note in notes:
         folder.mkdir(parents=True, exist_ok=True)

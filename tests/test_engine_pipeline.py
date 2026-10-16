@@ -20,11 +20,21 @@ from agent_factory.engine.config import RepoConfig, template_config
 
 
 def execution(identifier, uses, provider="codex", model="gpt-6.1-sol", effort="medium"):
-    return {"id": identifier, "uses": uses, "provider": provider,
-            "profiles": {provider: {"model": model, "effort": effort}}}
+    return {
+        "id": identifier,
+        "uses": uses,
+        "provider": provider,
+        "profiles": {
+            provider: {
+                "model": model,
+                "effort": effort
+            }
+        }
+    }
 
 
 class Engine:
+
     def __init__(self, root):
         self.root = root
         self.connection = pipeline.open_repo(root)
@@ -32,17 +42,24 @@ class Engine:
         self.job_id = "001-pipe"
         roles = root / "factory" / "roles"
         roles.mkdir(parents=True)
-        for name, kind in (("writer", "task"), ("quality", "review"),
-                           ("risk", "review"), ("gate", "approval")):
+        for name, kind in (("writer", "task"), ("quality", "review"), ("risk", "review"),
+                           ("gate", "approval")):
             (roles / f"{name}.md").write_text(f"---\ntype: {kind}\n---\n{name} instructions.\n",
-                                             encoding="utf-8")
+                                              encoding="utf-8")
         self.raw = template_config()
         self.raw.update(merge="verify", maxRounds=2)
         self.raw["pipelines"]["full"] = [
             execution("draft", "writer"),
-            {"id": "checks", "parallel": [execution("quality-check", "quality"),
-                                           execution("risk-check", "risk", "claude", "opus", "high")],
-             "onChanges": "draft"},
+            {
+                "id":
+                "checks",
+                "parallel": [
+                    execution("quality-check", "quality"),
+                    execution("risk-check", "risk", "claude", "opus", "high")
+                ],
+                "onChanges":
+                "draft"
+            },
             execution("signoff", "gate"),
         ]
         self.create()
@@ -51,10 +68,16 @@ class Engine:
         return RepoConfig.model_validate(self.raw, context={"root": self.root})
 
     def create(self, job_id="001-pipe", **kwargs):
-        return pipeline.create_job(self.connection, job_id, "Do a thing", config=self.config(),
-                                   worktree=str(self.root / job_id), branch=f"factory/{job_id}",
-                                   base_head="head-0", preamble="Stable instructions.\n",
-                                   preamble_version="test-v1", **kwargs)
+        return pipeline.create_job(self.connection,
+                                   job_id,
+                                   "Do a thing",
+                                   config=self.config(),
+                                   worktree=str(self.root / job_id),
+                                   branch=f"factory/{job_id}",
+                                   base_head="head-0",
+                                   preamble="Stable instructions.\n",
+                                   preamble_version="test-v1",
+                                   **kwargs)
 
     def load(self):
         return pipeline.load(self.connection, self.job_id)
@@ -70,9 +93,14 @@ class Engine:
         results = {}
         for task in tasks:
             with db.tx(self.connection):
-                self.connection.execute("UPDATE executions SET state='running' WHERE id=?", (task["id"],))
-            first = {"status": "STATUS: READY", "spec": "# Spec", "verdict": "VERDICT: PASS",
-                     "decision": "APPROVE"}[task["role"]["contract"]]
+                self.connection.execute("UPDATE executions SET state='running' WHERE id=?",
+                                        (task["id"], ))
+            first = {
+                "status": "STATUS: READY",
+                "spec": "# Spec",
+                "verdict": "VERDICT: PASS",
+                "decision": "APPROVE"
+            }[task["role"]["contract"]]
             first = (overrides or {}).get(task["exec_id"], first)
             relative = (f"executions/{task['step_id']}.{task['exec_id']}/"
                         f"r{task['round']}/a1/report.md")
@@ -82,14 +110,19 @@ class Engine:
             os.utime(path, ns=(1001_000_000_000, 1001_000_000_000))
             job, _ = self.load()
             step = next(s for s in job["frozen"]["pipeline"] if s["id"] == task["step_id"])
-            report = reports.read_result(path, task["role"]["contract"], t_launch=1000.0,
+            report = reports.read_result(path,
+                                         task["role"]["contract"],
+                                         t_launch=1000.0,
                                          on_changes=bool(step["onChanges"]))
             results[task["id"]] = pipeline.Completion(report.verdict, self.head, relative)
         return results
 
     def finish(self, overrides=None, only=None):
         results = self.results(overrides, only)
-        return pipeline.advance_job(self.connection, self.job_id, current_head=self.head, results=results)
+        return pipeline.advance_job(self.connection,
+                                    self.job_id,
+                                    current_head=self.head,
+                                    results=results)
 
 
 @pytest.fixture
@@ -138,7 +171,8 @@ def test_custom_pipeline_finishes_with_verify_and_retains_reports(engine):
     assert engine.finish().updates["current_step"] == "signoff"
     assert engine.finish().action == "needs_human"
     job, rows = engine.load()
-    assert (job["state"], job["pause_reason"], job["approved_head"]) == ("needs_human", "verify", engine.head)
+    assert (job["state"], job["pause_reason"], job["approved_head"]) == ("needs_human", "verify",
+                                                                         engine.head)
     assert len(rows) == 4 and all(r["state"] == "done" for r in rows)
     for row in rows:
         assert (engine.root / "factory" / "jobs" / engine.job_id / row["report_path"]).is_file()
@@ -156,7 +190,8 @@ def test_auto_approval_is_ready_for_merge(engine):
     engine.finish()
     assert engine.finish().action == "approved"
     job, _ = engine.load()
-    assert (job["state"], job["approved_head"], job["pause_reason"]) == ("approved", engine.head, None)
+    assert (job["state"], job["approved_head"], job["pause_reason"]) == ("approved", engine.head,
+                                                                         None)
 
 
 def test_retry_is_bounded_and_invalidates_downstream_results(engine):
@@ -173,10 +208,14 @@ def test_retry_is_bounded_and_invalidates_downstream_results(engine):
     job, rows = engine.load()
     assert (job["state"], job["pause_reason"]) == ("needs_human", "changes")
     assert len(rows) == 6
-    pipeline.rework_job(engine.connection, engine.job_id, "Fix the custom review", current_head=engine.head)
+    pipeline.rework_job(engine.connection,
+                        engine.job_id,
+                        "Fix the custom review",
+                        current_head=engine.head)
     job, rows = engine.load()
     assert (job["current_step"], job["returns_used"], job["round"]) == ("draft", 0, 3)
-    assert (engine.root / "factory/jobs/001-pipe/rework-1.md").read_text() == "Fix the custom review\n"
+    assert (engine.root /
+            "factory/jobs/001-pipe/rework-1.md").read_text() == "Fix the custom review\n"
     engine.finish()
     engine.finish()
     engine.finish()
@@ -212,9 +251,9 @@ def test_parallel_reviewers_use_their_own_provider_settings(engine):
     engine.start()
     engine.finish()
     tasks = engine.plan()
-    assert [(t["exec_id"], t["uses"], t["provider"], t["model"], t["effort"]) for t in tasks] == [
-        ("quality-check", "quality", "codex", "gpt-6.1-sol", "medium"),
-        ("risk-check", "risk", "claude", "opus", "high")]
+    assert [(t["exec_id"], t["uses"], t["provider"], t["model"], t["effort"])
+            for t in tasks] == [("quality-check", "quality", "codex", "gpt-6.1-sol", "medium"),
+                                ("risk-check", "risk", "claude", "opus", "high")]
 
 
 def test_same_role_in_group_has_distinct_execution_paths(engine):
@@ -231,7 +270,8 @@ def test_same_role_in_group_has_distinct_execution_paths(engine):
 
 
 def test_reusing_role_in_later_steps_keeps_separate_settings(engine):
-    engine.raw["pipelines"]["full"].insert(1, execution("polish", "writer", model="gpt-6-luna", effort="low"))
+    engine.raw["pipelines"]["full"].insert(
+        1, execution("polish", "writer", model="gpt-6-luna", effort="low"))
     engine.create("002-reuse")
     engine.job_id = "002-reuse"
     engine.start()
@@ -257,7 +297,8 @@ def test_pipeline_models_limits_roles_and_preamble_are_frozen(engine):
     task = engine.plan()[0]
     assert (task["model"], task["timeoutMinutes"]) == ("gpt-6.1-sol", 60)
     assert "writer instructions" in task["role"]["instructions"]
-    assert task["role"]["sha256"] == original["frozen"]["pipeline"][0]["executions"][0]["role"]["sha256"]
+    assert task["role"]["sha256"] == original["frozen"]["pipeline"][0]["executions"][0]["role"][
+        "sha256"]
     assert new["frozen"]["pipeline"][0]["executions"][0]["role"]["sha256"] != task["role"]["sha256"]
     engine.finish()
     assert engine.load()[0]["current_step"] == "checks"
@@ -271,7 +312,8 @@ def test_blocked_task_cannot_be_accepted_by_human(engine):
     engine.start()
     engine.finish({"draft": "STATUS: BLOCKED"})
     job, rows = engine.load()
-    assert (job["state"], job["pause_reason"], job["approved_head"]) == ("needs_human", "blocked", None)
+    assert (job["state"], job["pause_reason"], job["approved_head"]) == ("needs_human", "blocked",
+                                                                         None)
     with pytest.raises(pipeline.PipelineError, match="completed decision"):
         pipeline.check_human_approval(job, rows, current_head=engine.head)
 
@@ -279,7 +321,8 @@ def test_blocked_task_cannot_be_accepted_by_human(engine):
 def test_configured_steps_cannot_be_skipped(engine):
     engine.start()
     with db.tx(engine.connection):
-        engine.connection.execute("UPDATE jobs SET current_step='signoff' WHERE id=?", (engine.job_id,))
+        engine.connection.execute("UPDATE jobs SET current_step='signoff' WHERE id=?",
+                                  (engine.job_id, ))
     with pytest.raises(pipeline.PipelineError, match="prerequisite step draft"):
         engine.plan()
 
@@ -300,7 +343,8 @@ def test_selected_provider_uses_its_own_frozen_role(engine):
     engine.job_id = "002-codex"
     engine.start()
     assert engine.plan()[0]["role"]["source"] == str(path)
-    assert engine.plan()[0]["role"]["instructions"] == "Codex instructions.\n".replace("\n", os.linesep)
+    assert engine.plan()[0]["role"]["instructions"] == "Codex instructions.\n".replace(
+        "\n", os.linesep)
 
 
 def test_commit_after_approval_cannot_be_accepted(engine):
@@ -317,7 +361,8 @@ def test_escalation_needs_explicit_human_acceptance(engine):
     engine.finish()
     engine.finish({"signoff": "ESCALATE"})
     job, rows = engine.load()
-    assert (job["state"], job["pause_reason"], job["approved_head"]) == ("needs_human", "escalate", engine.head)
+    assert (job["state"], job["pause_reason"], job["approved_head"]) == ("needs_human", "escalate",
+                                                                         engine.head)
     pipeline.check_human_approval(job, rows, current_head=engine.head)
     assert engine.start().action == "wait"
 
@@ -332,7 +377,10 @@ def test_new_commit_invalidates_review_and_approval(engine, step):
     results = engine.results()
     before = engine.load()
     with pytest.raises(pipeline.PipelineError, match="branch changed"):
-        pipeline.advance_job(engine.connection, engine.job_id, current_head=engine.head, results=results)
+        pipeline.advance_job(engine.connection,
+                             engine.job_id,
+                             current_head=engine.head,
+                             results=results)
     assert engine.load() == before
 
 
@@ -360,7 +408,10 @@ def test_task_after_review_cannot_silently_invalidate_evidence(engine):
     engine.finish()
     results = engine.results()
     with pytest.raises(pipeline.PipelineError, match="changed after checks"):
-        pipeline.advance_job(engine.connection, engine.job_id, current_head=engine.head, results=results)
+        pipeline.advance_job(engine.connection,
+                             engine.job_id,
+                             current_head=engine.head,
+                             results=results)
 
 
 def test_wait_is_idempotent_and_pure_decisions_do_not_mutate_inputs(engine):
@@ -381,11 +432,13 @@ def test_wait_is_idempotent_and_pure_decisions_do_not_mutate_inputs(engine):
 def test_state_changes_append_history_with_round_and_clear_note(engine):
     engine.start()
     with db.tx(engine.connection):
-        engine.connection.execute("UPDATE jobs SET note='old note' WHERE id=?", (engine.job_id,))
+        engine.connection.execute("UPDATE jobs SET note='old note' WHERE id=?", (engine.job_id, ))
     engine.finish()
     engine.finish({"quality-check": "VERDICT: CHANGES"})
-    history = [json.loads(row[0]) for row in engine.connection.execute(
-        "SELECT payload FROM events WHERE type='job.state' ORDER BY id")]
+    history = [
+        json.loads(row[0]) for row in engine.connection.execute(
+            "SELECT payload FROM events WHERE type='job.state' ORDER BY id")
+    ]
     assert [h.get("current_step") for h in history] == [None, "draft", "checks", "draft"]
     assert [h["round"] for h in history] == [1, 1, 1, 2]
     assert engine.load()[0]["note"] is None
@@ -398,11 +451,16 @@ def test_invalid_results_change_nothing(engine):
     before = engine.load()
     for bad in ("MAYBE", "PASS", "APPROVE"):
         with pytest.raises(pipeline.PipelineError, match="invalid result"):
-            pipeline.advance_job(engine.connection, engine.job_id, current_head=engine.head,
-                                 results={identifier: pipeline.Completion(bad, engine.head, "report.md")})
+            pipeline.advance_job(
+                engine.connection,
+                engine.job_id,
+                current_head=engine.head,
+                results={identifier: pipeline.Completion(bad, engine.head, "report.md")})
         assert engine.load() == before
     with pytest.raises(pipeline.PipelineError, match="current step and round"):
-        pipeline.advance_job(engine.connection, engine.job_id, current_head=engine.head,
+        pipeline.advance_job(engine.connection,
+                             engine.job_id,
+                             current_head=engine.head,
                              results={999: next(iter(results.values()))})
     assert engine.load() == before
 
@@ -413,10 +471,14 @@ def test_result_record_and_next_step_insertion_are_one_transaction(engine):
     before = engine.load()
     events = list(engine.connection.execute("SELECT * FROM events"))
     with db.tx(engine.connection):
-        engine.connection.execute("CREATE TRIGGER reject_next BEFORE INSERT ON executions "
-                                  "WHEN NEW.step_id='checks' BEGIN SELECT RAISE(ABORT, 'injected'); END")
+        engine.connection.execute(
+            "CREATE TRIGGER reject_next BEFORE INSERT ON executions "
+            "WHEN NEW.step_id='checks' BEGIN SELECT RAISE(ABORT, 'injected'); END")
     with pytest.raises(sqlite3.IntegrityError, match="injected"):
-        pipeline.advance_job(engine.connection, engine.job_id, current_head=engine.head, results=results)
+        pipeline.advance_job(engine.connection,
+                             engine.job_id,
+                             current_head=engine.head,
+                             results=results)
     assert engine.load() == before
     assert list(engine.connection.execute("SELECT * FROM events")) == events
     assert not engine.connection.in_transaction
@@ -431,8 +493,8 @@ def test_rework_prefers_builder_preserves_upstream_and_resets_budget(engine):
         engine.finish()
     pipeline.rework_job(engine.connection, engine.job_id, "Improve it", current_head=engine.head)
     job, rows = engine.load()
-    assert (job["state"], job["current_step"], job["round"], job["returns_used"], job["approved_head"]) == (
-        "running", "build", 2, 0, None)
+    assert (job["state"], job["current_step"], job["round"], job["returns_used"],
+            job["approved_head"]) == ("running", "build", 2, 0, None)
     assert next(e for e in rows if e["step_id"] == "spec")["state"] == "done"
     engine.finish()
     assert {t["round"] for t in engine.plan()} == {2}
@@ -456,8 +518,13 @@ def test_rework_supersedes_only_nonterminal_downstream_executions(engine):
     engine.start()
     engine.finish({"draft": "STATUS: BLOCKED"})
     job, rows = engine.load()
-    extra = [{"id": i + 10, "step_id": "checks", "round": 1, "state": state}
-             for i, state in enumerate(("pending", "claimed", "running", "failed", "stopped", "superseded"))]
+    extra = [{
+        "id": i + 10,
+        "step_id": "checks",
+        "round": 1,
+        "state": state
+    } for i, state in enumerate(("pending", "claimed", "running", "failed", "stopped",
+                                 "superseded"))]
     transition = pipeline.rework(job, [*rows, *extra], "Try again", current_head=engine.head)
     assert transition.supersede == (10, 11, 12)
 
@@ -479,9 +546,13 @@ def test_rework_notes_can_be_recovered_after_file_write_failure(engine, monkeypa
     engine.start()
     engine.finish({"draft": "STATUS: BLOCKED"})
     original = os.replace
-    monkeypatch.setattr(pipeline.os, "replace", lambda *args: (_ for _ in ()).throw(OSError("disk error")))
+    monkeypatch.setattr(pipeline.os, "replace", lambda *args:
+                        (_ for _ in ()).throw(OSError("disk error")))
     with pytest.raises(OSError, match="disk error"):
-        pipeline.rework_job(engine.connection, engine.job_id, "Durable request", current_head=engine.head)
+        pipeline.rework_job(engine.connection,
+                            engine.job_id,
+                            "Durable request",
+                            current_head=engine.head)
     assert engine.load()[0]["state"] == "running"
     monkeypatch.setattr(pipeline.os, "replace", original)
     pipeline.materialize_rework_notes(engine.connection, engine.job_id)
@@ -505,6 +576,7 @@ def test_rework_notes_keep_numbering_after_events_are_pruned(engine):
 
 
 def test_concurrent_writers_do_not_duplicate_transitions_or_lose_history(engine):
+
     def start(_):
         connection = pipeline.open_repo(engine.root)
         try:
@@ -516,7 +588,8 @@ def test_concurrent_writers_do_not_duplicate_transitions_or_lose_history(engine)
         actions = list(pool.map(start, range(30)))
     assert actions.count("advance") == 1 and actions.count("wait") == 29
     assert len(engine.load()[1]) == 1
-    assert engine.connection.execute("SELECT COUNT(*) FROM events WHERE type='job.state'").fetchone()[0] == 2
+    assert engine.connection.execute(
+        "SELECT COUNT(*) FROM events WHERE type='job.state'").fetchone()[0] == 2
 
 
 def test_paused_job_preserves_completed_reviewers_and_same_executions_on_resume(engine):
@@ -525,10 +598,12 @@ def test_paused_job_preserves_completed_reviewers_and_same_executions_on_resume(
     engine.finish(only={"quality-check"})
     before = engine.load()[1]
     with db.tx(engine.connection):
-        engine.connection.execute("UPDATE jobs SET state='paused', pause_reason='auth' WHERE id=?", (engine.job_id,))
+        engine.connection.execute("UPDATE jobs SET state='paused', pause_reason='auth' WHERE id=?",
+                                  (engine.job_id, ))
     assert engine.plan() == () and engine.start().action == "wait"
     with db.tx(engine.connection):
-        engine.connection.execute("UPDATE jobs SET state='running', pause_reason=NULL WHERE id=?", (engine.job_id,))
+        engine.connection.execute("UPDATE jobs SET state='running', pause_reason=NULL WHERE id=?",
+                                  (engine.job_id, ))
     assert [t["exec_id"] for t in engine.plan()] == ["risk-check"]
     assert engine.load()[1] == before
 
@@ -540,8 +615,11 @@ def test_approval_changes_without_target_is_rejected_even_for_direct_results(eng
     results = engine.results()
     identifier = next(iter(results))
     with pytest.raises(pipeline.PipelineError, match="requires onChanges"):
-        pipeline.advance_job(engine.connection, engine.job_id, current_head=engine.head,
-                             results={identifier: pipeline.Completion("CHANGES", engine.head, "report.md")})
+        pipeline.advance_job(
+            engine.connection,
+            engine.job_id,
+            current_head=engine.head,
+            results={identifier: pipeline.Completion("CHANGES", engine.head, "report.md")})
 
 
 def test_unknown_pipeline_is_rejected_before_writes(engine):
@@ -568,8 +646,9 @@ def test_rework_failure_rolls_back_note_and_rewind_together(engine):
     engine.finish({"draft": "STATUS: BLOCKED"})
     before = engine.load()
     with db.tx(engine.connection):
-        engine.connection.execute("CREATE TRIGGER reject_rework BEFORE INSERT ON events "
-                                  "WHEN NEW.type='note' BEGIN SELECT RAISE(ABORT, 'note rejected'); END")
+        engine.connection.execute(
+            "CREATE TRIGGER reject_rework BEFORE INSERT ON events "
+            "WHEN NEW.type='note' BEGIN SELECT RAISE(ABORT, 'note rejected'); END")
     with pytest.raises(sqlite3.IntegrityError, match="note rejected"):
         pipeline.rework_job(engine.connection, engine.job_id, "Again", current_head=engine.head)
     assert engine.load() == before

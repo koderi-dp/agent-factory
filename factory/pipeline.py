@@ -7,22 +7,46 @@ from pathlib import PurePosixPath
 TERMINAL = {"approved", "merged", "needs-human"}
 NAME = re.compile(r"[a-z][a-z0-9-]{0,63}\Z")
 PROVIDER_DEFAULTS = {
-    "claude": {"model": "opus", "effort": "medium"},
-    "codex": {"model": "gpt-6.1-sol", "effort": "medium"},
+    "claude": {
+        "model": "opus",
+        "effort": "medium"
+    },
+    "codex": {
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+    },
 }
-MODELS = {"claude": {"opus", "sonnet", "haiku", "fable"},
-          "codex": {"gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"}}
+MODELS = {
+    "claude": {"opus", "sonnet", "haiku", "fable"},
+    "codex": {"gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"}
+}
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 DEFAULT = [
-    {"id": "spec", "uses": "spec-writer"},
-    {"id": "build", "uses": "builder"},
-    {"id": "review", "parallel": ["reviewer-security", "reviewer-ux", "reviewer-ui", "reviewer-code"], "onChanges": "build"},
-    {"id": "approve", "uses": "approver"},
+    {
+        "id": "spec",
+        "uses": "spec-writer"
+    },
+    {
+        "id": "build",
+        "uses": "builder"
+    },
+    {
+        "id": "review",
+        "parallel": ["reviewer-security", "reviewer-ux", "reviewer-ui", "reviewer-code"],
+        "onChanges": "build"
+    },
+    {
+        "id": "approve",
+        "uses": "approver"
+    },
 ]
 for _step in DEFAULT:
     if "parallel" in _step:
-        _step["parallel"] = [{"id": role, "uses": role, "providers": copy.deepcopy(PROVIDER_DEFAULTS)}
-                             for role in _step["parallel"]]
+        _step["parallel"] = [{
+            "id": role,
+            "uses": role,
+            "providers": copy.deepcopy(PROVIDER_DEFAULTS)
+        } for role in _step["parallel"]]
     else:
         _step["providers"] = copy.deepcopy(PROVIDER_DEFAULTS)
 
@@ -35,7 +59,8 @@ def relative_file(value, label):
     if not isinstance(value, str) or not value or "\\" in value or ":" in value:
         raise PipelineError(f"{label} must be a relative file path using forward slashes")
     path = PurePosixPath(value)
-    if path.is_absolute() or any(p in {".", "..", ".git"} for p in value.split("/")) or "" in value.split("/"):
+    if path.is_absolute() or any(p in {".", "..", ".git"}
+                                 for p in value.split("/")) or "" in value.split("/"):
         raise PipelineError(f"unsafe {label}: {value}")
     return value
 
@@ -67,7 +92,8 @@ def agent_file(root, provider, name):
         if value.startswith(('\"', "'")):
             quote = value[0]
             closing = value.find(quote, 1)
-            if closing == -1 or (value[closing + 1:].strip() and not value[closing + 1:].lstrip().startswith("#")):
+            if closing == -1 or (value[closing + 1:].strip()
+                                 and not value[closing + 1:].lstrip().startswith("#")):
                 raise PipelineError(f"{path}: invalid {key} scalar")
             value = value[1:closing]
         else:
@@ -81,8 +107,16 @@ def agent_file(root, provider, name):
         raise PipelineError(f"{path}: output must be a Markdown filename")
     if output.lower() == "request.md" or output.lower().startswith("rework-"):
         raise PipelineError(f"{path}: reserved report filename: {output}")
-    contract = metadata.get("contract", {"task": "status", "review": "verdict", "approval": "decision"}[kind])
-    if contract != {"task": "status", "review": "verdict", "approval": "decision"}[kind] and not (kind == "task" and contract == "spec"):
+    contract = metadata.get("contract", {
+        "task": "status",
+        "review": "verdict",
+        "approval": "decision"
+    }[kind])
+    if contract != {
+            "task": "status",
+            "review": "verdict",
+            "approval": "decision"
+    }[kind] and not (kind == "task" and contract == "spec"):
         raise PipelineError(f"{path}: invalid contract for {kind}: {contract}")
     if not "\n".join(lines[end + 1:]).strip():
         raise PipelineError(f"{path}: agent instructions are empty")
@@ -97,7 +131,8 @@ def resolve(raw=None, *, root, provider):
         raise PipelineError("pipeline must contain 1 to 32 ordered steps")
 
     def execution(entry):
-        if not isinstance(entry, dict) or set(entry) - {"id", "uses", "providers", "label", "onChanges"}:
+        if not isinstance(entry,
+                          dict) or set(entry) - {"id", "uses", "providers", "label", "onChanges"}:
             raise PipelineError("each execution needs id, uses and providers")
         role = entry.get("uses")
         if not isinstance(role, str) or not NAME.fullmatch(role):
@@ -127,7 +162,9 @@ def resolve(raw=None, *, root, provider):
 
     resolved, ids = [], set()
     for step in raw:
-        if not isinstance(step, dict) or set(step) - {"id", "uses", "parallel", "onChanges", "label", "providers"}:
+        if not isinstance(
+                step,
+                dict) or set(step) - {"id", "uses", "parallel", "onChanges", "label", "providers"}:
             raise PipelineError("each pipeline step needs id and uses or parallel")
         name = step.get("id")
         if not isinstance(name, str) or not NAME.fullmatch(name) or name in ids or name in TERMINAL:
@@ -141,7 +178,8 @@ def resolve(raw=None, *, root, provider):
             entries = step["parallel"]
             if not isinstance(entries, list) or not 1 <= len(entries) <= 16:
                 raise PipelineError(f"{name}: invalid parallel group")
-            if any(not isinstance(a, dict) or set(a) - {"id", "uses", "providers"} for a in entries):
+            if any(not isinstance(a, dict) or set(a) - {"id", "uses", "providers"}
+                   for a in entries):
                 raise PipelineError(f"{name}: reviewers need id, uses and providers")
             step["parallel"] = entries
         else:
@@ -161,10 +199,19 @@ def resolve(raw=None, *, root, provider):
         kind = types.pop()
         if "onChanges" in step:
             targets = {s["id"] for s in resolved if s["type"] == "task"}
-            if kind != "review" or not isinstance(step["onChanges"], str) or step["onChanges"] not in targets:
+            if kind != "review" or not isinstance(step["onChanges"],
+                                                  str) or step["onChanges"] not in targets:
                 raise PipelineError(f"{name}: onChanges must reference an earlier task step")
-        resolved.append({"id": name, "label": label, "type": kind, "agents": agents, "executions": executions,
-                         **({"onChanges": step["onChanges"]} if "onChanges" in step else {})})
+        resolved.append({
+            "id": name,
+            "label": label,
+            "type": kind,
+            "agents": agents,
+            "executions": executions,
+            **({
+                "onChanges": step["onChanges"]
+            } if "onChanges" in step else {})
+        })
     if resolved[-1]["type"] != "approval" or any(s["type"] == "approval" for s in resolved[:-1]):
         raise PipelineError("the pipeline must end with exactly one approval step")
     return raw, resolved, registry
@@ -173,9 +220,19 @@ def resolve(raw=None, *, root, provider):
 def snapshot(cfg, root, provider):
     _, steps, registry = resolve(cfg.get("pipeline"), root=root, provider=provider)
     used = {a for s in steps for a in s["agents"]}
-    return {"pipeline": steps, "pipelineAgents": {a: registry[a] for a in used},
-            "maxRounds": cfg["maxRounds"], "mergePolicy": cfg["merge"],
-            "results": {}, "attempts": {}, "runs": [], "resumes": 0}
+    return {
+        "pipeline": steps,
+        "pipelineAgents": {
+            a: registry[a]
+            for a in used
+        },
+        "maxRounds": cfg["maxRounds"],
+        "mergePolicy": cfg["merge"],
+        "results": {},
+        "attempts": {},
+        "runs": [],
+        "resumes": 0
+    }
 
 
 def active(job):
@@ -193,9 +250,11 @@ def verdict(agent, text):
     contract = agent["contract"]
     if contract == "spec" and first.startswith("# "):
         return "READY"
-    allowed = {"status": ("STATUS: READY", "STATUS: BLOCKED"),
-               "verdict": ("VERDICT: PASS", "VERDICT: CHANGES"),
-               "decision": ("APPROVE", "ESCALATE")}
+    allowed = {
+        "status": ("STATUS: READY", "STATUS: BLOCKED"),
+        "verdict": ("VERDICT: PASS", "VERDICT: CHANGES"),
+        "decision": ("APPROVE", "ESCALATE")
+    }
     if first in allowed.get(contract, ()):
         return first.split(": ")[-1]
     raise PipelineError(f"invalid first line for {agent['output']}: {first!r}")

@@ -53,7 +53,7 @@ def register(connection: sqlite3.Connection, path: str | Path) -> Repo:
             "ON CONFLICT(path) DO UPDATE SET last_seen=excluded.last_seen",
             (repo_id, normalized, display_name, now, now),
         )
-        row = connection.execute("SELECT * FROM repos WHERE path=?", (normalized,)).fetchone()
+        row = connection.execute("SELECT * FROM repos WHERE path=?", (normalized, )).fetchone()
     return Repo(**dict(row))
 
 
@@ -74,7 +74,7 @@ def _update(connection: sqlite3.Connection, sql: str, args: tuple) -> None:
 
 
 def remove(connection: sqlite3.Connection, repo_id: str) -> None:
-    _update(connection, "DELETE FROM repos WHERE id=?", (repo_id,))
+    _update(connection, "DELETE FROM repos WHERE id=?", (repo_id, ))
 
 
 def rename(connection: sqlite3.Connection, repo_id: str, name: str) -> None:
@@ -84,4 +84,4 @@ def rename(connection: sqlite3.Connection, repo_id: str, name: str) -> None:
 
 
 def mark_missing(connection: sqlite3.Connection, repo_id: str) -> None:
-    _update(connection, "UPDATE repos SET last_seen=NULL WHERE id=?", (repo_id,))
+    _update(connection, "UPDATE repos SET last_seen=NULL WHERE id=?", (repo_id, ))

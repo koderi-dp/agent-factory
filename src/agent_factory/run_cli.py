@@ -23,7 +23,6 @@ import sys
 import tempfile
 import time
 
-
 POLL_INTERVAL = 0.05
 STOP_GRACE_SECONDS = 10
 
@@ -60,29 +59,23 @@ def atomic_json(path: Path, value: object) -> None:
 
 class _BasicLimitInformation(ctypes.Structure):
     _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
-                ("PerJobUserTimeLimit", ctypes.c_int64),
-                ("LimitFlags", wintypes.DWORD),
+                ("PerJobUserTimeLimit", ctypes.c_int64), ("LimitFlags", wintypes.DWORD),
                 ("MinimumWorkingSetSize", ctypes.c_size_t),
-                ("MaximumWorkingSetSize", ctypes.c_size_t),
-                ("ActiveProcessLimit", wintypes.DWORD),
-                ("Affinity", ctypes.c_size_t),
-                ("PriorityClass", wintypes.DWORD),
+                ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
                 ("SchedulingClass", wintypes.DWORD)]
 
 
 class _IoCounters(ctypes.Structure):
-    _fields_ = [(name, ctypes.c_uint64) for name in
-                ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
-                 "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+    _fields_ = [(name, ctypes.c_uint64)
+                for name in ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                             "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
 
 
 class _ExtendedLimitInformation(ctypes.Structure):
-    _fields_ = [("BasicLimitInformation", _BasicLimitInformation),
-                ("IoInfo", _IoCounters),
-                ("ProcessMemoryLimit", ctypes.c_size_t),
-                ("JobMemoryLimit", ctypes.c_size_t),
-                ("PeakProcessMemoryUsed", ctypes.c_size_t),
-                ("PeakJobMemoryUsed", ctypes.c_size_t)]
+    _fields_ = [("BasicLimitInformation", _BasicLimitInformation), ("IoInfo", _IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
 
 
 class WindowsJob:
@@ -115,9 +108,10 @@ class WindowsJob:
 
     def create_time(self) -> float:
         created, ended, kernel, user = (wintypes.FILETIME() for _ in range(4))
-        self._checked(self.kernel32.GetProcessTimes(
-            self.kernel32.GetCurrentProcess(), ctypes.byref(created), ctypes.byref(ended),
-            ctypes.byref(kernel), ctypes.byref(user)))
+        self._checked(
+            self.kernel32.GetProcessTimes(self.kernel32.GetCurrentProcess(), ctypes.byref(created),
+                                          ctypes.byref(ended), ctypes.byref(kernel),
+                                          ctypes.byref(user)))
         ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
         # Match psutil's C conversion: round the integer to double BEFORE
         # dividing. Python's int/int division can differ by one float ULP.
@@ -131,10 +125,11 @@ class WindowsJob:
             raise OSError("An attempt Job Object with this owner token already exists")
         limits = _ExtendedLimitInformation()
         limits.BasicLimitInformation.LimitFlags = 0x2000  # KILL_ON_JOB_CLOSE
-        self._checked(self.kernel32.SetInformationJobObject(
-            self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)))
-        self._checked(self.kernel32.AssignProcessToJobObject(
-            self.handle, self.kernel32.GetCurrentProcess()))
+        self._checked(
+            self.kernel32.SetInformationJobObject(self.handle, 9, ctypes.byref(limits),
+                                                  ctypes.sizeof(limits)))
+        self._checked(
+            self.kernel32.AssignProcessToJobObject(self.handle, self.kernel32.GetCurrentProcess()))
 
     def terminate(self) -> None:
         # Includes the wrapper: execution does not return from this call.
@@ -161,19 +156,21 @@ def posix_create_time() -> float:
         # Apple's bsd/sys/proc_info.h: PROC_PIDTBSDINFO / struct proc_bsdinfo.
         # https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h
         class BsdInfo(ctypes.Structure):
-            _fields_ = [("ids", ctypes.c_uint32 * 12),
-                        ("comm", ctypes.c_char * 16), ("name", ctypes.c_char * 32),
-                        ("nfiles", ctypes.c_uint32), ("pgid", ctypes.c_uint32),
-                        ("pjobc", ctypes.c_uint32), ("tdev", ctypes.c_uint32),
-                        ("tpgid", ctypes.c_uint32), ("nice", ctypes.c_int32),
-                        ("start_sec", ctypes.c_uint64), ("start_usec", ctypes.c_uint64)]
+            _fields_ = [("ids", ctypes.c_uint32 * 12), ("comm", ctypes.c_char * 16),
+                        ("name", ctypes.c_char * 32), ("nfiles", ctypes.c_uint32),
+                        ("pgid", ctypes.c_uint32), ("pjobc", ctypes.c_uint32),
+                        ("tdev", ctypes.c_uint32), ("tpgid", ctypes.c_uint32),
+                        ("nice", ctypes.c_int32), ("start_sec", ctypes.c_uint64),
+                        ("start_usec", ctypes.c_uint64)]
 
         libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
-        libproc.proc_pidinfo.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64,
-                                        ctypes.c_void_p, ctypes.c_int]
+        libproc.proc_pidinfo.argtypes = [
+            ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int
+        ]
         libproc.proc_pidinfo.restype = ctypes.c_int
         info = BsdInfo()
-        if libproc.proc_pidinfo(os.getpid(), 3, 0, ctypes.byref(info), ctypes.sizeof(info)) != ctypes.sizeof(info):
+        if libproc.proc_pidinfo(os.getpid(), 3, 0, ctypes.byref(info),
+                                ctypes.sizeof(info)) != ctypes.sizeof(info):
             raise OSError(ctypes.get_errno(), "proc_pidinfo")
         return info.start_sec + info.start_usec / 1_000_000
     raise RuntimeError(f"Unsupported process start-time platform: {sys.platform}")
@@ -184,7 +181,8 @@ def read_command(directory: Path) -> dict:
     if not isinstance(command, dict):
         raise ValueError("command.json must be an object")
     argv = command.get("argv")
-    if not isinstance(argv, list) or not argv or not all(isinstance(arg, str) and "\0" not in arg for arg in argv):
+    if not isinstance(argv, list) or not argv or not all(
+            isinstance(arg, str) and "\0" not in arg for arg in argv):
         raise ValueError("command.argv must be a nonempty list of strings")
     if not argv[0]:
         raise ValueError("command.argv[0] must not be empty")
@@ -206,7 +204,9 @@ def run(directory: Path, token: str) -> int:
     # This MUST be the first artifact: even a containment/command failure is an
     # identifiable, lost attempt, never evidence that a spawn did not happen.
     atomic_json(directory / "proc.json", {
-        "wrapper_pid": os.getpid(), "wrapper_create_time": created, "token": token,
+        "wrapper_pid": os.getpid(),
+        "wrapper_create_time": created,
+        "token": token,
     })
     stopping = False
     contained = False
@@ -231,9 +231,16 @@ def run(directory: Path, token: str) -> int:
             cwd = directory / command["cwd"]
             stdin = (stack.enter_context((directory / command["stdin"]).open("rb"))
                      if command.get("stdin") is not None else subprocess.DEVNULL)
-            process = subprocess.Popen(
-                command["argv"], cwd=cwd, env={**os.environ, **command.get("env", {})},
-                stdin=stdin, stdout=output, stderr=subprocess.STDOUT, close_fds=True)
+            process = subprocess.Popen(command["argv"],
+                                       cwd=cwd,
+                                       env={
+                                           **os.environ,
+                                           **command.get("env", {})
+                                       },
+                                       stdin=stdin,
+                                       stdout=output,
+                                       stderr=subprocess.STDOUT,
+                                       close_fds=True)
             while True:
                 if stopping or (directory / "stop").exists():
                     if job is not None:
@@ -251,14 +258,18 @@ def run(directory: Path, token: str) -> int:
                 code = process.poll()
                 if code is not None:
                     atomic_json(directory / "exit.json", {
-                        "exit_code": code, "ended_at": datetime.now(timezone.utc).isoformat(),
+                        "exit_code": code,
+                        "ended_at": datetime.now(timezone.utc).isoformat(),
                     })
                     return 0
                 time.sleep(POLL_INTERVAL)
     except Exception as error:
         # Infrastructure failures are lost attempts (§6.4), not normal CLI exits.
         with (directory / "events.jsonl").open("ab", buffering=0) as output:
-            output.write((json.dumps({"type": "wrapper.error", "message": str(error)}) + "\n").encode("utf-8"))
+            output.write((json.dumps({
+                "type": "wrapper.error",
+                "message": str(error)
+            }) + "\n").encode("utf-8"))
         return 1
     finally:
         if job is not None:

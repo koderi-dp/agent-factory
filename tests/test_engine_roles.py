@@ -20,9 +20,11 @@ def write_role(path, text="---\ntype: task\n---\nInstructions.\n"):
 def test_resolution_order_and_freezing_evidence(tmp_path, provider):
     repo = tmp_path / "repo"
     builtins = tmp_path / "builtins"
-    paths = [repo / "factory" / "roles" / f"custom.{provider}.md",
-             repo / "factory" / "roles" / "custom.md",
-             builtins / f"custom.{provider}.md", builtins / "custom.md"]
+    paths = [
+        repo / "factory" / "roles" / f"custom.{provider}.md",
+        repo / "factory" / "roles" / "custom.md", builtins / f"custom.{provider}.md",
+        builtins / "custom.md"
+    ]
     for i, path in enumerate(paths):
         write_role(path, f"---\ntype: task\ndescription: Role {i}\n---\nInstructions {i}.\n")
     for i, path in enumerate(paths):
@@ -46,8 +48,12 @@ def test_no_cross_provider_fallback_and_error_lists_all_paths(tmp_path, provider
     with pytest.raises(RoleError) as exc:
         resolve_role("custom", provider, root=tmp_path, builtin_dir=builtins)
     tried = str(exc.value).split("Paths tried:\n")[1].splitlines()
-    assert tried == [str(roles / f"custom.{provider}.md"), str(roles / "custom.md"),
-                     str(builtins / f"custom.{provider}.md"), str(builtins / "custom.md")]
+    assert tried == [
+        str(roles / f"custom.{provider}.md"),
+        str(roles / "custom.md"),
+        str(builtins / f"custom.{provider}.md"),
+        str(builtins / "custom.md")
+    ]
 
 
 def test_invalid_override_does_not_fall_back(tmp_path):
@@ -58,9 +64,10 @@ def test_invalid_override_does_not_fall_back(tmp_path):
 
 def test_yaml_safe_load_supports_quoted_and_multiline_metadata(tmp_path):
     path = tmp_path / "factory" / "roles" / "custom.md"
-    write_role(path, "---\ntype: 'task' # comment\ncontract: spec\ndescription: |\n"
-                     "  Two lines\n  of description.\noutput: ../ignored.md\n"
-                     "ejectedFrom: custom@1.0.0#abcd\n---\n\n# Instructions\n")
+    write_role(
+        path, "---\ntype: 'task' # comment\ncontract: spec\ndescription: |\n"
+        "  Two lines\n  of description.\noutput: ../ignored.md\n"
+        "ejectedFrom: custom@1.0.0#abcd\n---\n\n# Instructions\n")
     role = resolve_role("custom", "codex", root=tmp_path)
     assert role.contract == "spec"
     assert role.description == "Two lines\nof description.\n"
@@ -68,11 +75,15 @@ def test_yaml_safe_load_supports_quoted_and_multiline_metadata(tmp_path):
 
 
 @pytest.mark.parametrize("text", [
-    "No frontmatter", "---\ntype: task", "---\n- task\n---\nInstructions",
-    "---\ndescription: no type\n---\nInstructions", "---\ntype: unknown\n---\nInstructions",
+    "No frontmatter",
+    "---\ntype: task",
+    "---\n- task\n---\nInstructions",
+    "---\ndescription: no type\n---\nInstructions",
+    "---\ntype: unknown\n---\nInstructions",
     "---\ntype: task\ntype: review\n---\nInstructions",
     "---\ntype: review\ncontract: spec\n---\nInstructions",
-    "---\ntype: task\ncontract: decision\n---\nInstructions", "---\ntype: task\n---\n \n",
+    "---\ntype: task\ncontract: decision\n---\nInstructions",
+    "---\ntype: task\n---\n \n",
     "---\ntype: [task\n---\nInstructions",
     "---\n!!python/object/apply:os.system ['echo unsafe']\n---\nInstructions",
 ])
@@ -83,7 +94,8 @@ def test_invalid_frontmatter_and_empty_instructions(tmp_path, text):
         resolve_role("custom", "claude", root=tmp_path)
 
 
-@pytest.mark.parametrize("name", ["../builder", "builder.md", "C:/builder", "A", "0-role", "a" * 65])
+@pytest.mark.parametrize("name",
+                         ["../builder", "builder.md", "C:/builder", "A", "0-role", "a" * 65])
 def test_unsafe_role_names_are_rejected(tmp_path, name):
     with pytest.raises(RoleError, match="name"):
         resolve_role(name, "codex", root=tmp_path)

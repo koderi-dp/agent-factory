@@ -9,6 +9,7 @@ from helpers import Repo, git, job
 
 
 class JobStateTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
         (job.JOBS / "001-x").mkdir()
@@ -46,7 +47,8 @@ class JobStateTests(unittest.TestCase):
 
     def test_bad_values_change_nothing(self):
         before = job.load("001-x")
-        for change in [("stage", "done"), ("reviews.ux", "MAYBE"), ("reviews.qa", "PASS"), ("colour", "red")]:
+        for change in [("stage", "done"), ("reviews.ux", "MAYBE"), ("reviews.qa", "PASS"),
+                       ("colour", "red")]:
             with self.assertRaises(job.JobError):
                 job.update("001-x", [change])
         self.assertEqual(job.load("001-x")["history"], before["history"])
@@ -57,7 +59,10 @@ class JobStateTests(unittest.TestCase):
                 job.load(bad)
 
     def test_parallel_writers_lose_nothing(self):
-        threads = [threading.Thread(target=job.update, args=("001-x", [(f"heads.{i}", f"c{i}")])) for i in range(30)]
+        threads = [
+            threading.Thread(target=job.update, args=("001-x", [(f"heads.{i}", f"c{i}")]))
+            for i in range(30)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -67,6 +72,7 @@ class JobStateTests(unittest.TestCase):
 
 
 class MergeTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
 
@@ -119,22 +125,29 @@ class MergeTests(unittest.TestCase):
         (self.repo.path / "notes.txt").write_text("wip, edited\n", encoding="utf-8")
         with self.assertRaisesRegex(job.JobError, "undone"):
             job.merge("001-conflict")
-        r = subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd=self.repo.path, capture_output=True)
+        r = subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                           cwd=self.repo.path,
+                           capture_output=True)
         self.assertNotEqual(r.returncode, 0, "a merge was left in progress")
-        self.assertEqual((self.repo.path / "notes.txt").read_text(encoding="utf-8"), "wip, edited\n")
+        self.assertEqual((self.repo.path / "notes.txt").read_text(encoding="utf-8"),
+                         "wip, edited\n")
         self.assertEqual(job.load("001-conflict")["stage"], "approved")
 
     def test_a_server_left_running_in_the_worktree_doesnt_block_the_merge(self):
         # Job 095's ports are 6050-6058, clear of the real jobs' ports.
         worktree = self.repo.add_job("095-leftover")
-        server = subprocess.Popen([sys.executable, "-m", "http.server", "6050", "--bind", "127.0.0.1"],
-                                  cwd=worktree, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        server = subprocess.Popen(
+            [sys._base_executable, "-m", "http.server", "6050", "--bind", "127.0.0.1"],
+            cwd=worktree,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
         try:
             for _ in range(50):
                 if job.listeners([6050]):
                     break
                 time.sleep(0.1)
             self.assertTrue(job.listeners([6050]), "the test server didn't start")
+            self.assertIn(server.pid, job.listeners(job.job_ports("095-leftover")))
             job.merge("095-leftover")
             self.assertEqual(job.listeners([6050]), [])
             self.assertFalse(worktree.exists())
@@ -153,6 +166,7 @@ class MergeTests(unittest.TestCase):
 
 
 class DeleteTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
 
@@ -176,6 +190,7 @@ class DeleteTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
 
@@ -187,7 +202,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["merge"], "auto")
         self.assertEqual(cfg["maxRounds"], 3)
         self.assertNotIn("models", cfg)
-        self.assertEqual(cfg["pipeline"][0]["providers"]["claude"], {"model": "opus", "effort": "medium"})
+        self.assertEqual(cfg["pipeline"][0]["providers"]["claude"], {
+            "model": "opus",
+            "effort": "medium"
+        })
 
     def test_saves_and_fills_in_missing_keys(self):
         cfg = job.check_config({"merge": "verify"})
@@ -202,8 +220,27 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["merge"], "verify")
 
     def test_refuses_bad_settings(self):
-        for bad in [{"models": {"builder": "gpt"}}, {"models": {"nobody": "opus"}}, {"efforts": {"builder": "turbo"}},
-                    {"merge": "sometimes"}, {"maxRounds": 0}, {"maxRounds": 6}, {"maxRounds": True}, []]:
+        for bad in [{
+                "models": {
+                    "builder": "gpt"
+                }
+        }, {
+                "models": {
+                    "nobody": "opus"
+                }
+        }, {
+                "efforts": {
+                    "builder": "turbo"
+                }
+        }, {
+                "merge": "sometimes"
+        }, {
+                "maxRounds": 0
+        }, {
+                "maxRounds": 6
+        }, {
+                "maxRounds": True
+        }, []]:
             with self.assertRaises(job.JobError, msg=bad):
                 job.save_config(bad)
         self.assertFalse(job.CONFIG.exists())

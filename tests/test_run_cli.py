@@ -20,7 +20,6 @@ import pytest
 from agent_factory import run_cli
 from agent_factory.engine import winjob
 
-
 FAKE_CLI = Path(__file__).with_name("fake_cli.py").resolve()
 
 
@@ -61,6 +60,7 @@ def port_released(port: int) -> bool:
 
 
 class Attempt:
+
     def __init__(self, root: Path, scenario: dict) -> None:
         self.directory = root / f"attempt č {uuid.uuid4().hex}"
         self.directory.mkdir()
@@ -75,10 +75,18 @@ class Attempt:
         run_cli.atomic_json(self.directory / "scenario.json", self.scenario)
         (self.directory / "prompt.md").write_bytes("prompt č\n".encode("utf-8"))
         self.command = {
-            "argv": [sys._base_executable, "-I", "-S", str(FAKE_CLI),
-                     "--scenario", str(self.directory / "scenario.json")],
-            "cwd": "worktree č", "env": {"FACTORY_TEST_ADDITION": "added č"},
-            "stdin": "prompt.md",
+            "argv": [
+                sys._base_executable, "-I", "-S",
+                str(FAKE_CLI), "--scenario",
+                str(self.directory / "scenario.json")
+            ],
+            "cwd":
+            "worktree č",
+            "env": {
+                "FACTORY_TEST_ADDITION": "added č"
+            },
+            "stdin":
+            "prompt.md",
         }
         run_cli.atomic_json(self.directory / "command.json", self.command)
 
@@ -87,8 +95,10 @@ class Attempt:
             code = ("import os; from agent_factory.engine.winjob import spawn_wrapper; "
                     f"p = spawn_wrapper({str(self.directory)!r}, {self.token!r}); "
                     "print(p.pid, flush=True); os._exit(0)")
-            launcher = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                                      text=True, timeout=15)
+            launcher = subprocess.run([sys.executable, "-c", code],
+                                      capture_output=True,
+                                      text=True,
+                                      timeout=15)
             assert launcher.returncode == 0, launcher.stderr
             self.process = psutil.Process(int(launcher.stdout.strip()))
         else:
@@ -103,8 +113,12 @@ class Attempt:
         ready = self.info("ready.json")
         server = self.info("server.json")
         assert server["parent_pid"] == ready["child_pid"]
-        return [self.process, psutil.Process(ready["pid"]),
-                psutil.Process(ready["child_pid"]), psutil.Process(server["pid"])], server["port"]
+        return [
+            self.process,
+            psutil.Process(ready["pid"]),
+            psutil.Process(ready["child_pid"]),
+            psutil.Process(server["pid"])
+        ], server["port"]
 
     def cleanup(self) -> None:
         if self.process is not None and alive(self.process):
@@ -154,7 +168,8 @@ def test_runtime_copy_is_atomic_content_addressed_and_keeps_old_versions(tmp_pat
         winjob.install_wrapper()
 
 
-def test_atomic_write_retries_sharing_violation_and_never_publishes_partial_bytes(tmp_path, monkeypatch):
+def test_atomic_write_retries_sharing_violation_and_never_publishes_partial_bytes(
+        tmp_path, monkeypatch):
     target = tmp_path / "proc.json"
     target.write_bytes(b"old")
     original_replace = os.replace
@@ -193,9 +208,15 @@ def test_windows_creation_time_matches_psutil_double_rounding():
 
 
 @pytest.mark.parametrize("exit_code", [0, 23])
-def test_base_wrapper_captures_live_output_stdin_env_cwd_report_and_exit(attempt_factory, exit_code):
-    attempt = attempt_factory(sleep=0.75, exit=exit_code, report="VERDICT: APPROVE\n",
-                              events=[{"type": "fake.started", "text": "č"}],
+def test_base_wrapper_captures_live_output_stdin_env_cwd_report_and_exit(
+        attempt_factory, exit_code):
+    attempt = attempt_factory(sleep=0.75,
+                              exit=exit_code,
+                              report="VERDICT: APPROVE\n",
+                              events=[{
+                                  "type": "fake.started",
+                                  "text": "č"
+                              }],
                               stderr='{"stream":"stderr"}\r\n',
                               capture_env=["FACTORY_TEST_INHERITED", "FACTORY_TEST_ADDITION"])
     started = datetime.now(timezone.utc)
@@ -203,7 +224,10 @@ def test_base_wrapper_captures_live_output_stdin_env_cwd_report_and_exit(attempt
     ready = attempt.info("ready.json")
     assert ready["stdin"] == "prompt č\n"
     assert Path(ready["cwd"]).resolve() == attempt.worktree.resolve()
-    assert ready["env"] == {"FACTORY_TEST_INHERITED": "inherited", "FACTORY_TEST_ADDITION": "added č"}
+    assert ready["env"] == {
+        "FACTORY_TEST_INHERITED": "inherited",
+        "FACTORY_TEST_ADDITION": "added č"
+    }
     proc = ready["proc"]
     assert proc == attempt.info("proc.json")
     assert set(proc) == {"wrapper_pid", "wrapper_create_time", "token"}
@@ -216,9 +240,11 @@ def test_base_wrapper_captures_live_output_stdin_env_cwd_report_and_exit(attempt
     assert argv[1:3] == ["-I", "-S"]
     assert Path(argv[3]).parent == winjob.install_wrapper().parent
     output = attempt.directory / "events.jsonl"
-    wait_for(lambda: output.read_bytes() if output.exists() and b"stderr" in output.read_bytes() else None)
+    wait_for(lambda: output.read_bytes()
+             if output.exists() and b"stderr" in output.read_bytes() else None)
     assert not (attempt.directory / "exit.json").exists()
-    assert output.read_bytes() == '{"type": "fake.started", "text": "č"}\n{"stream":"stderr"}\r\n'.encode("utf-8")
+    assert output.read_bytes(
+    ) == '{"type": "fake.started", "text": "č"}\n{"stream":"stderr"}\r\n'.encode("utf-8")
     result = attempt.info("exit.json")
     assert set(result) == {"exit_code", "ended_at"}
     assert result["exit_code"] == exit_code
@@ -230,8 +256,11 @@ def test_base_wrapper_captures_live_output_stdin_env_cwd_report_and_exit(attempt
 
 
 @pytest.mark.parametrize("ignore_sigterm", [False, True])
-def test_stop_flag_kills_whole_tree_releases_port_and_preserves_foreign_listener(attempt_factory, ignore_sigterm):
-    attempt = attempt_factory(hang=True, spawn_child_listening_on_port=True, ignore_sigterm=ignore_sigterm)
+def test_stop_flag_kills_whole_tree_releases_port_and_preserves_foreign_listener(
+        attempt_factory, ignore_sigterm):
+    attempt = attempt_factory(hang=True,
+                              spawn_child_listening_on_port=True,
+                              ignore_sigterm=ignore_sigterm)
     attempt.launch()
     members, port = attempt.members()
     assert all(alive(member) for member in members)
@@ -242,7 +271,9 @@ def test_stop_flag_kills_whole_tree_releases_port_and_preserves_foreign_listener
         foreign_port = foreign.getsockname()[1]
         assert not winjob.request_stop(attempt.directory, attempt.token + "wrong")
         info = attempt.info("proc.json")
-        run_cli.atomic_json(attempt.directory / "proc.json", {**info, "wrapper_create_time": info["wrapper_create_time"] - 1})
+        run_cli.atomic_json(attempt.directory / "proc.json", {
+            **info, "wrapper_create_time": info["wrapper_create_time"] - 1
+        })
         assert not winjob.request_stop(attempt.directory, attempt.token)
         assert not (attempt.directory / "stop").exists()
         assert all(alive(member) for member in members)
@@ -329,9 +360,19 @@ def test_proc_is_published_even_before_containment_failure(attempt_factory, monk
     assert not (attempt.directory / "exit.json").exists()
 
 
-@pytest.mark.parametrize("info", [None, [], {}, {"wrapper_pid": True},
-    {"wrapper_pid": -1, "wrapper_create_time": 1, "token": "owner"},
-    {"wrapper_pid": 1, "wrapper_create_time": float("nan"), "token": "owner"}])
+@pytest.mark.parametrize("info", [
+    None, [], {}, {
+        "wrapper_pid": True
+    }, {
+        "wrapper_pid": -1,
+        "wrapper_create_time": 1,
+        "token": "owner"
+    }, {
+        "wrapper_pid": 1,
+        "wrapper_create_time": float("nan"),
+        "token": "owner"
+    }
+])
 def test_malformed_or_missing_process_identity_never_allows_stop(tmp_path, info):
     if info is not None:
         run_cli.atomic_json(tmp_path / "proc.json", info)
@@ -343,7 +384,9 @@ def test_malformed_or_missing_process_identity_never_allows_stop(tmp_path, info)
 def test_matching_pid_and_creation_time_without_cmdline_token_never_allows_stop(tmp_path):
     process = psutil.Process()
     run_cli.atomic_json(tmp_path / "proc.json", {
-        "wrapper_pid": process.pid, "wrapper_create_time": process.create_time(), "token": "owner",
+        "wrapper_pid": process.pid,
+        "wrapper_create_time": process.create_time(),
+        "token": "owner",
     })
     assert winjob.owned_process(tmp_path, "owner") is None
     assert not winjob.request_stop(tmp_path, "owner")
@@ -357,12 +400,16 @@ def test_launch_uses_base_interpreter_and_detached_platform_flags(tmp_path, monk
     winjob.spawn_wrapper(tmp_path, "owner")
     argv = popen.call_args.args[0]
     options = popen.call_args.kwargs
-    assert argv == [sys._base_executable, "-I", "-S", str(runtime),
-                    "--attempt-dir", str(tmp_path.resolve()), "--token", "owner"]
+    assert argv == [
+        sys._base_executable, "-I", "-S",
+        str(runtime), "--attempt-dir",
+        str(tmp_path.resolve()), "--token", "owner"
+    ]
     for stream in ("stdin", "stdout", "stderr"):
         assert options[stream] == subprocess.DEVNULL
     assert options["close_fds"]
     if os.name == "nt":
-        assert options["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        assert options[
+            "creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         assert options["start_new_session"] is True

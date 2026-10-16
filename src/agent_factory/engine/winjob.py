@@ -38,14 +38,23 @@ def spawn_wrapper(attempt_dir: str | Path, token: str) -> subprocess.Popen:
         raise ValueError("An owner token is required")
     directory = Path(attempt_dir).resolve()
     runtime = install_wrapper()
-    options = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
-               if os.name == "nt" else {"start_new_session": True})
+    options = ({
+        "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    } if os.name == "nt" else {
+        "start_new_session": True
+    })
     # -I -S also excludes user site hooks and PYTHONPATH from this stdlib process.
-    return subprocess.Popen(
-        [sys._base_executable, "-I", "-S", str(runtime),
-         "--attempt-dir", str(directory), "--token", token], cwd=directory,
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        close_fds=True, **options)
+    return subprocess.Popen([
+        sys._base_executable, "-I", "-S",
+        str(runtime), "--attempt-dir",
+        str(directory), "--token", token
+    ],
+                            cwd=directory,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            close_fds=True,
+                            **options)
 
 
 def owned_process(attempt_dir: str | Path, token: str) -> psutil.Process | None:
@@ -93,12 +102,15 @@ def contains_process(attempt_dir: str | Path, token: str, candidate: psutil.Proc
         return False
     try:
         if os.name != "nt":
-            return os.getpgid(root.pid) == root.pid == os.getpgid(candidate.pid) and alive(candidate)
+            return os.getpgid(root.pid) == root.pid == os.getpgid(
+                candidate.pid) and alive(candidate)
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         for name, restype, argtypes in (
             ("OpenJobObjectW", wintypes.HANDLE, [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]),
             ("OpenProcess", wintypes.HANDLE, [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]),
-            ("IsProcessInJob", wintypes.BOOL, [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]),
+            ("IsProcessInJob", wintypes.BOOL,
+             [wintypes.HANDLE, wintypes.HANDLE,
+              ctypes.POINTER(wintypes.BOOL)]),
             ("CloseHandle", wintypes.BOOL, [wintypes.HANDLE]),
         ):
             function = getattr(kernel, name)
@@ -115,7 +127,9 @@ def contains_process(attempt_dir: str | Path, token: str, candidate: psutil.Proc
                     return False
                 try:
                     member = wintypes.BOOL()
-                    if not kernel.IsProcessInJob(handle, job, ctypes.byref(member)) or not member.value or not alive(process):
+                    if not kernel.IsProcessInJob(
+                            handle, job,
+                            ctypes.byref(member)) or not member.value or not alive(process):
                         return False
                 finally:
                     kernel.CloseHandle(handle)
@@ -144,7 +158,8 @@ def owned_tree(attempt_dir: str | Path, token: str) -> list[psutil.Process]:
         return [process]
 
 
-def signal_tree(attempt_dir: str | Path, token: str, members: list[psutil.Process], *, kill: bool) -> None:
+def signal_tree(attempt_dir: str | Path, token: str, members: list[psutil.Process], *,
+                kill: bool) -> None:
     """Signal a verified group, or individual identities captured from its tree.
 
     The latter also covers descendants orphaned while stopping. Never discover

@@ -72,8 +72,9 @@ class Scheduler:
         self.machine.close()
 
     def recount(self) -> int:
-        self.live_global = sum(writer.call(lambda connection: connection.execute(
-            f"SELECT count(*) FROM attempts WHERE state IN {LIVE}").fetchone()[0])
+        self.live_global = sum(
+            writer.call(lambda connection: connection.execute(
+                f"SELECT count(*) FROM attempts WHERE state IN {LIVE}").fetchone()[0])
             for _, writer in self.repos.values())
         return self.live_global
 
@@ -81,13 +82,17 @@ class Scheduler:
         root, writer = self.repos[repo_id]
 
         def read(connection: sqlite3.Connection) -> Claim:
-            attempt = dict(connection.execute("SELECT * FROM attempts WHERE id=?", (attempt_id,)).fetchone())
-            execution = dict(connection.execute("SELECT * FROM executions WHERE id=?",
-                                                (attempt["execution_id"],)).fetchone())
+            attempt = dict(
+                connection.execute("SELECT * FROM attempts WHERE id=?", (attempt_id, )).fetchone())
+            execution = dict(
+                connection.execute("SELECT * FROM executions WHERE id=?",
+                                   (attempt["execution_id"], )).fetchone())
             job, _ = pipeline.load(connection, execution["job_id"])
-            previous = connection.execute("SELECT * FROM attempts WHERE execution_id=? AND n<? ORDER BY n DESC LIMIT 1",
-                                          (execution["id"], attempt["n"])).fetchone()
-            return Claim(repo_id, root, job, execution, attempt, dict(previous) if previous else None)
+            previous = connection.execute(
+                "SELECT * FROM attempts WHERE execution_id=? AND n<? ORDER BY n DESC LIMIT 1",
+                (execution["id"], attempt["n"])).fetchone()
+            return Claim(repo_id, root, job, execution, attempt,
+                         dict(previous) if previous else None)
 
         return writer.call(read)
 
@@ -109,7 +114,8 @@ class Scheduler:
                         index = (self._cursor + offset) % len(identifiers)
                         identifier = identifiers[index]
                         root, writer = self.repos[identifier]
-                        result = writer.call(lambda connection: self._claim(connection, identifier, root))
+                        result = writer.call(
+                            lambda connection: self._claim(connection, identifier, root))
                         if result is not None:
                             self._cursor = (index + 1) % len(identifiers)
                             self.live_global += 1
@@ -124,21 +130,24 @@ class Scheduler:
     @staticmethod
     def _claim(connection: sqlite3.Connection, repo_id: str, root: Path) -> Claim | None:
         with db.tx(connection):
-            jobs = connection.execute("SELECT id FROM jobs WHERE state='running' ORDER BY seq").fetchall()
+            jobs = connection.execute(
+                "SELECT id FROM jobs WHERE state='running' ORDER BY seq").fetchall()
             for row in jobs:
                 job, executions = pipeline.load(connection, row["id"])
                 live = connection.execute(
                     f"SELECT count(*) FROM attempts a JOIN executions e ON e.id=a.execution_id "
-                    f"WHERE e.job_id=? AND a.state IN {LIVE}", (job["id"],)).fetchone()[0]
+                    f"WHERE e.job_id=? AND a.state IN {LIVE}", (job["id"], )).fetchone()[0]
                 if live >= job["frozen"]["concurrency"]["perJob"]:
                     continue
                 for execution in pipeline.step_plan(job, executions):
                     # Conditional claim + partial unique index protect stale readers.
-                    if connection.execute(f"SELECT 1 FROM attempts WHERE execution_id=? AND state IN {LIVE}",
-                                          (execution["id"],)).fetchone():
+                    if connection.execute(
+                            f"SELECT 1 FROM attempts WHERE execution_id=? AND state IN {LIVE}",
+                        (execution["id"], )).fetchone():
                         continue
-                    previous = connection.execute("SELECT * FROM attempts WHERE execution_id=? ORDER BY n DESC LIMIT 1",
-                                                  (execution["id"],)).fetchone()
+                    previous = connection.execute(
+                        "SELECT * FROM attempts WHERE execution_id=? ORDER BY n DESC LIMIT 1",
+                        (execution["id"], )).fetchone()
                     previous = dict(previous) if previous else None
                     kind, session_id = "fresh", None
                     if previous and previous["state"] == "invalid":
@@ -154,32 +163,45 @@ class Scheduler:
                         "INSERT INTO attempts (execution_id,n,kind,state,owner_token,session_id,dir,t_queued) "
                         "VALUES (?,?,?,'launching',?,?,?,?)",
                         (execution["id"], n, kind, token, session_id, directory, now))
-                    connection.execute("UPDATE executions SET state='claimed' WHERE id=? AND state='pending'",
-                                       (execution["id"],))
-                    pipeline._event(connection, job["id"], now, "attempt.state",
-                                    {"id": cursor.lastrowid, "state": "launching"})
-                    pipeline._event(connection, job["id"], now, "execution.state",
-                                    {"id": execution["id"], "state": "claimed"})
-                    attempt = dict(connection.execute("SELECT * FROM attempts WHERE id=?", (cursor.lastrowid,)).fetchone())
+                    connection.execute(
+                        "UPDATE executions SET state='claimed' WHERE id=? AND state='pending'",
+                        (execution["id"], ))
+                    pipeline._event(connection, job["id"], now, "attempt.state", {
+                        "id": cursor.lastrowid,
+                        "state": "launching"
+                    })
+                    pipeline._event(connection, job["id"], now, "execution.state", {
+                        "id": execution["id"],
+                        "state": "claimed"
+                    })
+                    attempt = dict(
+                        connection.execute("SELECT * FROM attempts WHERE id=?",
+                                           (cursor.lastrowid, )).fetchone())
                     return Claim(repo_id, root, job, execution, attempt, previous)
         return None
 
     def resume(self, repo_id: str, job_id: str) -> None:
         """Explicit Resume permits retries; lost attempts are never auto-retried."""
+
         def apply(connection: sqlite3.Connection) -> None:
             with db.tx(connection):
                 job, _ = pipeline.load(connection, job_id)
                 if job["state"] != "paused":
                     raise ValueError("only paused jobs can be resumed")
-                if connection.execute(f"SELECT 1 FROM attempts a JOIN executions e ON e.id=a.execution_id "
-                                      f"WHERE e.job_id=? AND a.state IN {LIVE} "
-                                      "AND (a.error_class='timeout' OR a.error_detail='Stopped by user')",
-                                      (job_id,)).fetchone():
+                if connection.execute(
+                        f"SELECT 1 FROM attempts a JOIN executions e ON e.id=a.execution_id "
+                        f"WHERE e.job_id=? AND a.state IN {LIVE} "
+                        "AND (a.error_class='timeout' OR a.error_detail='Stopped by user')",
+                    (job_id, )).fetchone():
                     raise ValueError("wait for stopping attempts to exit before resuming")
                 now = pipeline._now()
-                connection.execute("UPDATE jobs SET state='running',pause_reason=NULL,note=NULL,updated_at=? WHERE id=?",
-                                   (now, job_id))
-                connection.execute("UPDATE executions SET state='pending' WHERE job_id=? AND step_id=? AND round=? "
-                                   "AND state IN ('failed','stopped')", (job_id, job["current_step"], job["round"]))
+                connection.execute(
+                    "UPDATE jobs SET state='running',pause_reason=NULL,note=NULL,updated_at=? WHERE id=?",
+                    (now, job_id))
+                connection.execute(
+                    "UPDATE executions SET state='pending' WHERE job_id=? AND step_id=? AND round=? "
+                    "AND state IN ('failed','stopped')",
+                    (job_id, job["current_step"], job["round"]))
                 pipeline._event(connection, job_id, now, "job.state", {"state": "running"})
+
         self.repos[repo_id][1].call(apply)

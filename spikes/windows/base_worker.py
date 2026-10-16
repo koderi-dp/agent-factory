@@ -16,9 +16,13 @@ def main() -> None:
         count += 1
         temporary = directory / "heartbeat.tmp"
         temporary.write_text(json.dumps({
-            "pid": os.getpid(), "count": count, "executable": sys.executable,
-            "prefix": sys.prefix, "script": str(Path(__file__).resolve()),
-        }), encoding="utf-8")
+            "pid": os.getpid(),
+            "count": count,
+            "executable": sys.executable,
+            "prefix": sys.prefix,
+            "script": str(Path(__file__).resolve()),
+        }),
+                             encoding="utf-8")
         deadline = time.monotonic() + 2
         while True:
             try:

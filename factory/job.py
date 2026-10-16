@@ -51,7 +51,8 @@ LENSES = ("security", "ux", "ui", "code")
 VERDICTS = {"pending", "PASS", "CHANGES"}
 INTS = {"round", "resumes"}
 STRINGS = {"stage", "builder", "feature", "note", "provider"}
-AGENTS = ("spec-writer", "builder", "reviewer-security", "reviewer-ux", "reviewer-ui", "reviewer-code", "approver")
+AGENTS = ("spec-writer", "builder", "reviewer-security", "reviewer-ux", "reviewer-ui",
+          "reviewer-code", "approver")
 MODELS = pipeline.MODELS["claude"]
 PROVIDERS = {"claude", "codex"}
 CODEX_MODELS = pipeline.MODELS["codex"]
@@ -160,10 +161,16 @@ def new(job_id, feature, worktree, provider="claude"):
             "stage": first,
             "round": 0,
             "resumes": 0,
-            "reviews": {k: "pending" for k in LENSES},
+            "reviews": {
+                k: "pending"
+                for k in LENSES
+            },
             "heads": {},
             "created": at,
-            "history": [{"stage": first, "at": at}],
+            "history": [{
+                "stage": first,
+                "at": at
+            }],
         })
 
 
@@ -184,7 +191,8 @@ def apply(job, key, value):
     elif key in INTS:
         job[key] = int(value)
     elif key in STRINGS:
-        stages = pipeline.TERMINAL | {s["id"] for s in job["pipeline"]} if "pipeline" in job else STAGES
+        stages = pipeline.TERMINAL | {s["id"]
+                                      for s in job["pipeline"]} if "pipeline" in job else STAGES
         if key == "stage" and value not in stages:
             raise JobError(f"unknown stage: {value}")
         job[key] = value
@@ -222,7 +230,11 @@ def move(job, stage, note=None):
     job.pop("note", None)
     if note:
         job["note"] = note
-    job.setdefault("history", []).append({"stage": stage, "round": job.get("round", 0), "at": now()})
+    job.setdefault("history", []).append({
+        "stage": stage,
+        "round": job.get("round", 0),
+        "at": now()
+    })
 
 
 def branch_head(job, clean=False):
@@ -235,7 +247,8 @@ def branch_head(job, clean=False):
         if status.returncode:
             raise JobError("could not inspect the job worktree: " + status.stderr.strip())
         if status.stdout.strip():
-            raise JobError("the job worktree has uncommitted changes; commit the step's changes first")
+            raise JobError(
+                "the job worktree has uncommitted changes; commit the step's changes first")
     head = git("rev-parse", "HEAD", cwd=worktree)
     if head.returncode:
         raise JobError("could not read the job branch head: " + head.stderr.strip())
@@ -254,7 +267,8 @@ def prepare_run(job):
         return None
     for prior in job["pipeline"][:job["pipeline"].index(step)]:
         result = job["results"].get(prior["id"])
-        if result is None or any(r["verdict"] not in {"READY", "PASS"} for r in result.get("reports", {}).values()):
+        if result is None or any(r["verdict"] not in {"READY", "PASS"}
+                                 for r in result.get("reports", {}).values()):
             raise JobError(f"finish prerequisite step {prior['id']} before {step['id']}")
     if "activeRun" in job:
         return step
@@ -265,10 +279,17 @@ def prepare_run(job):
         job.setdefault("heads", {})[str(job["round"])] = head
     attempt = job.setdefault("attempts", {}).get(step["id"], 0) + 1
     job["attempts"][step["id"]] = attempt
-    run = {"step": step["id"], "attempt": attempt, "round": job["round"], "head": head,
-           "started": now(), "before": {}}
+    run = {
+        "step": step["id"],
+        "attempt": attempt,
+        "round": job["round"],
+        "head": head,
+        "started": now(),
+        "before": {}
+    }
     for name in step["agents"]:
-        path = pipeline.report_path(path_of(job["id"]).parent, step, job["pipelineAgents"][name], run)
+        path = pipeline.report_path(
+            path_of(job["id"]).parent, step, job["pipelineAgents"][name], run)
         path.parent.mkdir(parents=True, exist_ok=True)
         run["before"][name] = report_signature(path)
     job["activeRun"] = run
@@ -295,8 +316,12 @@ def step_plan(job_id):
         job = load(job_id)
         step = prepare_run(job)
         if step is None:
-            return {"stage": job["stage"], "tasks": [], "note": job.get("note"),
-                    "merge": job["stage"] == "approved" and job.get("mergePolicy") == "auto"}
+            return {
+                "stage": job["stage"],
+                "tasks": [],
+                "note": job.get("note"),
+                "merge": job["stage"] == "approved" and job.get("mergePolicy") == "auto"
+            }
         folder, repo = path_of(job_id).parent, repo_root()
         executions = {e["uses"]: e for e in step["executions"]}
         tasks = []
@@ -323,16 +348,34 @@ def step_plan(job_id):
                 raise JobError(f"missing instructions for {name}: {instructions}")
             ports = job_ports(job_id)
             offset = 3 if name == "reviewer-ux" else 6 if name == "reviewer-ui" else 0
-            assigned = ports[offset:offset + 3] if name in {"builder", "spec-writer", "reviewer-ux", "reviewer-ui"} or step["type"] == "task" else []
-            tasks.append({"id": execution["id"], "agent": name, "type": step["type"], "instructions": str(instructions),
-                          "output": str(pipeline.report_path(folder, step, agent, job["activeRun"])),
-                          "model": selection["model"], "effort": selection["effort"],
-                          "ports": assigned, "contract": agent["contract"]})
+            assigned = ports[offset:offset +
+                             3] if name in {"builder", "spec-writer", "reviewer-ux", "reviewer-ui"
+                                            } or step["type"] == "task" else []
+            tasks.append({
+                "id": execution["id"],
+                "agent": name,
+                "type": step["type"],
+                "instructions": str(instructions),
+                "output": str(pipeline.report_path(folder, step, agent, job["activeRun"])),
+                "model": selection["model"],
+                "effort": selection["effort"],
+                "ports": assigned,
+                "contract": agent["contract"]
+            })
         save(job)
-        return {"stage": job["stage"], "step": step, "run": job["activeRun"],
-                "worktree": job["worktree"], "branch": job["branch"], "jobFolder": str(folder),
-                "tasks": tasks, "results": job["results"], "feature": job["feature"],
-                "rework": job.get("rework"), "merge": False}
+        return {
+            "stage": job["stage"],
+            "step": step,
+            "run": job["activeRun"],
+            "worktree": job["worktree"],
+            "branch": job["branch"],
+            "jobFolder": str(folder),
+            "tasks": tasks,
+            "results": job["results"],
+            "feature": job["feature"],
+            "rework": job.get("rework"),
+            "merge": False
+        }
 
 
 def advance(job_id):
@@ -344,18 +387,22 @@ def advance(job_id):
         step = next(s for s in job["pipeline"] if s["id"] == job["stage"])
         head = branch_head(job, clean=True)
         if step["type"] != "task" and head != job["activeRun"]["head"]:
-            raise JobError("the branch changed while this step was running; rework and review it again")
+            raise JobError(
+                "the branch changed while this step was running; rework and review it again")
         if step["type"] == "approval":
             for reviewed in job["pipeline"]:
                 result = job["results"].get(reviewed["id"], {})
                 if reviewed["type"] == "review" and result.get("head") and result["head"] != head:
-                    raise JobError(f"the branch changed after {reviewed['id']}; rework so its reviewers check the current head")
+                    raise JobError(
+                        f"the branch changed after {reviewed['id']}; rework so its reviewers check the current head"
+                    )
         reports = {name: read_result(job, step, name) for name in step["agents"]}
         # Keep immutable evidence even when a later attempt overwrites build.md or decision.md.
         folder = path_of(job_id).parent
         for name, report in reports.items():
             source = folder / report["file"]
-            archived = pipeline.inside(folder, f"steps/{step['id']}/{job['activeRun']['attempt']}/{source.name}")
+            archived = pipeline.inside(
+                folder, f"steps/{step['id']}/{job['activeRun']['attempt']}/{source.name}")
             archived.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, archived)
             report["archive"] = archived.relative_to(folder).as_posix()
@@ -373,14 +420,20 @@ def advance(job_id):
                 job["resumes"] += 1
                 rewind(job, target)
             else:
-                move(job, "needs-human", f"{step['id']} requested changes; no retry target or retry budget remaining")
+                move(job, "needs-human",
+                     f"{step['id']} requested changes; no retry target or retry budget remaining")
         elif step["type"] == "approval":
-            job["approval"] = {"verdict": next(iter(values)), "head": head, "file": next(iter(reports.values()))["file"]}
+            job["approval"] = {
+                "verdict": next(iter(values)),
+                "head": head,
+                "file": next(iter(reports.values()))["file"]
+            }
             job["pipelineComplete"] = True
             move(job, "approved" if "APPROVE" in values else "needs-human",
                  None if "APPROVE" in values else "the approval step escalated; see its decision")
         else:
-            if "builder" in step["agents"] and not git("log", "--oneline", "main..HEAD", cwd=job["worktree"]).stdout.strip():
+            if "builder" in step["agents"] and not git(
+                    "log", "--oneline", "main..HEAD", cwd=job["worktree"]).stdout.strip():
                 raise JobError("the builder reported READY but the branch has no commits")
             index = job["pipeline"].index(step)
             move(job, job["pipeline"][index + 1]["id"])
@@ -406,7 +459,8 @@ def rework(job_id, note):
         target = target or next((s["id"] for s in job["pipeline"] if s["type"] == "task"), None)
         if target is None:
             raise JobError("this pipeline has no task step to rework")
-        for prior in job["pipeline"][:next(i for i, s in enumerate(job["pipeline"]) if s["id"] == target)]:
+        for prior in job["pipeline"][:next(i for i, s in enumerate(job["pipeline"])
+                                           if s["id"] == target)]:
             if prior["id"] not in job["results"]:
                 target = prior["id"]
                 break
@@ -449,12 +503,15 @@ def job_ports(job_id):
 def listeners(ports):
     """Process ids listening on any of these local ports."""
     if os.name == "nt":
-        script = ("Get-NetTCPConnection -State Listen -LocalPort " + ",".join(map(str, ports))
-                  + " -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess }")
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True)
+        script = ("Get-NetTCPConnection -State Listen -LocalPort " + ",".join(map(str, ports)) +
+                  " -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess }")
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                           capture_output=True,
+                           text=True)
     else:
-        r = subprocess.run(["lsof", "-ti", ",".join(f"tcp:{p}" for p in ports), "-sTCP:LISTEN"],
-                           capture_output=True, text=True)
+        r = subprocess.run(["lsof", "-ti", "tcp:" + ",".join(map(str, ports)), "-sTCP:LISTEN"],
+                           capture_output=True,
+                           text=True)
     return sorted({int(x) for x in r.stdout.split() if x.isdigit() and int(x) > 0})
 
 
@@ -480,7 +537,8 @@ def merge(job_id, human=False):
     """Merge an approved or waiting job into main from the main checkout. Returns a message."""
     job = load(job_id)
     if job["stage"] not in MERGEABLE:
-        raise JobError(f"{job_id} is in {job['stage']}; only an approved or waiting job can be merged")
+        raise JobError(
+            f"{job_id} is in {job['stage']}; only an approved or waiting job can be merged")
     repo = repo_root()
     branch = job["branch"]
     if "pipeline" in job:
@@ -502,8 +560,9 @@ def merge(job_id, human=False):
     theirs = set(git("diff", "--name-only", f"main...{branch}", cwd=repo).stdout.splitlines())
     clash = sorted(ours & theirs)
     if clash:
-        raise Busy("you have uncommitted changes in files this job also changes: " + ", ".join(clash[:5])
-                   + ("…" if len(clash) > 5 else "") + ". Commit or stash them first")
+        raise Busy("you have uncommitted changes in files this job also changes: " +
+                   ", ".join(clash[:5]) + ("…" if len(clash) > 5 else "") +
+                   ". Commit or stash them first")
     r = git("merge", "--no-ff", branch, "-m", f"Merge {branch}", cwd=repo)
     if r.returncode:
         if git("rev-parse", "-q", "--verify", "MERGE_HEAD", cwd=repo).returncode == 0:
@@ -531,7 +590,8 @@ def delete(job_id, force=False):
         raise JobError(f"no job {job_id}")
     job = load(job_id) if path_of(job_id).exists() else {"id": job_id, "stage": None}
     if (pipeline.active(job) if "pipeline" in job else job["stage"] in LIVE) and not force:
-        raise JobError(f"{job_id} is still running ({job['stage']}); stop its session first, or pass --force")
+        raise JobError(
+            f"{job_id} is still running ({job['stage']}); stop its session first, or pass --force")
     removed = []
     if free_ports(job_id):
         removed.append("leftover servers")
@@ -632,7 +692,12 @@ def wait(watcher, timeout, provider="claude"):
                     continue  # cancelled, or a Windows reader still has it open; retry later
             finally:
                 claim.unlink(missing_ok=True)
-            write_json(beat, {"watcher": watcher, "at": now(), "busy": r["item"], "provider": provider})
+            write_json(beat, {
+                "watcher": watcher,
+                "at": now(),
+                "busy": r["item"],
+                "provider": provider
+            })
             return {"item": r["item"], "at": r["at"]}
         time.sleep(1)
     return None
@@ -648,10 +713,12 @@ def idle_watchers(provider=None):
     for path in JOBS.glob("watcher-*.json"):
         try:
             beat = json.loads(path.read_text(encoding="utf-8"))
-            age = time.time() - datetime.strptime(beat["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+            age = time.time() - datetime.strptime(
+                beat["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
         except (ValueError, KeyError, FileNotFoundError):
             continue
-        if (provider is None or beat.get("provider", "claude") == provider) and not beat.get("busy") and age < 3 * BEAT_SECONDS:
+        if (provider is None or beat.get("provider", "claude")
+                == provider) and not beat.get("busy") and age < 3 * BEAT_SECONDS:
             out.append(beat["watcher"])
     return out
 
@@ -712,7 +779,8 @@ def save_config(cfg):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("new")
     p.add_argument("job_id")
@@ -726,7 +794,9 @@ def main():
         sub.add_parser(name).add_argument("job_id")
     p = sub.add_parser("merge")
     p.add_argument("job_id")
-    p.add_argument("--human", action="store_true", help="Explicitly accept an escalated final approval")
+    p.add_argument("--human",
+                   action="store_true",
+                   help="Explicitly accept an escalated final approval")
     p = sub.add_parser("rework")
     p.add_argument("job_id")
     p.add_argument("--note", required=True)
@@ -776,8 +846,9 @@ def main():
             unwatch(args.watcher)
         elif args.command == "free-ports":
             stopped = free_ports(args.job_id)
-            print(f"stopped {len(stopped)} process(es) on ports {job_ports(args.job_id)[0]}-{job_ports(args.job_id)[-1]}"
-                  if job_ports(args.job_id) else "no ports for that job id")
+            print(
+                f"stopped {len(stopped)} process(es) on ports {job_ports(args.job_id)[0]}-{job_ports(args.job_id)[-1]}"
+                if job_ports(args.job_id) else "no ports for that job id")
     except Busy as err:
         print(f"busy: {err}", file=sys.stderr)
         sys.exit(3)

@@ -420,7 +420,8 @@ def test_real_service_auto_start_second_serve_and_restart(tmp_path, monkeypatch)
 def test_service_version_mismatch_restarts_real_process(tmp_path, monkeypatch):
     monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
     monkeypatch.chdir(tmp_path)
-    code = ("import agent_factory; agent_factory.__version__='0.0.0'; "
+    old_version = "0.0.0" if __version__ != "0.0.0" else "0.0.1"
+    code = (f"import agent_factory; agent_factory.__version__={old_version!r}; "
             "from agent_factory.service import serve; raise SystemExit(serve(0))")
     child = subprocess.Popen([sys.executable, "-c", code],
                              stdout=subprocess.DEVNULL,
@@ -431,7 +432,7 @@ def test_service_version_mismatch_restarts_real_process(tmp_path, monkeypatch):
             assert time.monotonic() < deadline
             time.sleep(0.05)
         old = service.info()
-        assert old["version"] == "0.0.0"
+        assert old["version"] == old_version
         current = service.ensure()
         assert current["version"] == __version__
         assert current["pid"] != old["pid"]

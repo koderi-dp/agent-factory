@@ -67,7 +67,8 @@ def new_items(body):
     for item in items:
         title = item.get("text") if isinstance(item, dict) else None
         details = item.get("details", "") if isinstance(item, dict) else None
-        if not isinstance(title, str) or not title.strip() or "\n" in title.strip() or len(title) > 300:
+        if not isinstance(title,
+                          str) or not title.strip() or "\n" in title.strip() or len(title) > 300:
             raise job.JobError("each item needs a one-line title of at most 300 characters")
         if not isinstance(details, str) or len(details) > 20_000:
             raise job.JobError("details must be text of at most 20,000 characters")
@@ -83,10 +84,11 @@ def start_headless(permissions):
     provider = job.load_config()["provider"]
     executable = shutil.which(provider)
     if not executable:
-        raise job.JobError(f"the {provider} command isn't on PATH, so Start can't launch a headless session")
+        raise job.JobError(
+            f"the {provider} command isn't on PATH, so Start can't launch a headless session")
     repo = job.repo_root()
-    required = (repo / ".agents/skills/factory/SKILL.md" if provider == "codex"
-                else repo / ".claude/skills/factory/SKILL.md")
+    required = (repo / ".agents/skills/factory/SKILL.md" if provider == "codex" else repo /
+                ".claude/skills/factory/SKILL.md")
     if not required.is_file():
         raise job.JobError(f"install the {provider} factory skill first: {required}")
     job.JOBS.mkdir(exist_ok=True)
@@ -94,14 +96,24 @@ def start_headless(permissions):
     # Its own process group, so it keeps running if the dashboard server stops. On Windows it gets
     # one hidden console that every command it runs shares; with no console at all (DETACHED_PROCESS)
     # each git or python call would open a window of its own.
-    flags = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
-             if os.name == "nt" else {"start_new_session": True})
-    args = ([sys.executable, str(job.FACTORY / "codex_runner.py"), "run",
-             str(log.with_suffix(".session.json")), "--permissions", permissions]
-            if provider == "codex" else
+    flags = ({
+        "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    } if os.name == "nt" else {
+        "start_new_session": True
+    })
+    args = ([
+        sys.executable,
+        str(job.FACTORY / "codex_runner.py"), "run",
+        str(log.with_suffix(".session.json")), "--permissions", permissions
+    ] if provider == "codex" else
             [executable, "-p", "/factory watch --once", "--permission-mode", permissions])
     with open(log, "w", encoding="utf-8") as out:
-        subprocess.Popen(args, cwd=repo, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, **flags)
+        subprocess.Popen(args,
+                         cwd=repo,
+                         stdin=subprocess.DEVNULL,
+                         stdout=out,
+                         stderr=subprocess.STDOUT,
+                         **flags)
     return log.name
 
 
@@ -129,7 +141,8 @@ def edit_backlog(body):
             try:
                 request["headless"] = start_headless(cfg["headlessPermissions"])
             except (job.JobError, OSError) as exc:
-                job.cancel_request(title)  # leave Start retryable after the missing tool is installed
+                job.cancel_request(
+                    title)  # leave Start retryable after the missing tool is installed
                 raise job.JobError(str(exc))
         return request
     if action == "add":
@@ -150,6 +163,7 @@ def edit_backlog(body):
 
 
 class Handler(SimpleHTTPRequestHandler):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(job.FACTORY), **kwargs)
 
@@ -193,21 +207,27 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/api/config":
             try:
                 cfg = job.load_config()
-                _, steps, registry = job.pipeline.resolve(cfg["pipeline"], root=job.FACTORY.parent, provider=cfg["provider"])
-                choices = {provider: {
-                    "models": sorted(job.CODEX_MODELS if provider == "codex" else job.MODELS),
-                    "efforts": list(job.EFFORTS),
-                } for provider in sorted(job.PROVIDERS)}
-                return self.send_json(200, {
-                    "config": cfg,
-                    **choices[cfg["provider"]],
-                    "choices": choices,
-                    "providers": sorted(job.PROVIDERS),
-                    "agents": list(registry),
-                    "builtins": list(job.AGENTS),
-                    "pipeline": steps,
-                    "pipelineAgents": registry,
-                })
+                _, steps, registry = job.pipeline.resolve(cfg["pipeline"],
+                                                          root=job.FACTORY.parent,
+                                                          provider=cfg["provider"])
+                choices = {
+                    provider: {
+                        "models": sorted(job.CODEX_MODELS if provider == "codex" else job.MODELS),
+                        "efforts": list(job.EFFORTS),
+                    }
+                    for provider in sorted(job.PROVIDERS)
+                }
+                return self.send_json(
+                    200, {
+                        "config": cfg,
+                        **choices[cfg["provider"]],
+                        "choices": choices,
+                        "providers": sorted(job.PROVIDERS),
+                        "agents": list(registry),
+                        "builtins": list(job.AGENTS),
+                        "pipeline": steps,
+                        "pipelineAgents": registry,
+                    })
             except job.JobError as err:
                 return self.send_json(500, {"error": str(err)})
         if self.path.startswith("/api/"):
@@ -216,7 +236,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def change(self):
         if not self.host_ok() or self.headers.get("X-Factory") != "1":
-            return self.send_json(403, {"error": "changes need the X-Factory header from this server's page"})
+            return self.send_json(
+                403, {"error": "changes need the X-Factory header from this server's page"})
         path = self.path.split("?")[0]
         try:
             body = self.read_body()
@@ -230,7 +251,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(200, {"message": job.delete(job_id, bool(body.get("force")))})
             if path == "/api/backlog" and self.command == "POST":
                 result = edit_backlog(body)
-                return self.send_json(200, {"ok": True, **(result if isinstance(result, dict) else {})})
+                return self.send_json(200, {
+                    "ok": True,
+                    **(result if isinstance(result, dict) else {})
+                })
             return self.send_json(404, {"error": "no such endpoint"})
         except job.Busy as err:
             return self.send_json(409, {"error": str(err), "busy": True})
@@ -242,7 +266,8 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", type=int, default=5099)
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)

@@ -10,12 +10,14 @@ import server
 
 
 class ServerTests(unittest.TestCase):
+
     def setUp(self):
         self.repo = Repo()
         self._backlog = server.BACKLOG
         server.BACKLOG = self.repo.factory / "backlog.md"
         (self.repo.factory / "dashboard").mkdir()
-        (self.repo.factory / "dashboard" / "index.html").write_text("<p>board</p>", encoding="utf-8")
+        (self.repo.factory / "dashboard" / "index.html").write_text("<p>board</p>",
+                                                                    encoding="utf-8")
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
@@ -28,7 +30,11 @@ class ServerTests(unittest.TestCase):
 
     def request(self, method, path, body=None, headers=None, host=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port)
-        h = {"Host": host or f"127.0.0.1:{self.port}", "X-Factory": "1", "Content-Type": "application/json"}
+        h = {
+            "Host": host or f"127.0.0.1:{self.port}",
+            "X-Factory": "1",
+            "Content-Type": "application/json"
+        }
         h.update(headers or {})
         conn.request(method, path, body=None if body is None else json.dumps(body), headers=h)
         res = conn.getresponse()
@@ -54,7 +60,9 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 403)
 
     def test_changes_need_the_factory_header(self):
-        status, body, _ = self.request("PUT", "/api/config", {"merge": "verify"}, headers={"X-Factory": ""})
+        status, body, _ = self.request("PUT",
+                                       "/api/config", {"merge": "verify"},
+                                       headers={"X-Factory": ""})
         self.assertEqual(status, 403)
         self.assertFalse(job.CONFIG.exists())
 
@@ -67,7 +75,9 @@ class ServerTests(unittest.TestCase):
         cfg["merge"] = "verify"
         cfg["pipeline"][1]["providers"]["claude"]["effort"] = "high"
         status, body, _ = self.request("PUT", "/api/config", cfg)
-        self.assertEqual((status, body["config"]["merge"], body["config"]["pipeline"][1]["providers"]["claude"]["effort"]), (200, "verify", "high"))
+        self.assertEqual((status, body["config"]["merge"],
+                          body["config"]["pipeline"][1]["providers"]["claude"]["effort"]),
+                         (200, "verify", "high"))
         status, body, _ = self.request("PUT", "/api/config", {"merge": "never"})
         self.assertEqual(status, 400)
 
@@ -96,7 +106,12 @@ class ServerTests(unittest.TestCase):
         self.assertIn("writer", body["agents"])
         self.assertEqual(body["pipeline"][0]["agents"], ["writer"])
         before = job.CONFIG.read_bytes()
-        status, _, _ = self.request("PUT", "/api/config", {**cfg, "pipeline": [{"id": "oops", "uses": "missing"}]})
+        status, _, _ = self.request("PUT", "/api/config", {
+            **cfg, "pipeline": [{
+                "id": "oops",
+                "uses": "missing"
+            }]
+        })
         self.assertEqual(status, 400)
         self.assertEqual(job.CONFIG.read_bytes(), before)
 
@@ -120,16 +135,14 @@ class ServerTests(unittest.TestCase):
 
 
 class BacklogTests(unittest.TestCase):
-    TEXT = (
-        "# Backlog\n\nIntro.\n\n"
-        "- [x] Done → 001-done\n"
-        "- [ ] First\n"
-        "  Its details\n"
-        "  - a point\n"
-        "\n"
-        "  more details\n"
-        "- [ ] Second\n"
-    )
+    TEXT = ("# Backlog\n\nIntro.\n\n"
+            "- [x] Done → 001-done\n"
+            "- [ ] First\n"
+            "  Its details\n"
+            "  - a point\n"
+            "\n"
+            "  more details\n"
+            "- [ ] Second\n")
 
     def setUp(self):
         self.repo = Repo()
@@ -148,7 +161,13 @@ class BacklogTests(unittest.TestCase):
         return [l[6:] for l in self.text().splitlines() if l.startswith("- [ ] ")]
 
     def test_add_with_details_stores_them_indented(self):
-        server.edit_backlog({"action": "add", "items": [{"text": "Third", "details": "## Why\nBecause.\n\n- x"}]})
+        server.edit_backlog({
+            "action": "add",
+            "items": [{
+                "text": "Third",
+                "details": "## Why\nBecause.\n\n- x"
+            }]
+        })
         self.assertTrue(self.text().endswith("- [ ] Third\n  ## Why\n  Because.\n\n  - x\n"))
 
     def test_move_carries_the_details(self):
@@ -167,8 +186,24 @@ class BacklogTests(unittest.TestCase):
         self.assertEqual(self.open_items()[-1], "Plain")
 
     def test_bad_requests_change_nothing(self):
-        for bad in [{"action": "add", "items": [{"text": "two\nlines"}]}, {"action": "add", "items": []},
-                    {"action": "move", "index": 5, "to": 0}, {"action": "remove", "index": True}, {"action": "wipe"}]:
+        for bad in [{
+                "action": "add",
+                "items": [{
+                    "text": "two\nlines"
+                }]
+        }, {
+                "action": "add",
+                "items": []
+        }, {
+                "action": "move",
+                "index": 5,
+                "to": 0
+        }, {
+                "action": "remove",
+                "index": True
+        }, {
+                "action": "wipe"
+        }]:
             with self.assertRaises(job.JobError, msg=bad):
                 server.edit_backlog(bad)
         self.assertEqual(self.text(), self.TEXT)

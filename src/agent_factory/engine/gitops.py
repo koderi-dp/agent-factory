@@ -27,8 +27,12 @@ class Busy(GitError):
 
 
 def git(*args: str, cwd: str | Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True,
-                          text=True, encoding="utf-8", errors="replace")
+    return subprocess.run(["git", *args],
+                          cwd=cwd,
+                          capture_output=True,
+                          text=True,
+                          encoding="utf-8",
+                          errors="replace")
 
 
 def checked(*args: str, cwd: str | Path) -> str:
@@ -63,9 +67,10 @@ def validate_result(job: Mapping[str, Any], execution: Mapping[str, Any], result
         raise GitError("the branch changed while this step was running")
     if execution["uses"] == "builder" and result == "READY":
         base = job["base_head"]
-        if (not base or git("merge-base", "--is-ancestor", base, current,
-                            cwd=job["worktree"]).returncode
-                or int(checked("rev-list", "--count", f"{base}..{current}", cwd=job["worktree"])) < 1):
+        if (not base
+                or git("merge-base", "--is-ancestor", base, current, cwd=job["worktree"]).returncode
+                or int(checked("rev-list", "--count", f"{base}..{current}",
+                               cwd=job["worktree"])) < 1):
             raise GitError("the builder must add at least one commit since base_head")
     return current
 
@@ -101,7 +106,7 @@ def remove_worktree(root: Path, job: Mapping[str, Any], *, force: bool = False) 
         return False
     # Six attempts: the initial try and up to five 1-second lock retries.
     for attempt in range(6 if os.name == "nt" else 1):
-        result = git("worktree", "remove", *(("--force",) if force else ()), str(path), cwd=root)
+        result = git("worktree", "remove", *(("--force", ) if force else ()), str(path), cwd=root)
         if not result.returncode:
             return True
         if os.name == "nt" and attempt < 5:
@@ -117,7 +122,7 @@ def free_ports(connection: sqlite3.Connection, root: Path, job_id: str) -> None:
     """
     rows = connection.execute(
         "SELECT a.* FROM attempts a JOIN executions e ON e.id=a.execution_id WHERE e.job_id=?",
-        (job_id,)).fetchall()
+        (job_id, )).fetchall()
     for row in rows:
         directory = root / "factory/jobs" / job_id / row["dir"]
         members = winjob.owned_tree(directory, row["owner_token"])
@@ -143,18 +148,29 @@ def free_ports(connection: sqlite3.Connection, root: Path, job_id: str) -> None:
                 raise GitError("attempt tree did not stop; preserving the job")
 
 
-def _state(connection: sqlite3.Connection, job_id: str, state: str,
-           reason: str | None = None, note: str | None = None) -> None:
+def _state(connection: sqlite3.Connection,
+           job_id: str,
+           state: str,
+           reason: str | None = None,
+           note: str | None = None) -> None:
     with db.tx(connection):
         now = pipeline._now()
         connection.execute("UPDATE jobs SET state=?,pause_reason=?,note=?,updated_at=? WHERE id=?",
                            (state, reason, note, now, job_id))
-        pipeline._event(connection, job_id, now, "job.state",
-                        {"state": state, "pause_reason": reason, "note": note})
+        pipeline._event(connection, job_id, now, "job.state", {
+            "state": state,
+            "pause_reason": reason,
+            "note": note
+        })
 
 
-def merge(root: str | Path, connection: sqlite3.Connection, job_id: str, *, human: bool = False,
-          machine: sqlite3.Connection | None = None, repo_id: str | None = None) -> str:
+def merge(root: str | Path,
+          connection: sqlite3.Connection,
+          job_id: str,
+          *,
+          human: bool = False,
+          machine: sqlite3.Connection | None = None,
+          repo_id: str | None = None) -> str:
     root = Path(root).resolve()
     job, executions = pipeline.load(connection, job_id)
     branch = job["branch"]
@@ -176,10 +192,12 @@ def merge(root: str | Path, connection: sqlite3.Connection, job_id: str, *, huma
         if git("diff", "--cached", "--quiet", cwd=root).returncode:
             raise Busy("the main checkout has staged changes; commit or unstage them first")
         ours = set(checked("diff", "--name-only", "-z", cwd=root).split("\0")) - {""}
-        theirs = set(checked("diff", "--name-only", "-z", f"main...{current}", cwd=root).split("\0")) - {""}
+        theirs = set(
+            checked("diff", "--name-only", "-z", f"main...{current}", cwd=root).split("\0")) - {""}
         clash = sorted(ours & theirs)
         if clash:
-            raise Busy("you have uncommitted changes in files this job also changes: " + ", ".join(clash[:5]))
+            raise Busy("you have uncommitted changes in files this job also changes: " +
+                       ", ".join(clash[:5]))
     except Busy as error:
         _state(connection, job_id, "needs_human", "busy_merge", str(error))
         raise
@@ -189,7 +207,8 @@ def merge(root: str | Path, connection: sqlite3.Connection, job_id: str, *, huma
     if result.returncode:
         if git("rev-parse", "-q", "--verify", "MERGE_HEAD", cwd=root).returncode == 0:
             checked("merge", "--abort", cwd=root)
-        detail = "git merge failed and was undone: " + (result.stdout + result.stderr).strip()[-400:]
+        detail = "git merge failed and was undone: " + (result.stdout +
+                                                        result.stderr).strip()[-400:]
         _state(connection, job_id, "needs_human", "changes", detail)
         raise GitError(detail)
     notes = []
@@ -205,12 +224,17 @@ def merge(root: str | Path, connection: sqlite3.Connection, job_id: str, *, huma
     if machine is not None and repo_id is not None:
         ports.release(machine, repo_id, job_id)
         with db.tx(connection):
-            connection.execute("UPDATE jobs SET port_base=NULL WHERE id=?", (job_id,))
+            connection.execute("UPDATE jobs SET port_base=NULL WHERE id=?", (job_id, ))
     return f"merged {branch} into main" + (f" ({'; '.join(notes)})" if notes else "")
 
 
-def delete(root: str | Path, connection: sqlite3.Connection, job_id: str, *, force: bool = False,
-           machine: sqlite3.Connection | None = None, repo_id: str | None = None) -> str:
+def delete(root: str | Path,
+           connection: sqlite3.Connection,
+           job_id: str,
+           *,
+           force: bool = False,
+           machine: sqlite3.Connection | None = None,
+           repo_id: str | None = None) -> str:
     root = Path(root).resolve()
     job, _ = pipeline.load(connection, job_id)
     _worktree(root, job)  # Check all absolute targets before any removal (§11).
@@ -230,11 +254,11 @@ def delete(root: str | Path, connection: sqlite3.Connection, job_id: str, *, for
         shutil.rmtree(folder)
     removed.append("job folder")
     with db.tx(connection):
-        connection.execute("DELETE FROM start_queue WHERE job_id=?", (job_id,))
+        connection.execute("DELETE FROM start_queue WHERE job_id=?", (job_id, ))
         # events intentionally has no FK (§6.2); delete job-scoped history
         # explicitly alongside the execution/attempt FK cascades.
-        connection.execute("DELETE FROM events WHERE job_id=?", (job_id,))
-        connection.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+        connection.execute("DELETE FROM events WHERE job_id=?", (job_id, ))
+        connection.execute("DELETE FROM jobs WHERE id=?", (job_id, ))
     if machine is not None and repo_id is not None:
         ports.release(machine, repo_id, job_id)
     return f"deleted {job_id}: " + ", ".join(removed)

@@ -18,6 +18,7 @@ FAKE_CLI = Path(__file__).with_name("fake_cli.py").resolve()
 
 
 class StubAdapter:
+
     def __init__(self):
         self.seen = []
 
@@ -26,16 +27,32 @@ class StubAdapter:
         settings = context.root / "scenario.json"
         scenario = json.loads(settings.read_text()) if settings.exists() else {}
         defaults = {
-            "sleep": 0.1, "report": {"approval": "APPROVE\n", "review": "VERDICT: PASS\n",
-                                      "task": "STATUS: READY\n"}[context.execution["type"]],
-            "report_path": str(directory / "report.md"),
-            "invocation_marker": str(context.root / "invocations"),
-            "events": [{"session_id": "fake-session"}, {"activity": "working č"},
-                       {"usage": {"input": 10, "output": 2}}],
+            "sleep":
+            0.1,
+            "report": {
+                "approval": "APPROVE\n",
+                "review": "VERDICT: PASS\n",
+                "task": "STATUS: READY\n"
+            }[context.execution["type"]],
+            "report_path":
+            str(directory / "report.md"),
+            "invocation_marker":
+            str(context.root / "invocations"),
+            "events": [{
+                "session_id": "fake-session"
+            }, {
+                "activity": "working č"
+            }, {
+                "usage": {
+                    "input": 10,
+                    "output": 2
+                }
+            }],
         }
         scenario = {**defaults, **scenario}
         if "reports" in scenario:
-            scenario["report"] = scenario["reports"][min(context.attempt["n"] - 1, len(scenario["reports"]) - 1)]
+            scenario["report"] = scenario["reports"][min(context.attempt["n"] - 1,
+                                                         len(scenario["reports"]) - 1)]
         run_cli.atomic_json(directory / "scenario.json", scenario)
         retry = None
         if context.previous:
@@ -45,9 +62,18 @@ class StubAdapter:
                 retry = "The worktree may contain partial uncommitted work. Inspect it first."
         prompt = "Stub execution\n" + (retry or "")
         return Prepared(
-            {"argv": [sys._base_executable, "-I", "-S", str(FAKE_CLI), "--scenario", str(directory / "scenario.json")],
-             "cwd": context.job["worktree"], "env": {}, "stdin": "prompt.md"},
-            prompt, context.job["frozen"]["preamble"], {"retry_context": retry})
+            {
+                "argv": [
+                    sys._base_executable, "-I", "-S",
+                    str(FAKE_CLI), "--scenario",
+                    str(directory / "scenario.json")
+                ],
+                "cwd":
+                context.job["worktree"],
+                "env": {},
+                "stdin":
+                "prompt.md"
+            }, prompt, context.job["frozen"]["preamble"], {"retry_context": retry})
 
     def parse_event(self, line, *, context=None, quiet_seconds=0):
         self.seen.append(line)
@@ -63,16 +89,21 @@ class StubAdapter:
     def classify(self, context, exit_info):
         if exit_info["exit_code"]:
             return ExitOutcome("failed", "crash", "fake failure")
-        step = next(s for s in context.job["frozen"]["pipeline"] if s["id"] == context.execution["step_id"])
+        step = next(s for s in context.job["frozen"]["pipeline"]
+                    if s["id"] == context.execution["step_id"])
         entry = next(e for e in step["executions"] if e["id"] == context.execution["exec_id"])
         path = context.directory / "report.md"
         try:
-            result = reports.read_result(path, entry["role"]["contract"],
-                                         t_launch=context.attempt["t_launch"], on_changes=bool(step["onChanges"]))
+            result = reports.read_result(path,
+                                         entry["role"]["contract"],
+                                         t_launch=context.attempt["t_launch"],
+                                         on_changes=bool(step["onChanges"]))
         except reports.ReportError as error:
             return ExitOutcome("invalid", "contract", str(error))
         relative = context.attempt["dir"] + "/report.md"
-        return ExitOutcome("valid", completion=pipeline.Completion(result.verdict, "head", relative), current_head="head")
+        return ExitOutcome("valid",
+                           completion=pipeline.Completion(result.verdict, "head", relative),
+                           current_head="head")
 
 
 def create_repo(root, *, jobs=1, parallel=0, per_job=4):
@@ -83,14 +114,35 @@ def create_repo(root, *, jobs=1, parallel=0, per_job=4):
     (roles / "review.md").write_text("---\ntype: review\n---\nReview.\n")
 
     def entry(identifier, uses):
-        return {"id": identifier, "uses": uses, "provider": "codex",
-                "profiles": {"codex": {"model": "fake", "effort": "low"}}}
+        return {
+            "id": identifier,
+            "uses": uses,
+            "provider": "codex",
+            "profiles": {
+                "codex": {
+                    "model": "fake",
+                    "effort": "low"
+                }
+            }
+        }
 
     steps = [entry("approve", "gate")]
     if parallel:
-        steps.insert(0, {"id": "reviews", "parallel": [entry(f"review-{i}", "review") for i in range(parallel)]})
-    raw = {"version": 2, "engine": ">=0", "defaultPipeline": "test", "pipelines": {"test": steps},
-           "concurrency": {"perJob": per_job}}
+        steps.insert(0, {
+            "id": "reviews",
+            "parallel": [entry(f"review-{i}", "review") for i in range(parallel)]
+        })
+    raw = {
+        "version": 2,
+        "engine": ">=0",
+        "defaultPipeline": "test",
+        "pipelines": {
+            "test": steps
+        },
+        "concurrency": {
+            "perJob": per_job
+        }
+    }
     (root / "factory/config.json").write_text(json.dumps(raw))
     config = RepoConfig.model_validate(raw, context={"root": root})
     connection = pipeline.open_repo(root)
@@ -99,8 +151,14 @@ def create_repo(root, *, jobs=1, parallel=0, per_job=4):
             job_id = f"{n:03}-job"
             worktree = root / f"worktree-{n}"
             worktree.mkdir()
-            pipeline.create_job(connection, job_id, "Test", config=config, worktree=str(worktree),
-                                branch="factory/" + job_id, base_head="head", preamble="Frozen stub.\n",
+            pipeline.create_job(connection,
+                                job_id,
+                                "Test",
+                                config=config,
+                                worktree=str(worktree),
+                                branch="factory/" + job_id,
+                                base_head="head",
+                                preamble="Frozen stub.\n",
                                 preamble_version="test")
             pipeline.advance_job(connection, job_id, current_head="head")
     finally:
@@ -120,8 +178,11 @@ def main():
         deadline = time.monotonic() + 25
         while time.monotonic() < deadline:
             supervisor.tick()
-            states = [writer.call(lambda connection: [dict(row) for row in connection.execute(
-                "SELECT state,pause_reason FROM jobs")]) for _, writer in scheduler.repos.values()]
+            states = [
+                writer.call(lambda connection: [
+                    dict(row) for row in connection.execute("SELECT state,pause_reason FROM jobs")
+                ]) for _, writer in scheduler.repos.values()
+            ]
             if all(row["state"] != "running" for rows in states for row in rows):
                 print(json.dumps(states), flush=True)
                 return 0
