@@ -35,7 +35,11 @@ checks health, overview, and dashboard HTML, runs doctor, and completes the buil
 Fast pipeline through the Codex adapter using the fake CLI. It never invokes Claude
 or Codex and shuts down the service before removing its temporary files.
 
-TODO (plan §16.5, session 4.2): extend the installed smoke test with v1 migration,
-customised-role preservation, read-only legacy jobs, and previous-minor
-upgrade/rollback persistence. There is no released v2 previous minor yet.
-Do not tag a release until session 4.4's parity and migration prerequisites pass.
+The installed smoke test covers v1 migration, customised-role preservation and
+read-only legacy jobs; `tools/upgrade_smoke.py` covers live uv replacement,
+re-adoption and rollback. There is no released v2 previous minor yet, so
+previous-minor upgrade persistence is exercised only by that tool.
+
+Codex is the verified provider for this release. Claude parity (session 1.11 and
+its fresh phase review) remains deferred until Claude usage returns; do not claim
+Claude support until then.

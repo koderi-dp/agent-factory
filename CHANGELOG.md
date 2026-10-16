@@ -1,11 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0rc1]
 
-- Add the packaged dashboard, engine, CLI, and CI/release pipeline.
-- Existing v1 repositories will need `factory upgrade` when the migration ships.
-  Migration and release readiness remain pending sessions 4.2–4.4 and Claude parity.
-
-Before tagging, add a section named for the exact version (for example,
-`## [1.0.0rc1]`). State whether `factory upgrade` is required. The release workflow
-rejects tags without matching notes before publishing.
+- First release candidate of the v2 engine: packaged dashboard, engine, CLI, and
+  CI/release pipeline.
+- Codex is the verified provider: a greenfield `factory init --provider codex`
+  project runs the full pipeline end-to-end. Claude is not yet verified and
+  remains deferred (plan §18 item 1); do not claim Claude support.
+- Existing v1 repositories require `factory upgrade`; migrated repos keep their
+  provider (Claude by default) and are not yet verified against a live v1 repo.
