@@ -6,9 +6,7 @@ the engine; it cannot prevent another application from binding them later.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-import re
 import sqlite3
-import subprocess
 from typing import Any
 
 import psutil
@@ -42,8 +40,8 @@ def _tcp_listeners() -> list[tuple[int, int | None]]:
         connections = psutil.net_connections(kind="tcp")
     except psutil.AccessDenied:
         # macOS: psutil cannot inspect other users' processes, so the whole call
-        # fails. lsof reads the kernel socket table and skips what it cannot see.
-        return _lsof_tcp_listeners()
+        # fails. Enumerate per process and skip the ones we cannot inspect.
+        return _per_process_tcp_listeners()
     except psutil.Error as error:
         raise PortsUnavailable(f"Cannot inspect TCP listeners: {error}") from error
     result = []
@@ -53,22 +51,17 @@ def _tcp_listeners() -> list[tuple[int, int | None]]:
     return result
 
 
-def _lsof_tcp_listeners() -> list[tuple[int, int | None]]:
-    try:
-        output = subprocess.check_output(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"],
-                                         text=True,
-                                         stderr=subprocess.DEVNULL)
-    except (OSError, subprocess.CalledProcessError) as error:
-        raise PortsUnavailable(f"Cannot inspect TCP listeners: {error}") from error
+def _per_process_tcp_listeners() -> list[tuple[int, int | None]]:
+    """macOS fallback: net_connections fails on the first inaccessible process,
+    so enumerate per process and skip the ones we cannot inspect."""
     result = []
-    pid = None
-    for line in output.splitlines():
-        if line.startswith("p"):
-            pid = int(line[1:])
-        elif line.startswith("n") and pid is not None:
-            match = re.search(r":(\d+)$", line[1:])
-            if match:
-                result.append((int(match.group(1)), pid))
+    for process in psutil.process_iter():
+        try:
+            for connection in process.connections(kind="tcp"):
+                if connection.status == psutil.CONN_LISTEN and connection.laddr:
+                    result.append((connection.laddr.port, connection.pid))
+        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
     return result
 
 
