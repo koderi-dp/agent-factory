@@ -57,6 +57,21 @@ def spawn_wrapper(attempt_dir: str | Path, token: str) -> subprocess.Popen:
                             **options)
 
 
+def token_descendants(token: str) -> list[psutil.Process]:
+    """Inherited ownership survives orphaning and POSIX session changes."""
+    if os.name == "nt":
+        return []  # Job Objects contain these processes even after wrapper death.
+    found = []
+    for process in psutil.process_iter():
+        try:
+            if process.environ().get("FACTORY_ATTEMPT_TOKEN") == token and alive(process):
+                process.create_time()  # cache identity for psutil's safe signalling
+                found.append(process)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return found
+
+
 def owned_process(attempt_dir: str | Path, token: str) -> psutil.Process | None:
     """Require the row's token, kernel creation time, and exact cmdline token."""
     try:

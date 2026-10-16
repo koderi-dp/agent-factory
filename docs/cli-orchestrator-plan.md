@@ -1419,8 +1419,8 @@ and Ultra (parallel subagents; not available on Luna). Higher effort means more 
 1. **Sol is the default.** Astra only where §6.4/§3.2-class correctness is at stake *and*
    Sol has failed twice on it. Never Astra for UI, scaffolding, or docs implementation.
    The separate Astra phase review is an explicit exception to this escalation rule.
-2. **Effort follows risk, not size.** A large but routine change (dashboard pages) → Medium.
-   A small but subtle change (claim protocol) → Extra High.
+2. **Effort stays at Medium or below.** Routine and subtle work both use Medium. These
+   sessions do not use High, Extra High, Max, or Ultra.
 3. **Luna for mechanical, fully specified work:** copying srt-gateway's `ui/`, renaming,
    writing fixture JSONL files, README edits, turning a written test list into test stubs.
    If Luna's output needs more than one correction round, switch to Sol. A failed
@@ -1430,10 +1430,10 @@ and Ultra (parallel subagents; not available on Luna). Higher effort means more 
    context on every turn, and that's where most tokens go.
 5. **Tests define done.** Every session ends with the relevant tests passing. Rework
    caused by vague goals costs more than any model choice.
-6. **Max/Ultra only on demand.** Max when one hard problem is stuck at Extra High. Ultra only
-   for work that splits into independent parts (Phase 3 pages), never for the engine core.
+6. **Medium is the ceiling.** If a problem is still stuck after two Medium attempts, split
+   the session or escalate the model (Sol to Astra on session 1.5). Do not raise effort.
 7. **Cross-review once per phase, not per commit.** Review the phase diff with Codex
-   Astra (`high`, or `xhigh` for Phase 1). Sol · High fixes verified findings and adds
+   Astra at `medium`. Sol · Medium fixes verified findings and adds
    regression tests. Claude Opus is optional through `--reviewer claude`; `none` does
    not satisfy review criteria. Completing deferred 1.11 requires a fresh Phase 1 parity
    review even if the Codex-only Phase 1 review already passed.
@@ -1476,7 +1476,7 @@ the next large project starts from real numbers.
 | Work | Model · effort |
 |---|---|
 | Spikes 1–4, 6–7 (CLI behaviour, events, sessions, caching) | Sol · Medium |
-| Spikes 5 and 8 (Windows Job Objects, upgrade under a running process) | Sol · High. Run them yourself on Windows; don't accept the model's assumptions. |
+| Spikes 5 and 8 (Windows Job Objects, upgrade under a running process) | Sol · Medium. Run them yourself on Windows; don't accept the model's assumptions. |
 | Spike 9 (names), benchmark capture script | Luna · Medium |
 
 The baseline sandbox runs use the factory's own settings (haiku/low as in `tools/sandbox.py`)
@@ -1512,13 +1512,13 @@ spikes are explicitly deferred to 1.11 and do not block Phase 1.
 | Work | Model · effort |
 |---|---|
 | Package skeleton, `paths.py`, `pyproject.toml`, CLI argument parsing | Sol · Medium |
-| `db.py`, migrations, registry, `config.py` (Pydantic + v1→v2) | Sol · High |
-| Porting `job.advance` → `pipeline.py` with its existing tests | Sol · High |
-| **Claim/launch/record + recovery (§6.4), `run_cli.py` + `winjob.py` (§3.2), stop/timeouts (§9), port leases** | **Sol · Extra High**. Escalate to **Astra · High** only if the §16.3 crash tests still fail after two Sol attempts. |
-| Codex adapter, exit classification, `summarize()`; Claude in deferred 1.11 | Sol · High (from recorded provider fixtures) |
-| Packet builder, `roles.py`, `gitops.py` port | Sol · High |
+| `db.py`, migrations, registry, `config.py` (Pydantic + v1→v2) | Sol · Medium |
+| Porting `job.advance` → `pipeline.py` with its existing tests | Sol · Medium |
+| **Claim/launch/record + recovery (§6.4), `run_cli.py` + `winjob.py` (§3.2), stop/timeouts (§9), port leases** | **Sol · Medium**. Escalate to **Astra · Medium** only if the §16.3 crash tests still fail after two Sol attempts. |
+| Codex adapter, exit classification, `summarize()`; Claude in deferred 1.11 | Sol · Medium (from recorded provider fixtures) |
+| Packet builder, `roles.py`, `gitops.py` port | Sol · Medium |
 | Fake CLI, test fixtures, skill wrapper templates, minimal read-only page | Luna · Medium (switch to Sol if it needs repeated fixes) |
-| Phase review | Codex Astra · Extra High; Sol · High fixes |
+| Phase review | Codex Astra · Medium; Sol · Medium fixes |
 
 Suggested sessions:
 1. skeleton + DB + registry;
@@ -1550,10 +1550,10 @@ at once with no port collisions. Zero duplicate launches in crash tests. Claude-
 
 | Work | Model · effort |
 |---|---|
-| `fast-approver` role, slimming built-in roles (prompt writing) | Sol · High. Role text decides agent quality and token use on every future job. |
+| `fast-approver` role, slimming built-in roles (prompt writing) | Sol · Medium. Role text decides agent quality and token use on every future job. |
 | Approval `CHANGES`, sensitive-path guard, `factory eject` | Sol · Medium |
 | Benchmark command, usage/timing API | Sol · Medium |
-| Phase review | Codex Astra · High; Sol · High fixes |
+| Phase review | Codex Astra · Medium; Sol · Medium fixes |
 
 Benchmark runs cost real agent tokens. Use haiku/low or Luna/Light for the sandbox
 comparison (Codex Luna/Light while Claude is deferred), plus **one** run with your
@@ -1583,11 +1583,11 @@ Fast + auto-merge is blocked on sensitive paths in tests.
 | Work | Model · effort |
 |---|---|
 | Copy srt-gateway `ui/`, `styles.css`, `components.json`; Vite/Tailwind scaffold | Luna · Medium |
-| `reducer.ts`, `sse.ts`, Query cache wiring, dirty-settings guard | Sol · High (live-state bugs are hard to spot later) |
-| Pipeline view `layout.ts` + components | Sol · High for `layout.ts`, Medium for the components |
-| Pages: shell/overview, board, job detail tabs, backlog, settings | Sol · Medium. **Ultra** is reasonable here: the pages are independent once the store and API types exist. |
+| `reducer.ts`, `sse.ts`, Query cache wiring, dirty-settings guard | Sol · Medium (live-state bugs are hard to spot later) |
+| Pipeline view `layout.ts` + components | Sol · Medium |
+| Pages: shell/overview, board, job detail tabs, backlog, settings | Sol · Medium. Keep the pages in separate sessions once the store and API types exist. |
 | Playwright + Vitest tests, visual baselines | Sol · Medium |
-| Phase review | Codex Astra · High, plus a manual side-by-side check with srt-gateway |
+| Phase review | Codex Astra · Medium, plus a manual side-by-side check with srt-gateway |
 
 **Exit:** §16.4 green; no polling left except refetch after reset.
 
@@ -1608,10 +1608,10 @@ Fast + auto-merge is blocked on sensitive paths in tests.
 
 | Work | Model · effort |
 |---|---|
-| `ci.yml`, `release.yml`, trusted publishing, provenance | Sol · High (packaging mistakes surface only at release time) |
-| `factory upgrade` v1 migration, version gate, service restart on upgrade | Sol · High |
+| `ci.yml`, `release.yml`, trusted publishing, provenance | Sol · Medium (packaging mistakes surface only at release time) |
+| `factory upgrade` v1 migration, version gate, service restart on upgrade | Sol · Medium |
 | `install.py` bootstrap, README rewrite, removing v1 files | Luna · Medium |
-| Phase review | Codex Astra · High, including security of the release workflow and installer |
+| Phase review | Codex Astra · Medium, including security of the release workflow and installer |
 
 Release-candidate dry runs: push `rc` tags to TestPyPI first, which costs nothing.
 
@@ -1632,7 +1632,7 @@ exploration reads before their first edit or finding.
   sha, incremental per worktree. It adds a "likely relevant files" section to the packet. Ship it
   only if an A/B on the sandbox shows lower tokens or time without a lower approval rate.
 
-**Models:** Sol · High for both. The index is only worth building if Phase 2's numbers show
+**Models:** Sol · Medium for both. The index is only worth building if Phase 2's numbers show
 it pays for itself in agent tokens. Its own build cost is part of that decision.
 
 ---

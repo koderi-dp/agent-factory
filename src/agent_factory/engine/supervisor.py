@@ -274,7 +274,10 @@ class Supervisor:
             return
         try:
             directory.mkdir(parents=True, exist_ok=True)
-            prepared = self.adapter(context.execution["provider"]).prepare(context)
+            adapter = self.adapter(context.execution["provider"])
+            if hasattr(adapter, "settings"):
+                adapter.settings = self.scheduler.machine.call(load_machine_settings)
+            prepared = adapter.prepare(context)
             run_cli.atomic_write(directory / "prompt.md", prepared.prompt.encode("utf-8"))
             run_cli.atomic_write(directory / "system.md", prepared.system.encode("utf-8"))
             run_cli.atomic_json(directory / "command.json", dict(prepared.command))

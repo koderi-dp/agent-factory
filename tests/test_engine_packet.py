@@ -273,3 +273,32 @@ def test_parallel_review_artifacts_and_browser_sessions_are_isolated(repo):
     assert not Path(a["artifacts_dir"]).is_relative_to(Path(context.job["worktree"]))
     assert "keep it clean throughout" in first.system
     assert "packet's browser_session" in first.system
+
+
+@pytest.mark.parametrize("rewind_spec", [True, False])
+def test_acceptance_uses_pipeline_round_invalidation(repo, rewind_spec):
+    context = context_for(repo, add_job(repo))
+    frozen = context.job["frozen"]
+    build_step = frozen["pipeline"][0]
+    spec_step = {
+        **build_step, "id": "spec",
+        "executions": [{
+            **build_step["executions"][0], "id": "spec"
+        }]
+    }
+    frozen["pipeline"].insert(0, spec_step)
+    context = replace(context, execution={**context.execution, "round": 2})
+    old = completed(context, 21, role="spec-writer", text="# Spec\n## Acceptance criteria\nOLD\n")
+    old.update(step_id="spec", exec_id="spec")
+    replacement = completed(context,
+                            22,
+                            role="spec-writer",
+                            round_=2,
+                            text="# Spec\n## Acceptance criteria\nCURRENT\n")
+    replacement.update(step_id="spec", exec_id="spec")
+    data = packet.build(context, executions=[old, replacement] if rewind_spec else [old]).packet
+    if rewind_spec:
+        assert "CURRENT" in data["acceptance_criteria"]
+        assert "OLD" not in data["acceptance_criteria"]
+    else:
+        assert "OLD" in data["acceptance_criteria"]

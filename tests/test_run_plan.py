@@ -87,6 +87,33 @@ class PlanRunnerTests(unittest.TestCase):
         self.fake_codex(final="Done.\nSESSION-RESULT: PASS")
         self.assertTrue(runner.run_codex("build", "Build", "sol", "high", "auto", 1)[0])
 
+    def test_out_of_credits_waits_and_retries_the_same_call(self):
+        self.patch(patch.object(runner.shutil, "which", return_value="codex"))
+        sleep = self.patch(patch.object(runner.time, "sleep"))
+        calls = {"n": 0}
+
+        def launch(args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                process = Mock(
+                    stdin=io.StringIO(),
+                    stdout=io.StringIO(
+                        "Your workspace is out of credits. Ask your workspace owner to refill "
+                        "in order to continue.\n"))
+                process.wait.return_value = 1
+                return process
+            Path(args[args.index("-o") + 1]).write_text("Done.\nSESSION-RESULT: PASS",
+                                                        encoding="utf-8")
+            process = Mock(stdin=io.StringIO(), stdout=io.StringIO(""))
+            process.wait.return_value = 0
+            return process
+
+        self.patch(patch.object(runner.subprocess, "Popen", side_effect=launch))
+        ok, reason = runner.run_codex("build", "Build", "sol", "medium", "auto", 1)
+        self.assertTrue(ok, reason)
+        sleep.assert_called_once_with(runner.CREDITS_WAIT_S)
+        self.assertEqual(calls["n"], 2)
+
     def test_codex_review_failure_does_not_start_fixes_or_claude(self):
         self.patch(patch.object(runner, "git", side_effect=["", "abc123"]))
         run = self.patch(patch.object(runner, "run_codex", return_value=(False, "failed")))
@@ -94,6 +121,7 @@ class PlanRunnerTests(unittest.TestCase):
         self.assertFalse(runner.review_and_fix(1, [{"id": "1.1"}], "auto", 1))
         run.assert_called_once()
         self.assertEqual(run.call_args.args[2], runner.MODELS["Astra"])
+        self.assertEqual(run.call_args.args[3], "medium")
         which.assert_not_called()
 
     def test_claude_nonzero_exit_does_not_publish_report_or_fix(self):
@@ -191,6 +219,7 @@ class PlanRunnerTests(unittest.TestCase):
         actual = runner.sessions()
         self.assertEqual([s["id"] for s in actual if s["requires_claude"]], ["1.11"])
         self.assertFalse(next(s for s in actual if s["id"] == "1.6")["requires_claude"])
+        self.assertTrue(all(s["effort"] in ("low", "medium") for s in actual))
 
 
 if __name__ == "__main__":

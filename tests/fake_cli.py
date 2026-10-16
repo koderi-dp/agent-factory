@@ -123,16 +123,19 @@ def main() -> int:
     # Hold assigned ports throughout each fake execution. Bind failures are real
     # failures, so overlapping assignments cannot masquerade as a passing run.
     listeners = []
-    if "sandbox" in scenario:
-        for port in scenario["sandbox"]["ports"]:
+    if "sandbox" in scenario or "bind_ports" in scenario:
+        for port in scenario.get("bind_ports", scenario.get("sandbox", {}).get("ports", [])):
             listener = socket.socket()
             if os.name == "nt":
                 listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
             listener.bind(("127.0.0.1", port))
             listener.listen()
             listeners.append(listener)
-        write_json(directory / "bound-ports.json", scenario["sandbox"]["ports"])
-        scenario["report"] = sandbox_execution(scenario)
+        write_json(directory / "bound-ports.json",
+                   scenario.get("bind_ports",
+                                scenario.get("sandbox", {}).get("ports", [])))
+        if "sandbox" in scenario:
+            scenario["report"] = sandbox_execution(scenario)
     child_pid = None
     if scenario.get("spawn_child_listening_on_port"):
         process = subprocess.Popen([

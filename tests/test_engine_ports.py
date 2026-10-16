@@ -541,3 +541,67 @@ def test_parallel_peer_exits_between_listener_snapshot_and_ownership_check(
             supervisor._check_ports(claim)
     else:
         supervisor._check_ports(claim)
+
+
+@pytest.mark.parametrize(
+    "roles", [["reviewer-ux"] * 4, ["reviewer-ui"] * 4, ["reviewer-ux", "reviewer-ui"] * 2])
+def test_repeated_port_roles_bind_distinct_slots_and_serialize_overflow(
+        tmp_path, monkeypatch, roles):
+    import time
+    from agent_factory.engine import pipeline
+    monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
+    root = tmp_path / "repo"
+    identifier = create_repo(root, parallel=4)
+    scheduler = Scheduler()
+    writer = scheduler.repos[identifier][1]
+
+    def configure(connection):
+        job, executions = pipeline.load(connection, "001-job")
+        frozen = job["frozen"]
+        for entry, role in zip(frozen["pipeline"][0]["executions"], roles):
+            entry["uses"] = role
+        with db.tx(connection):
+            connection.execute("UPDATE jobs SET frozen=?", (json.dumps(frozen), ))
+            for execution, role in zip(executions, roles):
+                connection.execute("UPDATE executions SET uses=? WHERE id=?",
+                                   (role, execution["id"]))
+
+    writer.call(configure)
+
+    class BindingAdapter(StubAdapter):
+
+        def prepare(self, context):
+            prepared = super().prepare(context)
+            path = context.directory / "scenario.json"
+            scenario = json.loads(path.read_text())
+            scenario.update(bind_ports=list(context.ports), sleep=0.7)
+            run_cli.atomic_json(path, scenario)
+            return prepared
+
+    supervisor = Supervisor(scheduler, {"codex": BindingAdapter()})
+    configure_range(scheduler, free_range())
+    try:
+        supervisor.start()
+        first = supervisor.tick()
+        assert len(first) == 3
+        assert len({port for claim in first for port in claim.ports}) == 9
+        assert scheduler.claim_next() is None
+        for claim in first:
+            bound = wait_for(lambda: read_json(claim.directory / "bound-ports.json"))
+            assert bound == list(claim.ports)
+        launched = list(first)
+        deadline = time.monotonic() + 15
+        while state(scheduler, identifier)[0] == "running" and time.monotonic() < deadline:
+            launched.extend(supervisor.tick())
+            time.sleep(0.025)
+        assert state(scheduler, identifier) == ("needs_human", "verify")
+        reviewers = [c for c in launched if c.execution["type"] == "review"]
+        assert len(reviewers) == 4
+        assert all(read_json(c.directory / "bound-ports.json") == list(c.ports) for c in reviewers)
+        assert all(row["state"] == "valid" for row in rows(scheduler, identifier, "attempts"))
+    finally:
+        for child in supervisor._children.values():
+            if child.poll() is None:
+                psutil.Process(child.pid).kill()
+            child.wait(timeout=15)
+        scheduler.close()

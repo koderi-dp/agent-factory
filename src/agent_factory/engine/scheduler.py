@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_factory.engine import db, pipeline, ports, registry
+from agent_factory.engine import db, pipeline, ports, registry, winjob
 from agent_factory.engine.config import load_machine_settings
 from agent_factory.engine.crash import crash_at
 from agent_factory.paths import machine_dir
@@ -31,7 +31,7 @@ class Claim:
 
     @property
     def ports(self) -> tuple[int, ...]:
-        return ports.assigned(self.job["port_base"], self.execution)
+        return ports.assigned(self.job["port_base"], self.execution, self.job["frozen"])
 
 
 class Scheduler:
@@ -139,7 +139,15 @@ class Scheduler:
                     f"WHERE e.job_id=? AND a.state IN {LIVE}", (job["id"], )).fetchone()[0]
                 if live >= job["frozen"]["concurrency"]["perJob"]:
                     continue
+                live_executions = connection.execute(
+                    f"SELECT e.* FROM executions e JOIN attempts a ON a.execution_id=e.id "
+                    f"WHERE e.job_id=? AND a.state IN {LIVE}", (job["id"], )).fetchall()
                 for execution in pipeline.step_plan(job, executions):
+                    requested = set(ports.assigned(0, execution, job["frozen"]))
+                    if any(
+                            requested.intersection(ports.assigned(0, peer, job["frozen"]))
+                            for peer in live_executions):
+                        continue
                     # Conditional claim + partial unique index protect stale readers.
                     if connection.execute(
                             f"SELECT 1 FROM attempts WHERE execution_id=? AND state IN {LIVE}",
@@ -180,6 +188,18 @@ class Scheduler:
                     return Claim(repo_id, root, job, execution, attempt, previous)
         return None
 
+    def check_descendants(self, repo_id: str, job_id: str) -> None:
+        """Lost POSIX wrappers do not imply their children have exited."""
+        ids = self.repos[repo_id][1].call(lambda connection: [
+            row[0] for row in connection.execute(
+                "SELECT a.id FROM attempts a JOIN executions e ON e.id=a.execution_id "
+                "WHERE e.job_id=? AND a.state='lost'", (job_id, ))
+        ])
+        for attempt_id in ids:
+            context = self.context(repo_id, attempt_id)
+            if winjob.token_descendants(context.attempt["owner_token"]):
+                raise ValueError("wait for lost attempt descendants to exit before continuing")
+
     def resume(self, repo_id: str, job_id: str) -> None:
         """Explicit Resume permits retries; lost attempts are never auto-retried."""
 
@@ -204,4 +224,5 @@ class Scheduler:
                     (job_id, job["current_step"], job["round"]))
                 pipeline._event(connection, job_id, now, "job.state", {"state": "running"})
 
+        self.check_descendants(repo_id, job_id)
         self.repos[repo_id][1].call(apply)

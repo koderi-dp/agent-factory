@@ -413,3 +413,36 @@ def test_launch_uses_base_interpreter_and_detached_platform_flags(tmp_path, monk
             "creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         assert options["start_new_session"] is True
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX escaped-session cleanup")
+def test_normal_completion_cleans_escaped_orphan_server_before_exit(attempt_factory):
+    attempt = attempt_factory(spawn_child_listening_on_port=True,
+                              server_new_session=True,
+                              orphan_server=True,
+                              sleep=1)
+    attempt.launch()
+    server = attempt.info("server.json")
+    process = psutil.Process(server["pid"])
+    try:
+        assert not port_released(server["port"])
+        attempt.info("exit.json")
+        assert not alive(process)
+        assert port_released(server["port"])
+    finally:
+        if alive(process):
+            process.kill()
+
+
+@pytest.mark.parametrize("reused", [False, True])
+def test_posix_descendant_scan_rejects_pid_reuse_during_ownership_read(monkeypatch, reused):
+    entry = Mock()
+    entry.name = "123"
+    proc = Mock()
+    proc.iterdir.return_value = [entry]
+    environment = Mock()
+    environment.read_bytes.return_value = b"FACTORY_ATTEMPT_TOKEN=owner\0"
+    monkeypatch.setattr(run_cli.sys, "platform", "linux")
+    monkeypatch.setattr(run_cli, "Path", Mock(side_effect=[proc, environment]))
+    monkeypatch.setattr(run_cli, "posix_create_time", Mock(side_effect=[10, 11 if reused else 10]))
+    assert run_cli.posix_descendants("owner") == ({} if reused else {123: 10})

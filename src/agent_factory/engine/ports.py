@@ -93,13 +93,27 @@ def release(connection: sqlite3.Connection, repo_id: str, job_id: str) -> None:
                            (repo_id, job_id))
 
 
-def assigned(base: int | None, execution: Mapping[str, Any]) -> tuple[int, ...]:
-    """Keep v1's task/UX/UI slots, independently of provider and execution ID."""
+def assigned(base: int | None,
+             execution: Mapping[str, Any],
+             frozen: Mapping[str, Any] | None = None) -> tuple[int, ...]:
+    """Assign execution identities to three slots; excess executions share serially."""
     if base is None:
         return ()
     offset = {"reviewer-ux": 3, "reviewer-ui": 6}.get(execution["uses"], 0)
     if execution["type"] != "task" and execution["uses"] not in {"reviewer-ux", "reviewer-ui"}:
         return ()
+    if frozen is not None:
+        step = next(s for s in frozen["pipeline"] if s["id"] == execution["step_id"])
+        slots = {}
+        for entry in step["executions"]:
+            role = entry["uses"]
+            if step["type"] != "task" and role not in {"reviewer-ux", "reviewer-ui"}:
+                continue
+            preferred = {"reviewer-ux": 3, "reviewer-ui": 6}.get(role, 0)
+            used = set(slots.values())
+            slots[entry["id"]] = next((s for s in (preferred, 0, 3, 6) if s not in used),
+                                      (len(slots) % 3) * 3)
+        offset = slots[execution["exec_id"]]
     return tuple(range(base + offset, base + offset + 3))
 
 

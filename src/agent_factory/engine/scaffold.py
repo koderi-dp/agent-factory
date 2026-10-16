@@ -84,23 +84,37 @@ def init(root: Path, provider: str, *, dry_run: bool = False) -> list[str]:
 
 
 def doctor(root: Path | None = None) -> list[dict[str, Any]]:
-    """Read-only checks. Never invoke a provider or spend an agent call."""
+    """Check tools and persist discovered provider paths without invoking providers."""
     from agent_factory.engine.config import load_machine_settings
-    from agent_factory.engine import ports
+    from agent_factory.engine import db, ports
     connection = registry.open_registry()
     try:
         settings = load_machine_settings(connection)
     finally:
         connection.close()
     checks = []
+    discoveries = {}
     for name in ("git", "codex", "claude", "agent-browser", "agent-factory"):
         override = getattr(settings.cli, name, None)
         path = override or shutil.which(name)
+        if name in {"codex", "claude"} and not override and path and Path(path).is_file():
+            discoveries[name] = str(Path(path).resolve())
         checks.append({
             "check": name,
             "ok": bool(path and Path(path).is_file()),
             "detail": path or "not found on PATH"
         })
+    if discoveries:
+        connection = registry.open_registry()
+        try:
+            with db.tx(connection):
+                for name, path in discoveries.items():
+                    connection.execute(
+                        "INSERT INTO settings (key,value) VALUES (?,?) "
+                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
+                        "WHERE settings.value='null'", (f"cli.{name}", json.dumps(path)))
+        finally:
+            connection.close()
     if root is not None and shutil.which("git"):
         result = subprocess.run(["git", "status", "--porcelain"], cwd=root, capture_output=True)
         checks.append({"check": "git repository", "ok": result.returncode == 0})

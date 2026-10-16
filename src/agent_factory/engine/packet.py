@@ -200,8 +200,12 @@ def build(context: Claim, *, executions: Sequence[Mapping[str, Any]] | None = No
         for s in frozen["pipeline"]
         for e in s["executions"]
     }
-    # Surviving spec evidence can precede the current round after a build rewind.
+    # Apply the same upstream-round invalidation as pipeline advancement.
+    evidence = pipeline._evidence(frozen["pipeline"], executions)
+    surviving = {row["id"] for rows in evidence.values() for row in rows}
     for row in done:
+        if row["step_id"] in evidence and row["id"] not in surviving:
+            continue
         if row["state"] != "done":
             continue
         source, _, sections = texts[row["id"]]

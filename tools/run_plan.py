@@ -11,8 +11,10 @@
 Live view (default): Codex's full messages, reasoning summaries, each command with the tail of its
 output, a git diff for every file it edits, its step plan, and token usage per turn.
 
-Sessions and their model/effort come from docs/cli-orchestrator-prompts.md headings. A session
-is done when its "[session X.Y]" commit exists. Logs go to .git/plan-run/.
+Sessions and their model/effort come from docs/cli-orchestrator-prompts.md headings. Effort
+above medium is capped at medium. A session is done when its "[session X.Y]" commit exists.
+If Codex reports the workspace is out of credits, the same call waits 10 minutes and retries.
+Logs go to .git/plan-run/.
 """
 
 import argparse
@@ -31,7 +33,9 @@ if not (REPO / "docs" / "cli-orchestrator-prompts.md").exists():  # e.g. run fro
 PROMPTS = REPO / "docs" / "cli-orchestrator-prompts.md"
 LOGS = REPO / ".git" / "plan-run"
 MODELS = {"Sol": "gpt-6.1-sol", "Astra": "gpt-6-astra", "Luna": "gpt-6-luna"}
-EFFORTS = {"Light": "low", "Medium": "medium", "High": "high", "Extra High": "xhigh"}
+EFFORTS = {"Light": "low", "Medium": "medium", "High": "medium", "Extra High": "medium"}
+CREDITS_ERROR = "your workspace is out of credits"
+CREDITS_WAIT_S = 10 * 60
 HEADING = re.compile(
     r"^### (\d+)\.(\d+) (.+?) · (you \+ )?(Sol|Luna|Astra) · (Light|Medium|High|Extra High)(.*)$")
 RESULT = re.compile(r"SESSION-RESULT: (PASS|FAIL)(.*)")
@@ -201,7 +205,26 @@ def report(line):
     sys.stdout.flush()
 
 
+def out_of_credits(text):
+    return CREDITS_ERROR in (text or "").lower()
+
+
 def run_codex(label, prompt, model, effort, permissions, timeout, review_report=None):
+    """Run one Codex call. An out-of-credits error waits and retries the same call."""
+    if effort in ("high", "xhigh", "max"):
+        effort = "medium"
+    while True:
+        ok, reason, exhausted = run_codex_once(label, prompt, model, effort, permissions, timeout,
+                                               review_report)
+        if not exhausted:
+            return ok, reason
+        minutes = CREDITS_WAIT_S // 60
+        print(f"  workspace out of credits; waiting {minutes} min, then retrying the same call",
+              flush=True)
+        time.sleep(CREDITS_WAIT_S)
+
+
+def run_codex_once(label, prompt, model, effort, permissions, timeout, review_report=None):
     codex = shutil.which("codex") or sys.exit("codex isn't on PATH")
     LOGS.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -244,25 +267,28 @@ def run_codex(label, prompt, model, effort, permissions, timeout, review_report=
         code = process.wait()
     finally:
         timer.cancel()
-    if time.monotonic() >= deadline:
-        return False, f"timed out after {timeout} min"
+    captured = log.read_text(encoding="utf-8") if log.exists() else ""
     final = last.read_text(encoding="utf-8") if last.exists() else ""
+    if out_of_credits(captured) or out_of_credits(final):
+        return False, "workspace out of credits", True
+    if time.monotonic() >= deadline:
+        return False, f"timed out after {timeout} min", False
     m = None
     for m in RESULT.finditer(final):
         pass
     if code != 0:
-        return False, f"codex exited {code}"
+        return False, f"codex exited {code}", False
     if review_report is not None:
         if not final.strip():
-            return False, "Codex review returned no findings report"
+            return False, "Codex review returned no findings report", False
         review_report.parent.mkdir(parents=True, exist_ok=True)
         review_report.write_text(final, encoding="utf-8")
-        return True, ""
+        return True, "", False
     if not m:
-        return False, "no SESSION-RESULT line in the final message"
+        return False, "no SESSION-RESULT line in the final message", False
     if m.group(1) == "FAIL":
-        return False, m.group(2).strip() or "session reported FAIL"
-    return True, ""
+        return False, m.group(2).strip() or "session reported FAIL", False
+    return True, "", False
 
 
 def run_session(s, permissions, timeout):
@@ -270,7 +296,7 @@ def run_session(s, permissions, timeout):
             f"\"Shared preamble\" and then the prompt for session {s['id']}.")
     attempts = [(s["model"], s["effort"]), (s["model"], s["effort"])]
     if s["astra_fallback"]:
-        attempts.append((MODELS["Astra"], "high"))
+        attempts.append((MODELS["Astra"], "medium"))
     reason = ""
     for i, (model, effort) in enumerate(attempts, 1):
         prompt = base if i == 1 else (
@@ -327,7 +353,7 @@ def review_and_fix(phase, sessions_in_phase, permissions, timeout, reviewer="cod
             "first, each with file:line, the failure scenario and a suggested fix. "
             "Distinguish deferred Claude work (session 1.11) from actual regressions. "
             "If there are none, return 'No findings.'")
-        effort = "xhigh" if phase == 1 else "high"
+        effort = "medium"
         if reviewer == "codex":
             ok, reason = run_codex(f"review-phase-{phase}",
                                    prompt,
@@ -369,7 +395,7 @@ def review_and_fix(phase, sessions_in_phase, permissions, timeout, reviewer="cod
         f"under a '## Not fixed' heading. Commit everything (including the review file) with a message "
         f"starting with \"{marker}\" instead of a session number. End with SESSION-RESULT: PASS "
         "only after the relevant tests pass, the commit exists, and the working tree is clean.")
-    ok, reason = run_codex(f"phase-{phase}-fixes", prompt, MODELS["Sol"], "high", permissions,
+    ok, reason = run_codex(f"phase-{phase}-fixes", prompt, MODELS["Sol"], "medium", permissions,
                            timeout)
     if ok and not git("log", "--oneline", "--fixed-strings", f"--grep={marker}"):
         ok, reason = False, f"no commit starting with {marker}"

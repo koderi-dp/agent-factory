@@ -367,6 +367,7 @@ class Runtime:
             elif action == "resume":
                 self.scheduler.resume(repo_id, job_id)
             elif action == "rework":
+                self.scheduler.check_descendants(repo_id, job_id)
                 job = writer.call(lambda connection: pipeline.load(connection, job_id)[0])
                 head = gitops.branch_head(job)
                 writer.call(lambda connection: pipeline.rework_job(

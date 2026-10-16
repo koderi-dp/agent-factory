@@ -141,12 +141,13 @@ class WindowsJob:
             self.handle = 0
 
 
-def posix_create_time() -> float:
+def posix_create_time(pid: int | None = None) -> float:
     """Read the kernel start time with the same resolution as psutil."""
+    pid = os.getpid() if pid is None else pid
     if sys.platform == "linux":
         # comm may contain spaces and parentheses; fields after its LAST ')' are
         # unambiguous. starttime is field 22, or index 19 after comm.
-        fields = Path("/proc/self/stat").read_bytes().rsplit(b")", 1)[1].split()
+        fields = Path(f"/proc/{pid}/stat").read_bytes().rsplit(b")", 1)[1].split()
         ticks = int(fields[19])
         for line in Path("/proc/stat").read_bytes().splitlines():
             if line.startswith(b"btime "):
@@ -169,11 +170,55 @@ def posix_create_time() -> float:
         ]
         libproc.proc_pidinfo.restype = ctypes.c_int
         info = BsdInfo()
-        if libproc.proc_pidinfo(os.getpid(), 3, 0, ctypes.byref(info),
+        if libproc.proc_pidinfo(pid, 3, 0, ctypes.byref(info),
                                 ctypes.sizeof(info)) != ctypes.sizeof(info):
             raise OSError(ctypes.get_errno(), "proc_pidinfo")
         return info.start_sec + info.start_usec / 1_000_000
     raise RuntimeError(f"Unsupported process start-time platform: {sys.platform}")
+
+
+def posix_descendants(token: str) -> dict[int, float]:
+    """Find inherited owner tokens even after reparenting or setsid()."""
+    marker = "FACTORY_ATTEMPT_TOKEN=" + token
+    if sys.platform == "linux":
+        candidates = [
+            int(entry.name) for entry in Path("/proc").iterdir() if entry.name.isdecimal()
+        ]
+    else:
+        output = subprocess.check_output(["ps", "eww", "-axo", "pid=,command="], text=True)
+        candidates = [
+            int(line.split()[0]) for line in output.splitlines() if marker in line.split()[1:]
+        ]
+    found = {}
+    for pid in candidates:
+        try:
+            created = posix_create_time(pid)
+            if sys.platform == "linux":
+                owned = marker.encode() in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+            else:
+                environment = subprocess.check_output(
+                    ["ps", "eww", "-p", str(pid), "-o", "command="], text=True)
+                owned = marker in environment.split()
+            # Capture identity BEFORE reading ownership, and reject PID reuse
+            # during that read. Never attach an old token to a new process.
+            if owned and posix_create_time(pid) == created:
+                found[pid] = created
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            continue
+    return found
+
+
+def cleanup_posix_descendants(token: str) -> None:
+    # Repeat to catch children forked during the first snapshot. Verify kernel
+    # birth times immediately before signalling so recycled PIDs are untouched.
+    while members := posix_descendants(token):
+        for pid, created in members.items():
+            try:
+                if posix_create_time(pid) == created:
+                    os.kill(pid, signal.SIGKILL)
+            except (OSError, ValueError):
+                continue
+        time.sleep(POLL_INTERVAL)
 
 
 def read_command(directory: Path) -> dict:
@@ -235,7 +280,7 @@ def run(directory: Path, token: str) -> int:
                                        cwd=cwd,
                                        env={
                                            **os.environ,
-                                           **command.get("env", {})
+                                           **command.get("env", {}), "FACTORY_ATTEMPT_TOKEN": token
                                        },
                                        stdin=stdin,
                                        stdout=output,
@@ -257,6 +302,8 @@ def run(directory: Path, token: str) -> int:
                     return 0
                 code = process.poll()
                 if code is not None:
+                    if job is None:
+                        cleanup_posix_descendants(token)
                     atomic_json(directory / "exit.json", {
                         "exit_code": code,
                         "ended_at": datetime.now(timezone.utc).isoformat(),
@@ -275,6 +322,7 @@ def run(directory: Path, token: str) -> int:
         if job is not None:
             job.close()  # normal completion also removes leftover dev servers
         elif contained:
+            cleanup_posix_descendants(token)
             # Like KILL_ON_JOB_CLOSE, clean up ALL remaining members on exit.
             # The engine uses exit.json, not the wrapper's OS return code.
             os.killpg(os.getpid(), signal.SIGKILL)

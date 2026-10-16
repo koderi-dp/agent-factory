@@ -562,3 +562,117 @@ def test_crash_injection_restarts_with_exactly_one_fake_invocation(store, point)
         row for row in rows(scheduler, identifier, "events")
         if row["type"] == "execution.state" and json.loads(row["payload"]).get("state") == "done"
     ]) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX wrapper-only death")
+def test_resume_blocks_surviving_cli_after_wrapper_only_death(store):
+    root, identifier, scheduler, supervisor = store
+    run_cli.atomic_json(root / "scenario.json", {
+        "sleep": 60,
+        "spawn_child_listening_on_port": True,
+        "server_new_session": True
+    })
+    claim = supervisor.tick()[0]
+    wait_for(lambda: (claim.directory / "server.json").exists())
+    descendants = winjob.token_descendants(claim.attempt["owner_token"])
+    assert len(descendants) >= 3
+    wrapper = winjob.owned_process(claim.directory, claim.attempt["owner_token"])
+    wrapper.kill()  # deliberately leave the CLI and its escaped server alive
+    wait_for(lambda: not alive(wrapper))
+    try:
+        supervisor.start()
+        assert state(scheduler, identifier) == ("paused", "process")
+        assert scheduler.context(identifier, claim.attempt["id"]).attempt["state"] == "lost"
+        with pytest.raises(ValueError, match="descendants"):
+            scheduler.resume(identifier, claim.job["id"])
+        assert scheduler.claim_next() is None
+        assert len(list((root / "invocations").iterdir())) == 1
+    finally:
+        for process in descendants:
+            if alive(process):
+                process.kill()
+        wait_for(lambda: not winjob.token_descendants(claim.attempt["owner_token"]))
+    scheduler.resume(identifier, claim.job["id"])
+    assert scheduler.claim_next() is not None
+
+
+def test_rework_rejects_live_peer_without_superseding_it(tmp_path, monkeypatch):
+    from agent_factory.engine import pipeline
+    monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
+    root = tmp_path / "repo"
+    identifier = create_repo(root, parallel=2)
+    scheduler = Scheduler()
+
+    class UnevenAdapter(StubAdapter):
+
+        def prepare(self, context):
+            prepared = super().prepare(context)
+            path = context.directory / "scenario.json"
+            scenario = json.loads(path.read_text())
+            scenario.update(sleep=0.1 if context.execution["exec_id"] == "review-0" else 60,
+                            report="invalid")
+            run_cli.atomic_json(path, scenario)
+            return prepared
+
+    supervisor = Supervisor(scheduler, {"codex": UnevenAdapter()})
+    try:
+        supervisor.start()
+        launched = supervisor.tick()
+        peer = next(c for c in launched if c.execution["exec_id"] == "review-1")
+        wait_for(lambda: (peer.directory / "ready.json").exists())
+        settle(supervisor, scheduler, identifier)
+        assert state(scheduler, identifier) == ("needs_human", "contract")
+        before = rows(scheduler, identifier, "executions")
+        writer = scheduler.repos[identifier][1]
+        with pytest.raises(pipeline.PipelineError, match="live attempts"):
+            writer.call(lambda connection: pipeline.rework_job(
+                connection, peer.job["id"], "Fix it", current_head="head"))
+        assert rows(scheduler, identifier, "executions") == before
+        assert winjob.owned_process(peer.directory, peer.attempt["owner_token"]) is not None
+        assert supervisor.tick() == []
+        assert len(list((root / "invocations").iterdir())) == 3
+    finally:
+        for child in supervisor._children.values():
+            if child.poll() is None:
+                psutil.Process(child.pid).kill()
+            child.wait(timeout=15)
+        scheduler.close()
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_doctor_persists_paths_and_running_adapter_launches_without_path(
+        store, monkeypatch, explicit):
+    from agent_factory.engine import scaffold
+    from agent_factory.engine.adapters.codex import CodexAdapter
+    from agent_factory.engine.config import load_machine_settings
+    root, identifier, scheduler, supervisor = store
+    if explicit:
+        scheduler.machine.call(
+            lambda connection: save_machine_settings(connection, {"cli": {
+                "codex": sys.executable
+            }}))
+    monkeypatch.setattr(scaffold.shutil, "which", lambda name: sys._base_executable
+                        if name == "codex" else None)
+    checks = scaffold.doctor()
+    assert next(c for c in checks if c["check"] == "codex")["ok"]
+    settings = scheduler.machine.call(load_machine_settings)
+    assert Path(settings.cli.codex).resolve() == Path(
+        sys.executable if explicit else sys._base_executable).resolve()
+
+    class RecordingAdapter(CodexAdapter):
+        classify = StubAdapter.classify
+
+        def prepare(self, context):
+            assert self.settings.cli.codex == settings.cli.codex
+            prepared = StubAdapter().prepare(context)
+            prepared.command["argv"][0] = self.settings.cli.codex
+            return prepared
+
+    adapter = RecordingAdapter()  # created before discovering machine settings
+    supervisor.adapters["codex"] = adapter
+    monkeypatch.setenv("PATH", "")
+    launched = supervisor.tick()
+    assert len(launched) == 1
+    wait_for(lambda: (launched[0].directory / "ready.json").exists())
+    settle(supervisor, scheduler, identifier)
+    assert state(scheduler, identifier) == ("needs_human", "verify")

@@ -22,8 +22,10 @@ What the runner does:
   model and effort from the session's heading.
 - **Done check:** a session counts as done only when Codex ends with `SESSION-RESULT: PASS`,
   a `[session X.Y]` commit exists, and the working tree is clean.
-- **Failures:** a failed session is retried once. Session 1.5 then escalates to Astra. If it
-  still fails, the runner stops and tells you why.
+- **Failures:** a failed session is retried once. Session 1.5 then escalates to Astra at
+  `medium`. If it still fails, the runner stops and tells you why.
+- **Out of credits:** if Codex reports that the workspace is out of credits, the runner waits
+  10 minutes and retries that same call. The wait does not count as a failed session attempt.
 - **End of each phase (from Phase 1):** `codex exec review` with Astra reviews the phase diff.
   The runner saves its final response to `docs/reviews/phase-N.md`; Sol fixes the findings.
   Use `--reviewer claude|codex|none` to switch (default: `codex`; `--no-review` aliases `none`).
@@ -56,7 +58,7 @@ No copy-pasting is needed. Codex reads this file itself.
    codex -m gpt-6.1-sol -c model_reasoning_effort="medium"
    ```
    (or start `codex` and pick them with `/model`). Model names: `gpt-6.1-sol`, `gpt-6-astra`,
-   `gpt-6-luna`. Effort values: `low`, `medium`, `high`, `xhigh`.
+   `gpt-6-luna`. Effort for these sessions is `low` or `medium`; `medium` is the maximum.
 2. Send one line, with the session number changed:
    ```text
    Read docs/cli-orchestrator-prompts.md. Do session 1.4: follow the "Shared preamble" and then the prompt for session 1.4.
@@ -153,7 +155,7 @@ List Claude spikes 1, 2, 6 and the Claude half of 7 as deferred to 1.11; do not 
 those experiments passed. Retain pre-existing Claude captures as partial evidence.
 ```
 
-### 0.3 Windows process spikes · Sol · High (run on Windows)
+### 0.3 Windows process spikes · Sol · Medium (run on Windows)
 
 ```text
 {PREAMBLE}
@@ -215,7 +217,7 @@ Tests: db migrations apply once and are idempotent; tx rolls back on error; regi
 ids are stable for a path; FACTORY_HOME is respected. Run with `uv run pytest`.
 ```
 
-### 1.2 Config and roles · Sol · High
+### 1.2 Config and roles · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -237,7 +239,7 @@ and on the README's example; role resolution order, including no cross-provider 
 roles may repeat in a parallel group.
 ```
 
-### 1.3 Pipeline port · Sol · High
+### 1.3 Pipeline port · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -256,7 +258,7 @@ model, keeping the same behaviour. List any case you deliberately changed and ci
 section that changes it.
 ```
 
-### 1.4 Wrapper and Job Objects · Sol · Extra High
+### 1.4 Wrapper and Job Objects · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -280,7 +282,7 @@ Tests (Windows and POSIX):
 - the wrapper survives its launcher exiting.
 ```
 
-### 1.5 Claim, launch, record, recovery · Sol · Extra High (Astra · High after two failed attempts)
+### 1.5 Claim, launch, record, recovery · Sol · Medium (Astra · Medium after two failed attempts)
 
 ```text
 {PREAMBLE}
@@ -303,7 +305,7 @@ under 2 repos × 3 jobs × 4 executions. Run the crash tests 20 times in a loop 
 any flakiness. Flaky is a failure.
 ```
 
-### 1.6 Codex adapter · Sol · High
+### 1.6 Codex adapter · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -325,7 +327,7 @@ Tests: every Codex fixture from the Phase 0 spikes parses; the classification ta
 covered row by row; the summarize() table in §13.4 is covered row by row, including masking.
 ```
 
-### 1.7 Ports, stop, timeouts · Sol · Extra High
+### 1.7 Ports, stop, timeouts · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -340,7 +342,7 @@ outside the attempt's tree.
 Tests: as listed under "Ports" and "Process trees" in §16.2.
 ```
 
-### 1.8 Packet and git ops · Sol · High
+### 1.8 Packet and git ops · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -356,7 +358,7 @@ Tests: port the merge tests from tests/test_job.py (busy, conflict, changed head
 cap and truncation order; system.md is byte-identical across two jobs with the same role.
 ```
 
-### 1.9 CLI commands and API · Sol · High
+### 1.9 CLI commands and API · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -374,7 +376,7 @@ Tests: the §16.2 API security list; init is idempotent and writes exactly §4.2
 the version gate exits 4 with the fix text; a second `serve` exits 0 and prints the URL.
 ```
 
-### 1.10 Codex end-to-end · Sol · High
+### 1.10 Codex end-to-end · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -395,7 +397,7 @@ Python test suite with `uv run --locked pytest` after formatting. Include the fo
 changes in this session's commit and report both the formatting check and test results.
 ```
 
-### 1.11 Claude fixtures, adapter and parity · Sol · High (requires Claude)
+### 1.11 Claude fixtures, adapter and parity · Sol · Medium (requires Claude)
 
 Skipped by default. Run `python tools/run_plan.py --phase 1 --include-claude` once Claude
 usage returns. This is required before release, but does not block Codex development.
@@ -429,7 +431,7 @@ uses docs/reviews/phase-1-claude-parity.md and [phase 1 Claude parity review fix
 
 ## Phase 2: Fast pipeline and measurement
 
-### 2.1 Roles rewrite · Sol · High
+### 2.1 Roles rewrite · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -505,7 +507,7 @@ Done when: npm run build, typecheck, and lint pass, and the served page shows a 
 test page.
 ```
 
-### 3.2 Data layer · Sol · High
+### 3.2 Data layer · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -522,7 +524,7 @@ Tests: pytest for SSE replay, reset, and batching. Vitest for the reducer (every
 reset, out-of-order) and format.
 ```
 
-### 3.3 Shell, overview, board · Sol · Medium (Ultra allowed)
+### 3.3 Shell, overview, board · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -535,7 +537,7 @@ strip, pause/needs-you badges, legacy section). Use only the copied primitives a
 tokens; no ad-hoc colours.
 ```
 
-### 3.4 Job detail and pipeline view · Sol · High for layout.ts, Medium for the rest
+### 3.4 Job detail and pipeline view · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -580,7 +582,7 @@ axe-core contrast checks. Wire it into CI (Windows + Linux).
 
 ## Phase 4: Release, migration, switch-over
 
-### 4.1 CI and release pipeline · Sol · High
+### 4.1 CI and release pipeline · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -598,7 +600,7 @@ Pin every action to a full commit SHA. Use least-privilege permissions per job.
 Don't add secrets. Trusted publishing needs none.
 ```
 
-### 4.2 Upgrade, migration, version gate · Sol · High
+### 4.2 Upgrade, migration, version gate · Sol · Medium
 
 ```text
 {PREAMBLE}
@@ -660,15 +662,15 @@ from the measured bottleneck.
 
 ## Cross-review prompt (Astra by default, once per phase)
 
-The runner uses `codex exec review` with `gpt-6-astra`, at `xhigh` for Phase 1 and `high`
-for later phases. It supplies the exact phase diff range in the custom prompt (the CLI
-cannot combine a custom prompt with `--base`). For a manual review, use:
+The runner uses `codex exec review` with `gpt-6-astra` at `medium` for every phase. It
+supplies the exact phase diff range in the custom prompt (the CLI cannot combine a custom
+prompt with `--base`). For a manual review, use:
 
 ```powershell
-codex exec -m gpt-6-astra -c model_reasoning_effort='"high"' review "Review git diff <base>..HEAD against docs/cli-orchestrator-plan.md and this phase's sessions in docs/cli-orchestrator-prompts.md. Verify each finding. Include file:line, failure scenario and suggested fix, most severe first. Check Windows, process ownership, crash recovery and spec coverage. Do not edit files. Treat session 1.11 Claude work as deferred until completed. Return No findings. if none."
+codex exec -m gpt-6-astra -c model_reasoning_effort='"medium"' review "Review git diff <base>..HEAD against docs/cli-orchestrator-plan.md and this phase's sessions in docs/cli-orchestrator-prompts.md. Verify each finding. Include file:line, failure scenario and suggested fix, most severe first. Check Windows, process ownership, crash recovery and spec coverage. Do not edit files. Treat session 1.11 Claude work as deferred until completed. Return No findings. if none."
 ```
 
-`tools/run_plan.py` saves the final response to `docs/reviews/phase-N.md`, then a Sol · High
+`tools/run_plan.py` saves the final response to `docs/reviews/phase-N.md`, then a Sol · Medium
 session verifies and fixes findings, tests, and commits with `[phase N review fixes]`.
 `--reviewer claude` uses Claude Opus instead; `--reviewer none` skips review and fixes.
 Do not interpret a skipped review as satisfying phase review criteria.

@@ -476,6 +476,10 @@ def rework_job(connection: sqlite3.Connection, job_id: str, note: str, *,
     ]
     with db.tx(connection):
         job, executions = load(connection, job_id)
+        if connection.execute(
+                "SELECT 1 FROM attempts a JOIN executions e ON e.id=a.execution_id "
+                "WHERE e.job_id=? AND a.state IN ('launching','running')", (job_id, )).fetchone():
+            raise PipelineError("wait for live attempts to exit before reworking")
         transition = rework(job, executions, note, current_head=current_head)
         _apply(connection, job_id, transition, _now(), rework_floor=max(numbers, default=0))
     materialize_rework_notes(connection, job_id)
