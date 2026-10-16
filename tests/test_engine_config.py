@@ -2,7 +2,6 @@
 
 import copy
 import json
-import re
 import sqlite3
 from pathlib import Path
 
@@ -310,22 +309,14 @@ def test_upgrade_current_v1_config_is_pure(tmp_path):
     assert raw == before
 
 
-def test_upgrade_readme_example_with_custom_role(tmp_path):
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    raw = next(
-        json.loads(block) for block in re.findall(r"```json\n(.*?)\n```", readme, re.S)
-        if '"docs-writer"' in block)
-    role = next(block for block in re.findall(r"```markdown\n(.*?)\n```", readme, re.S)
-                if "name: docs-writer" in block)
-    directory = tmp_path / "factory" / "roles"
-    directory.mkdir(parents=True)
-    (directory / "docs-writer.md").write_text(role, encoding="utf-8")
+def test_upgrade_v1_fixture(tmp_path):
+    raw = json.loads((ROOT / "tests/fixtures/v1/factory/config.json").read_text())
     before = copy.deepcopy(raw)
-    config = validate_config(raw, root=tmp_path)
+    upgraded = upgrade_v1(raw)
+    config = validate_config(upgraded, root=tmp_path)
     assert raw == before
-    assert config.pipelines["full"][2].uses == "docs-writer"
-    assert config.pipelines["full"][2].label == "Documentation"
-    assert config.role_for("full", "docs").type == "task"
+    assert config.defaultPipeline == "full"
+    assert config.pipelines["full"][0].uses == "spec-writer"
 
 
 @pytest.mark.parametrize("permissions,expected", [("auto", "auto"),

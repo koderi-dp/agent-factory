@@ -1,7 +1,7 @@
 Built-in roles start from the execution packet and write only its report_path
 (plan §5.3, §7.2, §8.2). Each role has one provider-neutral source; worktree,
 skills and permission instructions cover both providers without duplicate files.
-The v1 role sources remain in claude/ and codex/ until session 4.3 removes them.
+The original v1 role sources were removed in session 4.3 after these package roles replaced them.
 
 Budgets include frontmatter and use UTF-8 bytes: builder <= 6,000, others <= 4,000.
 Tests check every role file, report sections, contracts and provider resolution.
