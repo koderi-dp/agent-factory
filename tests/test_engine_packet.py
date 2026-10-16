@@ -72,6 +72,22 @@ def test_system_is_byte_identical_across_jobs_and_uses_frozen_role(repo):
     assert "Frozen changed role." in packet.build(context_for(repo, first), executions=[]).system
 
 
+@pytest.mark.parametrize("reviewed_head", [None, "a" * 40])
+def test_approval_packet_exposes_recorded_review_head(repo, reviewed_head):
+    context = context_for(repo, add_job(repo))
+    context = replace(context, execution={**context.execution, "type": "approval"})
+    review = completed(context,
+                       12,
+                       role="reviewer-code",
+                       result="PASS",
+                       text="VERDICT: PASS\n## Findings\nNone.\n## Checks run\nTests pass.\n")
+    if reviewed_head:
+        review["head_after"] = reviewed_head
+    upstream = packet.build(context, executions=[review]).packet["upstream_results"]
+    assert f"Recorded head: {reviewed_head or 'unknown'}" in upstream
+    assert "reviewer-code" in upstream and "Tests pass." in upstream
+
+
 def test_acceptance_full_and_fast_and_latest_rework(repo):
     context = context_for(repo, add_job(repo))
     folder = context.root / "factory/jobs" / context.job["id"]

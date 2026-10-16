@@ -15,7 +15,7 @@ MAX_PACKET_BYTES = 64 * 1024
 MAX_DIFF_BYTES = 24 * 1024
 
 # No job paths, ports, timestamps or provider sessions belong in this prefix.
-PREAMBLE_VERSION = "2"
+PREAMBLE_VERSION = "3"
 PREAMBLE = """You are executing one agent-factory pipeline execution.
 Start from the execution packet. Read further files only when you need them.
 Do not re-read earlier rounds' reports unless the packet points you to them.
@@ -28,14 +28,12 @@ Other task reports start with exactly STATUS: READY or STATUS: BLOCKED.
 Review reports start with exactly VERDICT: PASS or VERDICT: CHANGES.
 Approval reports start with exactly APPROVE or ESCALATE (CHANGES only with onChanges).
 The packet's report_contract specifies the first line for this execution.
-Role texts still use legacy filenames such as spec.md, build.md and decision.md.
-Always substitute the packet's absolute report_path for that output filename.
 Write only that report, including for specs; do not create a second legacy report.
 There is no job.json in this engine. Use the packet's state and upstream report paths.
 Store screenshots and temporary validation files in the packet's artifacts_dir,
 outside the worktree. Parallel reviewers share the worktree; keep it clean throughout.
 Use --session with the packet's browser_session on every agent-browser call,
-including close. This overrides legacy role examples and isolates repos and attempts.
+including close. This isolates repos and attempts.
 READY tasks must leave a clean worktree. The builder must commit its changes.
 Reviews and approvals must leave the branch head unchanged and the worktree clean.
 Use only the assigned ports. Stop all servers and processes you start before returning.
@@ -225,6 +223,7 @@ def build(context: Claim, *, executions: Sequence[Mapping[str, Any]] | None = No
         label = f"{row['step_id']}/{row['exec_id']} ({row['uses']})"
         if row["state"] == "done" and row["round"] == execution["round"]:
             parts = [f"{label}: {row['result']}\nReport: {source}"]
+            parts.append(f"Recorded head: {row.get('head_after') or 'unknown'}")
             parts += [
                 f"### {name}\n{sections[name]}" for name in ("Decisions", "Checks run")
                 if name in sections
