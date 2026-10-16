@@ -295,6 +295,7 @@ def delete(root: str | Path,
         # explicitly alongside the execution/attempt FK cascades.
         connection.execute("DELETE FROM events WHERE job_id=?", (job_id, ))
         connection.execute("DELETE FROM jobs WHERE id=?", (job_id, ))
+        pipeline._event(connection, None, pipeline._now(), "job.state", {"deleted": job_id})
     if machine is not None and repo_id is not None:
         ports.release(machine, repo_id, job_id)
     return f"deleted {job_id}: " + ", ".join(removed)

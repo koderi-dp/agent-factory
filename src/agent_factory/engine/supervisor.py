@@ -21,6 +21,7 @@ import psutil
 
 from agent_factory import run_cli
 from agent_factory.engine import db, pipeline, ports, winjob
+from agent_factory.engine.activity import Activity
 from agent_factory.engine.adapters.base import (
     Adapter,
     EventUpdate,
@@ -91,6 +92,7 @@ class Supervisor:
                  adoption_timeout: float = 10,
                  stop_grace: float = 10) -> None:
         self.scheduler = scheduler
+        self.activity = Activity()
         self.adapters = dict(adapters)
         self.adoption_timeout = adoption_timeout
         self.stop_grace = stop_grace
@@ -316,11 +318,16 @@ class Supervisor:
             with db.tx(connection):
                 condition = " AND log_offset=?" if expected_offset is not None else ""
                 extra = (expected_offset, ) if expected_offset is not None else ()
-                connection.execute(
+                changed = connection.execute(
                     f"UPDATE attempts SET {','.join(key + '=?' for key in updates)} "
                     f"WHERE id=? AND owner_token=? AND state IN {LIVE}{condition}",
                     (*updates.values(), context.attempt["id"], context.attempt["owner_token"],
-                     *extra))
+                     *extra)).rowcount
+                if changed and "usage" in updates:
+                    pipeline._event(connection, context.job["id"], pipeline._now(), "usage", {
+                        "attempt_id": context.attempt["id"],
+                        "usage": json.loads(updates["usage"])
+                    })
 
         self.scheduler.repos[context.repo_id][1].call(apply)
 
@@ -633,6 +640,9 @@ class Supervisor:
         last_activity = (context.attempt.get("last_activity_at")
                          or context.attempt.get("t_first_event") or context.attempt.get("t_launch")
                          or context.attempt["t_queued"])
+        memory = self.activity.get(context.repo_id, context.attempt["id"])
+        if memory:
+            last_activity = memory["at"]
         quiet = (datetime.fromisoformat(now) -
                  datetime.fromisoformat(last_activity)).total_seconds()
         for line in data[:end].splitlines():
@@ -645,7 +655,9 @@ class Supervisor:
                 usage = add_usage(usage, event.usage)
                 updates["usage"] = json.dumps(usage)
             if event.activity is not None:
-                updates.update(last_activity=event.activity, last_activity_at=now)
+                if self.activity.update(context.repo_id, context.attempt["id"], event.activity,
+                                        now) or "last_activity" in updates:
+                    updates.update(last_activity=event.activity, last_activity_at=now)
                 quiet = 0
         updates["log_offset"] = context.attempt["log_offset"] + end
         updates["t_first_event"] = context.attempt["t_first_event"] or now
@@ -660,6 +672,11 @@ class Supervisor:
             ])
             for attempt_id in identifiers:
                 self.recover(self.scheduler.context(identifier, attempt_id))
+            running = writer.call(lambda connection: {
+                row[0]
+                for row in connection.execute("SELECT id FROM attempts WHERE state='running'")
+            })
+            self.activity.current(identifier, running)
         for key, child in list(self._children.items()):
             if child.poll() is not None:
                 del self._children[key]

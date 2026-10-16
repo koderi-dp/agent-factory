@@ -118,6 +118,20 @@ class Runtime:
                         "SELECT id,last_activity,last_activity_at FROM attempts WHERE state='running'"
                     )
                 ]
+                latest = {
+                    item["attempt_id"]: item
+                    for item in self.supervisor.activity.current(repo_id,
+                                                                 {item["id"]
+                                                                  for item in activity})
+                }
+                activity = [
+                    latest.get(
+                        item["id"], {
+                            "attempt_id": item["id"],
+                            "text": item["last_activity"],
+                            "at": item["last_activity_at"]
+                        }) for item in activity
+                ]
                 return {
                     "jobs": jobs,
                     "executions": executions,

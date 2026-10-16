@@ -1,6 +1,7 @@
 """Real git repositories: v1 merge/delete cases and plan §7.2 checks."""
 
 from pathlib import Path
+import json
 import socket
 import subprocess
 import sys
@@ -186,8 +187,13 @@ def test_delete_removes_files_lease_and_cascades_rows(repo):
     assert "worktree, branch, job folder" in message
     assert not Path(job["worktree"]).exists()
     assert not (root / "factory/jobs" / job["id"]).exists()
-    for table in ("jobs", "executions", "attempts", "events"):
+    for table in ("jobs", "executions", "attempts"):
         assert not connection.execute(f"SELECT * FROM {table}").fetchall()
+    events = connection.execute("SELECT job_id,type,payload FROM events").fetchall()
+    assert len(events) == 1
+    assert events[0]["job_id"] is None
+    assert events[0]["type"] == "job.state"
+    assert json.loads(events[0]["payload"]) == {"deleted": job["id"]}
     assert not machine.execute("SELECT * FROM port_leases").fetchall()
 
 

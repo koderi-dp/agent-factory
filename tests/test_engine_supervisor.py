@@ -676,3 +676,30 @@ def test_doctor_persists_paths_and_running_adapter_launches_without_path(
     wait_for(lambda: (launched[0].directory / "ready.json").exists())
     settle(supervisor, scheduler, identifier)
     assert state(scheduler, identifier) == ("needs_human", "verify")
+
+
+def test_activity_memory_is_fresh_while_db_writes_are_throttled(store):
+    _, identifier, scheduler, supervisor = store
+    claim = scheduler.claim_next()
+    claim.directory.mkdir(parents=True)
+    path = claim.directory / "events.jsonl"
+    first = b'{"activity":"first"}\n'
+    path.write_bytes(first)
+    supervisor.tail(claim)
+    updated = scheduler.context(identifier, claim.attempt["id"])
+    assert updated.attempt["last_activity"] == "first"
+    with path.open("ab") as stream:
+        stream.write(b'{"activity":"latest","usage":{"output":3}}\n')
+    supervisor.tail(updated)
+    updated = scheduler.context(identifier, claim.attempt["id"])
+    assert updated.attempt["last_activity"] == "first"
+    assert supervisor.activity.get(identifier, claim.attempt["id"])["text"] == "latest"
+    supervisor.tail(claim)  # stale offset cannot duplicate usage or its durable event
+    usage_events = [row for row in rows(scheduler, identifier, "events") if row["type"] == "usage"]
+    assert len(usage_events) == 1
+    assert json.loads(usage_events[0]["payload"]) == {
+        "attempt_id": claim.attempt["id"],
+        "usage": {
+            "output": 3
+        }
+    }

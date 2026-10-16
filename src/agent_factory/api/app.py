@@ -1,4 +1,4 @@
-"""Authenticated local API with polling snapshots (SSE: plan §13.2, Phase 3)."""
+"""Authenticated local API, snapshots and SSE delivery (plan §13.2)."""
 
 import asyncio
 from contextlib import asynccontextmanager
@@ -14,8 +14,10 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
+from starlette.responses import StreamingResponse
 
 from agent_factory import __version__, run_cli
+from agent_factory.api import streams
 from agent_factory.engine import db, gitops, pipeline, roles as role_files, versioning
 from agent_factory.engine.config import (MachineSettings, load_config, load_machine_settings,
                                          save_machine_settings, validate_config)
@@ -163,6 +165,59 @@ def create_app(*,
 
     def engine() -> Runtime:
         return app.state.runtime
+
+    def stream_response(iterator) -> StreamingResponse:
+        return StreamingResponse(iterator,
+                                 media_type="text/event-stream",
+                                 headers={
+                                     "Cache-Control": "no-cache",
+                                     "X-Accel-Buffering": "no"
+                                 })
+
+    def cursor(request: Request, initial: int) -> int:
+        value = request.headers.get("Last-Event-ID", str(initial))
+        if len(value) > 19 or not value.isascii() or not value.isdecimal() or int(
+                value) > 2**63 - 1:
+            raise HTTPException(400, "Last-Event-ID must be a nonnegative 64-bit integer")
+        return int(value)
+
+    @app.get("/api/overview/stream")
+    async def overview_events(request: Request):
+        return stream_response(streams.overview_stream(request, engine()))
+
+    @app.get("/api/repos/{repo}/events")
+    async def events(repo: str,
+                     request: Request,
+                     after: Annotated[int, Query(ge=0, le=2**63 - 1)] = 0):
+        await asyncio.to_thread(engine().snapshot, repo)
+        return stream_response(streams.repo_stream(request, engine(), repo, cursor(request, after)))
+
+    @app.get("/api/repos/{repo}/attempts/{attempt_id}/stream")
+    def attempt_stream(repo: str,
+                       attempt_id: int,
+                       request: Request,
+                       offset: Annotated[int, Query(ge=0, le=2**63 - 1)] = 0):
+        with engine().lock:
+            root, writer = engine().repo(repo)
+
+            def attempt():
+                return writer.call(lambda connection: connection.execute(
+                    "SELECT a.dir,a.state,e.job_id FROM attempts a JOIN executions e "
+                    "ON e.id=a.execution_id WHERE a.id=?", (attempt_id, )).fetchone())
+
+            row = attempt()
+            if row is None:
+                raise HTTPException(404, "Unknown attempt")
+            path = confined(root / "factory/jobs", f"{row['job_id']}/{row['dir']}/events.jsonl")
+
+        def finished():
+            with engine().lock:
+                row = attempt()
+                return engine().stopping or row is None or row["state"] not in {
+                    "launching", "running"
+                }
+
+        return stream_response(streams.log_stream(request, path, cursor(request, offset), finished))
 
     @app.get("/api/health")
     def health() -> dict:
