@@ -7,7 +7,19 @@ export type Attempt = JobDetail["attempts"][number];
 const stepSchema = z.object({
   id: z.string(),
   label: z.string().nullish(),
-  executions: z.array(z.object({ id: z.string() })),
+  type: z.enum(["task", "review", "approval"]).optional(),
+  onChanges: z.string().nullish(),
+  executions: z.array(
+    z.object({
+      id: z.string(),
+      uses: z.string().optional(),
+      provider: z.string().optional(),
+      profiles: z
+        .record(z.string(), z.object({ model: z.string(), effort: z.string() }))
+        .optional(),
+      role: z.object({ type: z.string() }).optional(),
+    }),
+  ),
 });
 export type Step = z.infer<typeof stepSchema>;
 

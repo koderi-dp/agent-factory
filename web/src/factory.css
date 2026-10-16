@@ -1,1 +1,34 @@
-@layer components {}
+@layer components {
+  .pipeline-edge {
+    stroke: var(--color-muted-foreground);
+    stroke-width: 1.5;
+  }
+  .pipeline-edge text {
+    stroke: none;
+    fill: var(--color-muted-foreground);
+    font-size: 11px;
+  }
+  .pipeline-rework {
+    stroke: var(--color-warn);
+    stroke-dasharray: 6 5;
+  }
+  .pipeline-flow-running {
+    stroke: var(--color-signal);
+    stroke-dasharray: 6 5;
+    animation: pipeline-dash 1s linear infinite;
+  }
+  .pipeline-invalid {
+    outline: 2px solid var(--color-danger);
+  }
+  @keyframes pipeline-dash {
+    to {
+      stroke-dashoffset: -22;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pipeline-flow-running,
+    .pipeline-node .status-pulse {
+      animation: none;
+    }
+  }
+}

@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { api, keys } from "@/lib/api";
 import { connectOverview, connectRepo } from "@/lib/sse";
 import { Board } from "@/features/board/Board";
+import { JobDetail } from "@/features/job/JobDetail";
 import { Overview } from "@/features/overview/Overview";
 import { Button } from "@/ui/primitives/button";
 import { Select } from "@/ui/primitives/select";
@@ -112,6 +113,8 @@ export function Shell() {
     !pathname.endsWith("/settings")
   )
     page = <Board repo={selected.id} name={selected.name} now={now} />;
+  else if (selected && params.job)
+    page = <JobDetail key={`${repo}:${params.job}`} repo={selected.id} job={params.job} />;
   else if (pathname === "/") page = <Overview repos={overview.data.repos} />;
   else
     page = (

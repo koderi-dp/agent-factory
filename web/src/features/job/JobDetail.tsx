@@ -1,0 +1,339 @@
+import { useCallback, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { api, keys, report } from "@/lib/api";
+import {
+  frozenSteps,
+  currentExecutions,
+  latestAttempt,
+  type Execution,
+} from "@/features/board/model";
+import { layout } from "./pipeline/layout";
+import { PipelineView } from "./pipeline/PipelineView";
+import { ReportView } from "./ReportView";
+import { LogView } from "./LogView";
+import { Timeline } from "./Timeline";
+import { UsagePanel } from "./UsagePanel";
+import { PauseBanner } from "./PauseBanner";
+import { PageShell } from "@/ui/page-shell";
+import { PageHeader } from "@/ui/page-header";
+import { Button } from "@/ui/primitives/button";
+import { Input } from "@/ui/primitives/input";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/primitives/tabs";
+import { Sheet, SheetContent } from "@/ui/primitives/sheet";
+import { DialogTitle, DialogDescription } from "@/ui/primitives/dialog";
+import { ConfirmDialog } from "@/ui/confirm-dialog";
+import { StatusBadge } from "@/ui/status";
+
+function ExecutionReport({
+  repo,
+  job,
+  execution,
+  file,
+}: {
+  repo: string;
+  job: string;
+  execution?: Execution;
+  file?: string;
+}) {
+  const path = file || execution?.report_path;
+  const query = useQuery({
+    queryKey: ["repo", repo, "report", job, path],
+    queryFn: () => report(repo, job, path!),
+    enabled: !!path,
+  });
+  if (!path) return <p>No report yet.</p>;
+  if (query.isPending) return <p role="status">Loading report…</p>;
+  if (query.isError) return <p role="alert">Could not load report: {query.error.message}</p>;
+  return <ReportView text={query.data} />;
+}
+const tabNames = ["Pipeline", "Reports", "Timeline", "Log", "Usage"];
+type Action = "stop" | "resume" | "approve" | "rework" | "delete";
+const labels: Record<Action, string> = {
+  stop: "Stop",
+  resume: "Resume",
+  approve: "Merge",
+  rework: "Rework",
+  delete: "Delete",
+};
+export function JobDetail({ repo, job: jobId }: { repo: string; job: string }) {
+  const query = useQuery({ queryKey: keys.job(repo, jobId), queryFn: () => api.job(repo, jobId) });
+  const state = useQuery({ queryKey: keys.state(repo), queryFn: () => api.state(repo) });
+  const location = useLocation(),
+    navigate = useNavigate();
+  const search = new URLSearchParams(location.searchStr),
+    nodeId = search.get("node"),
+    file = search.get("file");
+  const [action, setAction] = useState<Action>(),
+    [pending, setPending] = useState(false),
+    [error, setError] = useState("");
+  const [note, setNote] = useState(""),
+    [sensitive, setSensitive] = useState(false),
+    [force, setForce] = useState(false),
+    [history, setHistory] = useState(false);
+  const [selectedExec, setSelectedExec] = useState<number>();
+  const selectNode = useCallback(
+    (node?: string) => {
+      void navigate({ to: location.pathname, search: node ? { node } : {}, replace: false });
+    },
+    [navigate, location.pathname],
+  );
+  if (query.isPending)
+    return (
+      <PageShell>
+        <p role="status">Loading job…</p>
+      </PageShell>
+    );
+  if (query.isError)
+    return (
+      <PageShell>
+        <p role="alert">Could not load job: {query.error.message}</p>
+      </PageShell>
+    );
+  const { job, executions, attempts } = query.data,
+    steps = frozenSteps(job);
+  const current = currentExecutions(steps, executions);
+  const node = layout(steps, executions).nodes.find((n) => n.id === nodeId);
+  const execution =
+    executions.find((e) => e.id === selectedExec) ??
+    current.find((e) => e.state === "running") ??
+    current.at(-1);
+  const historyExecution = nodeId?.startsWith("history:")
+    ? executions.find((e) => e.id === Number(nodeId.slice(8)))
+    : undefined;
+  const selected = node?.execution ?? historyExecution;
+  const selectedAttempts = attempts.filter((a) => a.execution_id === selected?.id);
+  const busy = executions.some((e) => ["claimed", "running"].includes(e.state));
+  const actions: Action[] = [
+    ...(job.state === "running" || job.state === "queued" ? ["stop" as const] : []),
+    ...(job.state === "paused" ? ["resume" as const] : []),
+    ...(["approved", "needs_human"].includes(job.state) && !busy
+      ? ["approve" as const, "rework" as const]
+      : []),
+    ...(!busy ? ["delete" as const] : []),
+  ];
+  const confirm = async () => {
+    if (!action) return;
+    setPending(true);
+    setError("");
+    try {
+      await api.action(repo, jobId, action, { note, confirm_sensitive: sensitive, force });
+      toast.success(`${labels[action]} requested`);
+      setAction(undefined);
+      if (action === "delete") void navigate({ to: `/repo/${encodeURIComponent(repo)}` });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(false);
+    }
+  };
+  const executionPicker = (
+    <label className="block text-sm">
+      Execution{" "}
+      <select
+        className="ml-2 rounded bg-secondary p-2"
+        value={execution?.id ?? ""}
+        onChange={(e) => setSelectedExec(Number(e.target.value))}
+      >
+        {(history ? executions : current).map((e) => (
+          <option key={e.id} value={e.id}>
+            {e.step_id}/{e.exec_id} · round {e.round} · {e.state}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  return (
+    <PageShell gap="loose">
+      <PageHeader
+        kicker={`${job.id} · ${job.pipeline_name}`}
+        title={job.title}
+        description={job.note ?? undefined}
+      />
+      <div className="flex flex-wrap gap-2">
+        <StatusBadge state={job.state} />
+        {actions.map((a) => (
+          <Button
+            key={a}
+            variant={a === "delete" ? "destructive" : "outline"}
+            onClick={() => {
+              setAction(a);
+              setError("");
+              setSensitive(false);
+              setForce(false);
+              setNote("");
+            }}
+          >
+            {labels[a]}
+          </Button>
+        ))}
+      </div>
+      <PauseBanner job={job} executions={current} />
+      <Tabs defaultValue={file ? "Reports" : "Pipeline"}>
+        <TabsList aria-label="Job views">
+          {tabNames.map((t) => (
+            <TabsTrigger key={t} value={t}>
+              {t}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="Pipeline">
+          <PipelineView
+            steps={steps}
+            executions={executions}
+            attempts={attempts}
+            activity={state.data?.activity}
+            paused={job.state === "paused" ? (job.pause_reason ?? "Paused") : undefined}
+            onOpen={selectNode}
+          />
+          <label className="text-sm">
+            <input
+              type="checkbox"
+              checked={history}
+              onChange={(e) => setHistory(e.target.checked)}
+            />{" "}
+            Show history
+          </label>
+          {history && (
+            <ul className="mt-3 space-y-2">
+              {executions
+                .filter((e) => e.state === "superseded")
+                .map((e) => (
+                  <li key={e.id} className="text-muted-foreground">
+                    <span className="line-through">
+                      {e.step_id}/{e.exec_id} · {e.state} · round {e.round}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setSelectedExec(e.id);
+                        selectNode(`history:${e.id}`);
+                      }}
+                    >
+                      Inspect
+                    </Button>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </TabsContent>
+        <TabsContent value="Reports">
+          <div className="space-y-4">
+            {executionPicker}
+            <ExecutionReport
+              repo={repo}
+              job={jobId}
+              execution={execution}
+              file={file ?? undefined}
+            />
+          </div>
+        </TabsContent>
+        <TabsContent value="Timeline">
+          <Timeline attempts={attempts} />
+        </TabsContent>
+        <TabsContent value="Log">
+          <div className="space-y-4">
+            {executionPicker}
+            <LogView
+              key={`${repo}:${execution && latestAttempt(execution, attempts)?.id}`}
+              repo={repo}
+              attempt={execution && latestAttempt(execution, attempts)?.id}
+            />
+          </div>
+        </TabsContent>
+        <TabsContent value="Usage">
+          <UsagePanel attempts={attempts} />
+        </TabsContent>
+      </Tabs>
+      <Sheet
+        open={!!nodeId}
+        onOpenChange={(open) => {
+          if (!open) selectNode();
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto p-5 sm:w-[42rem]">
+          <DialogTitle className="pr-8 text-lg">
+            {selected ? `${selected.step_id}/${selected.exec_id}` : nodeId}
+          </DialogTitle>
+          <DialogDescription>Execution report, live log and attempt timeline</DialogDescription>
+          <Tabs
+            key={nodeId}
+            defaultValue={
+              selected?.report_path ? "Report" : selected?.state === "running" ? "Log" : "Timeline"
+            }
+          >
+            <TabsList>
+              {["Report", "Log", "Timeline"].map((t) => (
+                <TabsTrigger key={t} value={t}>
+                  {t}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent value="Report">
+              <ExecutionReport repo={repo} job={jobId} execution={selected} />
+            </TabsContent>
+            <TabsContent value="Log">
+              <LogView
+                key={`${repo}:${selected && latestAttempt(selected, attempts)?.id}`}
+                repo={repo}
+                attempt={selected && latestAttempt(selected, attempts)?.id}
+              />
+            </TabsContent>
+            <TabsContent value="Timeline">
+              <Timeline attempts={selectedAttempts} />
+            </TabsContent>
+          </Tabs>
+        </SheetContent>
+      </Sheet>
+      <ConfirmDialog
+        open={!!action}
+        title={`${action ? labels[action] : "Confirm"} job?`}
+        description={
+          action === "delete"
+            ? "Remove the job and its worktree. This cannot be undone."
+            : action === "approve"
+              ? "Merge this job into the repository's base branch."
+              : action === "rework"
+                ? "Return the job to its task step with your feedback."
+                : "Apply this action to the job."
+        }
+        confirmLabel={action ? labels[action] : "Confirm"}
+        destructive={action === "delete" || action === "stop"}
+        pending={pending}
+        onOpenChange={(open) => {
+          if (!open && !pending) setAction(undefined);
+        }}
+        onConfirm={() => void confirm()}
+      >
+        {action === "rework" && (
+          <label className="space-y-2 text-sm">
+            Feedback
+            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+        )}
+        {action === "approve" && (
+          <label className="text-sm">
+            <input
+              type="checkbox"
+              checked={sensitive}
+              onChange={(e) => setSensitive(e.target.checked)}
+            />{" "}
+            Confirm changes to sensitive paths
+          </label>
+        )}
+        {action === "delete" && (
+          <label className="text-sm">
+            <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />{" "}
+            Force deletion of an unmerged job
+          </label>
+        )}
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        )}
+      </ConfirmDialog>
+    </PageShell>
+  );
+}

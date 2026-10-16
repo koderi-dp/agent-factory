@@ -9,12 +9,19 @@ import { Shell } from "./shell";
 export function createDashboardRouter(history: RouterHistory) {
   const root = createRootRoute({ component: Shell });
   const route = (path: string) => createRoute({ getParentRoute: () => root, path });
-  // TODO (sessions 3.4–3.5, §13.3): replace detail/editor placeholders in Shell.
+  // TODO (session 3.5, plan 13.3): replace backlog/settings placeholders in Shell.
   return createRouter({
     routeTree: root.addChildren([
       route("/"),
       route("/repo/$repo"),
-      route("/repo/$repo/job/$job"),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/repo/$repo/job/$job",
+        validateSearch: (search: Record<string, unknown>) => ({
+          ...(typeof search.node === "string" ? { node: search.node } : {}),
+          ...(typeof search.file === "string" ? { file: search.file } : {}),
+        }),
+      }),
       route("/repo/$repo/backlog"),
       route("/repo/$repo/settings"),
       route("/settings"),
