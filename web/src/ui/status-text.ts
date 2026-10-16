@@ -4,6 +4,24 @@ import { transferred } from "@/lib/format";
 export type Tone = "live" | "warn" | "danger" | "outline";
 
 const TONES: Record<string, Tone> = {
+  queued: "outline",
+  pending: "outline",
+  claimed: "warn",
+  paused: "warn",
+  needs_human: "warn",
+  "needs-you": "warn",
+  approved: "live",
+  merged: "live",
+  pass: "live",
+  ready: "live",
+  approve: "live",
+  done: "live",
+  cancelled: "outline",
+  changes: "warn",
+  blocked: "danger",
+  escalate: "danger",
+  connected: "live",
+  disconnected: "danger",
   running: "live",
   starting: "warn",
   // The node is downloading the source's library file: on its way up, like starting.
@@ -20,6 +38,14 @@ const TONES: Record<string, Tone> = {
 };
 
 const LABELS: Record<string, string> = {
+  needs_human: "Needs you",
+  "needs-you": "Needs you",
+  pass: "PASS",
+  ready: "READY",
+  approve: "APPROVE",
+  changes: "CHANGES",
+  blocked: "BLOCKED",
+  escalate: "ESCALATE",
   idle: "Ended",
   configured: "Stopped",
   "not-sending": "Running",
