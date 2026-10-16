@@ -80,3 +80,34 @@ because it is a source copy without Git metadata. macOS was not available for ex
 Windows full suite: `uv run --locked pytest -q` — **634 passed, 2 skipped,
 55 subtests passed**, with one FastAPI/Starlette HTTPX deprecation warning. The subsequent
 wrapper-only run listed above also covers the two added PID-reuse cases.
+
+## Follow-up verification (2026-10-16)
+
+The working tree was clean at the start of this follow-up. Commit `5089cce` already
+contained all six fixes and their regression tests. Inspection against plan sections
+3.2, 5.1, 5.2, 8.2 and 9 confirms that all six findings remain accepted; no additional
+runtime changes are needed. The `Not fixed` disposition above is unchanged.
+
+Regression coverage for each finding:
+
+| Finding | Test |
+| --- | --- |
+| Rework with a live parallel peer | `tests/test_engine_supervisor.py::test_rework_rejects_live_peer_without_superseding_it` |
+| Resume after wrapper-only death | `tests/test_engine_supervisor.py::test_resume_blocks_surviving_cli_after_wrapper_only_death` |
+| Escaped descendants on normal completion | `tests/test_run_cli.py::test_normal_completion_cleans_escaped_orphan_server_before_exit` |
+| Repeated UX/UI port allocation | `tests/test_engine_ports.py::test_repeated_port_roles_bind_distinct_slots_and_serialize_overflow` |
+| Current spec acceptance criteria | `tests/test_engine_packet.py::test_acceptance_uses_pipeline_round_invalidation` |
+| Persisted doctor paths and adapter refresh | `tests/test_engine_supervisor.py::test_doctor_persists_paths_and_running_adapter_launches_without_path` |
+
+Fresh validation:
+
+- `uv sync --locked` succeeded on Windows and in a fresh WSL source checkout
+  of `5089cce` (Python 3.12, `SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0` for the archive).
+- `uv run --locked yapf --diff` on all 16 Python files from the existing fix commit
+  exited zero. This follow-up changes only this review file; fixtures remain unchanged.
+- WSL: `uv run --locked pytest tests/test_run_cli.py tests/test_engine_supervisor.py tests/test_engine_ports.py tests/test_engine_packet.py -q`
+  completed with **102 passed, 1 skipped**. This includes both POSIX-specific regressions.
+- Windows: `uv run --locked pytest -q` completed with **636 passed, 2 skipped,
+  55 subtests passed**, and one existing Starlette HTTPX deprecation warning.
+
+Claude and mixed-provider parity remain deferred to session 1.11.
