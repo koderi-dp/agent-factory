@@ -1,11 +1,11 @@
 name: Dashboard E2E
 on:
-  push:
-  pull_request:
-permissions:
-  contents: read
+  workflow_call:
+permissions: {}
 jobs:
   dashboard:
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -19,7 +19,7 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           python-version: '3.11'
       - run: uv sync --locked

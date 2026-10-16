@@ -38,6 +38,9 @@ fallback_version = "0.0.0"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_factory"]
 
+[tool.hatch.build]
+artifacts = ["/src/agent_factory/dashboard_dist/**"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
