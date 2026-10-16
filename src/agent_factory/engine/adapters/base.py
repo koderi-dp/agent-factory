@@ -29,6 +29,7 @@ class Prepared:
     prompt: str
     system: str
     packet: Mapping[str, Any]
+    packet_bytes: int | None = None
 
 
 @dataclass(frozen=True)

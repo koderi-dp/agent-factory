@@ -81,18 +81,14 @@ def _shell_command(command: str) -> str:
     return match[2] if match else command
 
 
-def _head(worktree: Path) -> str:
-    return subprocess.check_output(["git", "-C", str(worktree), "rev-parse", "HEAD"],
-                                   text=True, encoding="utf-8").strip()
-
-
 class CodexAdapter:
     def __init__(self, settings: MachineSettings | None = None, *,
-                 prompt_builder: Callable[[Claim], Prompt] | None = None,
-                 head_reader: Callable[[Path], str] = _head) -> None:
+                 prompt_builder: Callable[[Claim], Prompt] | None = None) -> None:
         self.settings = settings or MachineSettings()
+        if prompt_builder is None:
+            from agent_factory.engine.packet import build
+            prompt_builder = build
         self.prompt_builder = prompt_builder
-        self.head_reader = head_reader
 
     def command(self, context: Claim) -> dict[str, Any]:
         execution, attempt = context.execution, context.attempt
@@ -112,22 +108,21 @@ class CodexAdapter:
                 "env": {"PYTHONUTF8": "1"}}
 
     def prepare(self, context: Claim) -> Prepared:
-        if self.prompt_builder is None:
-            raise ValueError("Codex requires a packet builder (plan §8.2, session 1.8)")
         files = self.prompt_builder(context)
         packet = dict(files.packet)
         prompt = files.text
         if context.attempt["kind"] != "resume":
             prompt = files.system + "\n\n" + prompt
-        if context.previous and context.attempt["kind"] == "contract_retry":
+        if context.previous and context.attempt["kind"] == "contract_retry" and not packet.get("retry_context"):
             error = mask_secrets(context.previous.get("error_detail") or "Report missing or invalid")
             packet["validation_error"] = error
             prompt += "\n\nReport validation error from the previous attempt:\n" + error
-        elif context.previous and context.previous["state"] == "lost" and context.attempt["kind"] == "fresh":
+        elif (context.previous and context.previous["state"] == "lost" and context.attempt["kind"] == "fresh"
+              and not packet.get("retry_context")):
             warning = "The worktree may contain partial uncommitted work. Inspect it first."
             packet["retry_context"] = warning
             prompt += "\n\n" + warning
-        return Prepared(self.command(context), prompt, files.system, packet)
+        return Prepared(self.command(context), prompt, files.system, packet, len(files.text.encode("utf-8")))
 
     def parse_event(self, line: bytes, *, context: Claim | None = None,
                     quiet_seconds: float = 0) -> EventUpdate:
@@ -235,12 +230,9 @@ class CodexAdapter:
         try:
             result = reports.read_result(context.directory / "report.md", entry["role"]["contract"],
                                          t_launch=context.attempt["t_launch"], on_changes=bool(step["onChanges"]))
+            head = reports.validate_git(result, context.job, context.execution)
         except reports.ReportError as error:
             return ExitOutcome("invalid", "contract", mask_secrets(str(error)))
-        # TODO (plan §7.2/§11, session 1.8): enforce git cleanliness, review head
-        # immutability and builder commits in the shared git/report validator.
-        try:
-            head = self.head_reader(Path(context.job["worktree"]))
         except (OSError, subprocess.CalledProcessError) as error:
             return ExitOutcome("failed", "crash", mask_secrets(f"Cannot read worktree HEAD: {error}"))
         return ExitOutcome("valid", completion=pipeline.Completion(

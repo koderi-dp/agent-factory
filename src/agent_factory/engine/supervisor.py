@@ -1,7 +1,6 @@
 """Attempt launch/recovery, durable logs, port leases, Stop and timeouts (§6.4, §9).
 
 Adapters are injected; no provider executable or provider module is required.
-TODO (plan §8.2, session 1.8): supply the real packet/system prompt builder.
 TODO (plan §3.1, session 1.9): service timer/wake-ups call tick() and own its lifetime.
 """
 
@@ -238,7 +237,8 @@ class Supervisor:
             run_cli.atomic_write(directory / "system.md", prepared.system.encode("utf-8"))
             run_cli.atomic_json(directory / "command.json", dict(prepared.command))
             run_cli.atomic_json(directory / "packet.json", dict(prepared.packet))
-            self._update(context, {"packet_bytes": len(prepared.prompt.encode("utf-8"))})
+            self._update(context, {"packet_bytes": prepared.packet_bytes if prepared.packet_bytes is not None
+                                  else len(prepared.prompt.encode("utf-8"))})
             crash_at("after_prepare")
             spawned_at = pipeline._now()
             child = winjob.spawn_wrapper(directory, token)

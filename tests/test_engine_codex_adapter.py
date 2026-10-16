@@ -6,10 +6,13 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+import time
 
 import pytest
 
 from agent_factory import run_cli
+from agent_factory.engine import gitops
 from agent_factory.engine.adapters import get_adapter
 from agent_factory.engine.adapters.base import Prompt, UnsupportedProviderError, mask_secrets
 from agent_factory.engine.adapters.codex import CodexAdapter
@@ -39,7 +42,14 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
     identifier = create_repo(tmp_path / "repo č")
     scheduler = Scheduler()
-    adapter = CodexAdapter(prompt_builder=packet, head_reader=lambda path: "head")
+    root, writer = scheduler.repos[identifier]
+    worktree = root / "worktree-1"
+    for args in [("init", "-q", "-b", "factory/001-job"), ("config", "user.name", "test"),
+                 ("config", "user.email", "test@localhost"), ("commit", "-q", "--allow-empty", "-m", "base")]:
+        gitops.checked(*args, cwd=worktree)
+    current = gitops.head(worktree)
+    writer.call(lambda connection: connection.execute("UPDATE executions SET head_before=?", (current,)))
+    adapter = CodexAdapter(prompt_builder=packet)
     supervisor = Supervisor(scheduler, {"codex": adapter})
     supervisor.start()
     context = scheduler.claim_next()
@@ -127,8 +137,7 @@ def test_path_fallback_missing_session_and_lost_work_warning(store):
     context.attempt.update(kind="resume", session_id=None)
     with pytest.raises(ValueError, match="exact thread.started"):
         adapter.command(context)
-    with pytest.raises(ValueError, match="packet builder"):
-        CodexAdapter().prepare(context)
+    assert callable(CodexAdapter().prompt_builder)
 
 
 def test_resume_parent_flags_are_accepted_by_installed_cli(store):
@@ -307,19 +316,48 @@ def test_assistant_only_run_can_show_thinking_after_twenty_seconds(store):
     assert context.attempt["last_activity"] == "thinking"
 
 
-def test_real_git_head_is_returned_and_unavailable_git_evidence_pauses(store):
+def test_real_git_head_is_returned_and_unavailable_git_evidence_pauses(store, monkeypatch):
     _, _, context = store
     worktree = Path(context.job["worktree"])
-    subprocess.run(["git", "init", "-q", str(worktree)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(worktree), "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
-                    "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "Test head"],
-                   check=True, capture_output=True)
     head = subprocess.check_output(["git", "-C", str(worktree), "rev-parse", "HEAD"], text=True).strip()
     (context.directory / "report.md").write_text("APPROVE\n")
     outcome = CodexAdapter().classify(context, {"exit_code": 0})
     assert outcome.completion.head_after == outcome.current_head == head
     assert outcome.completion.report_path == context.attempt["dir"] + "/report.md"
-    def unavailable(path):
+    def unavailable(*args):
         raise FileNotFoundError("git missing")
-    outcome = CodexAdapter(head_reader=unavailable).classify(context, {"exit_code": 0})
+    monkeypatch.setattr(gitops, "validate_result", unavailable)
+    outcome = CodexAdapter().classify(context, {"exit_code": 0})
     assert (outcome.state, outcome.error_class) == ("failed", "crash")
+
+
+def test_default_packet_is_written_and_its_bytes_recorded_with_fake_cli(store):
+    scheduler, supervisor, context = store
+    folder = context.root / "factory/jobs" / context.job["id"]
+    (folder / "request.md").write_text("Approve the committed feature.", encoding="utf-8")
+    run_cli.atomic_json(context.directory / "scenario.json", {
+        "report": "APPROVE\n", "report_path": str(context.directory / "report.md"), "sleep": 0.1})
+    fake = Path(__file__).with_name("fake_cli.py").resolve()
+    adapter = CodexAdapter()
+    adapter.command = lambda claim: {"argv": [sys._base_executable, "-I", "-S", str(fake), "--scenario",
+                                              str(context.directory / "scenario.json")],
+                                      "cwd": context.job["worktree"], "stdin": "prompt.md", "env": {}}
+    supervisor.adapters["codex"] = adapter
+    supervisor.launch(context)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        supervisor.poll()
+        updated = scheduler.context(context.repo_id, context.attempt["id"])
+        if updated.attempt["state"] == "valid":
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError(updated.attempt)
+    from agent_factory.engine.packet import render
+    packet_data = json.loads((context.directory / "packet.json").read_bytes())
+    assert updated.attempt["packet_bytes"] == len(render(packet_data).encode("utf-8"))
+    system = (context.directory / "system.md").read_bytes()
+    assert (context.directory / "prompt.md").read_bytes().startswith(system + b"\n\n")
+    assert updated.job["state"] == "needs_human" and updated.job["pause_reason"] == "verify"
+    for child in supervisor._children.values():
+        child.wait(timeout=15)

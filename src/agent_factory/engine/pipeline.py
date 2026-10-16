@@ -29,7 +29,7 @@ class PipelineError(ValueError):
 
 @dataclass(frozen=True)
 class Completion:
-    """Evidence already validated by reports and (in §7.2/1.8) git checks."""
+    """Evidence already validated by reports and git checks (§7.2)."""
 
     result: str
     head_after: str
@@ -250,7 +250,8 @@ def advance(job: Row, executions: Sequence[Row], results: Mapping[int, Completio
             reason = "verify"
         else:
             # TODO (plan §10.3, session 2.2): sensitive-path guard before any merge.
-            # TODO (plan §11, session 1.8): consume approved with frozen merge=auto.
+            # TODO (plan §3.1/§11, session 1.9): the service consumes approved
+            # with frozen merge=auto by calling gitops.merge outside this tx.
             return Transition("approved", {"state": "approved", "pause_reason": None,
                                             "note": None, "approved_head": current_head},
                               completed=tuple(completed))

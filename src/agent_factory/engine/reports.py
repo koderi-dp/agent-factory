@@ -1,10 +1,12 @@
-"""Report contracts and handoff sections, without git or process operations (§7.2)."""
+"""Report contracts, handoff sections and shared acceptance checks (§7.2)."""
 
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Mapping
+from typing import Any
 
 
 class ReportError(ValueError):
@@ -79,6 +81,13 @@ def read_result(path: str | Path, contract: str, *, t_launch: str | datetime | f
             text = stream.read().decode("utf-8-sig")
     except (OSError, UnicodeError) as exc:
         raise ReportError(f"cannot read report {path}: {exc}") from exc
-    # TODO (plan §7.2, session 1.8): git cleanliness, immutable review/approval heads,
-    # and the builder commit check are performed before accepting the report.
     return parse_report(text, contract, on_changes=on_changes)
+
+
+def validate_git(report: Report, job: Mapping[str, Any], execution: Mapping[str, Any]) -> str:
+    """Provider-neutral validation before a completion can reach the pipeline."""
+    from agent_factory.engine import gitops
+    try:
+        return gitops.validate_result(job, execution, report.verdict)
+    except gitops.GitError as error:
+        raise ReportError(str(error)) from error
