@@ -257,7 +257,7 @@ def test_assignment_retains_task_ux_ui_slots_without_giving_code_review_ports():
     assert ports.assigned(5100, {"uses": "reviewer-code", "type": "review"}) == ()
 
 
-def test_listener_inspection_includes_ipv6_unknown_owners_and_fails_closed(monkeypatch):
+def test_listener_inspection_includes_ipv6_unknown_owners_and_falls_back(monkeypatch):
     monkeypatch.setattr(
         psutil, "net_connections", lambda **kwargs: [
             SimpleNamespace(status=psutil.CONN_LISTEN, laddr=SimpleNamespace(port=5101), pid=None),
@@ -267,9 +267,21 @@ def test_listener_inspection_includes_ipv6_unknown_owners_and_fails_closed(monke
     found = ports.listeners()
     assert found == (ports.Listener(5101, None, "unknown process", None), )
     assert ports.foreign(found, 5100, []) == found[0]
+    # On macOS net_connections raises AccessDenied; fall back to per-process
+    # enumeration, skipping the processes we cannot inspect.
     monkeypatch.setattr(psutil, "net_connections", Mock(side_effect=psutil.AccessDenied()))
-    with pytest.raises(ports.PortsUnavailable, match="Cannot inspect"):
-        ports.listeners()
+    monkeypatch.setattr(
+        psutil, "process_iter", lambda: [
+            SimpleNamespace(pid=42,
+                            connections=lambda **kwargs: [
+                                SimpleNamespace(status=psutil.CONN_LISTEN,
+                                                laddr=SimpleNamespace(port=5103),
+                                                pid=42)
+                            ]),
+            SimpleNamespace(pid=43, connections=Mock(side_effect=psutil.AccessDenied())),
+        ])
+    monkeypatch.setattr(psutil, "Process", Mock(side_effect=psutil.NoSuchProcess(42)))
+    assert ports.listeners() == (ports.Listener(5103, 42, "unknown process", None), )
 
 
 @pytest.mark.parametrize("fallback", [False, True])
