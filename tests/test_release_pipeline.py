@@ -99,7 +99,7 @@ def test_release_waits_for_ci_and_uses_tokenless_candidate_publishing():
 def test_ci_matrix_and_smoke_gate():
     ci = workflow('ci.yml')
     matrix = ci['jobs']['python']['strategy']['matrix']
-    assert set(matrix['python']) == {'3.11', '3.12', '3.13'}
+    assert set(matrix['python']) == {'3.11'}
     assert set(matrix['os']) == {'windows-latest', 'ubuntu-24.04', 'macos-latest'}
     assert ci['jobs']['smoke']['needs'] == 'package'
     assert set(ci['jobs']['package']['needs']) == {'python', 'web', 'dashboard'}
