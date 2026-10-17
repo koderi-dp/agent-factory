@@ -39,14 +39,20 @@ def smoke(directory: Path, root: Path) -> None:
     env['PATH'] = str(root / 'bin') + os.pathsep + env.get('PATH', '')
 
     def run(*args: str, timeout: int = 60) -> str:
-        result = subprocess.run(args,
-                                cwd=repo,
-                                env=env,
-                                check=True,
-                                capture_output=True,
-                                text=True,
-                                encoding='utf-8',
-                                timeout=timeout)
+        try:
+            result = subprocess.run(args,
+                                    cwd=repo,
+                                    env=env,
+                                    check=True,
+                                    capture_output=True,
+                                    text=True,
+                                    encoding='utf-8',
+                                    timeout=timeout)
+        except subprocess.CalledProcessError as error:
+            print(f"failed: {args}\nstdout:\n{error.stdout}\nstderr:\n{error.stderr}",
+                  file=sys.stderr,
+                  flush=True)
+            raise
         return result.stdout
 
     print(run('uv', 'tool', 'install', '--python', sys.executable, str(wheel)), flush=True)

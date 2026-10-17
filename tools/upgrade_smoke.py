@@ -41,17 +41,23 @@ def smoke(distributions: Path, root: Path) -> None:
     repo.mkdir()
 
     def run(*args: str, extra: dict | None = None) -> str:
-        return subprocess.run(args,
-                              cwd=repo,
-                              env={
-                                  **env,
-                                  **(extra or {})
-                              },
-                              check=True,
-                              capture_output=True,
-                              text=True,
-                              encoding='utf-8',
-                              timeout=120).stdout
+        try:
+            return subprocess.run(args,
+                                  cwd=repo,
+                                  env={
+                                      **env,
+                                      **(extra or {})
+                                  },
+                                  check=True,
+                                  capture_output=True,
+                                  text=True,
+                                  encoding='utf-8',
+                                  timeout=120).stdout
+        except subprocess.CalledProcessError as error:
+            print(f"failed: {args}\nstdout:\n{error.stdout}\nstderr:\n{error.stderr}",
+                  file=sys.stderr,
+                  flush=True)
+            raise
 
     wheels = []
     for version in ('1.0.0', '1.1.0'):
