@@ -349,7 +349,7 @@ def test_contract_retry_is_once_and_fresh(store, reports, expected):
     assert state(scheduler, identifier) == ("needs_human", expected)
     assert len(list((root / "invocations").iterdir())) == 2
     retry = scheduler.context(identifier, attempts[1]["id"])
-    assert "invalid first line" in (retry.directory / "prompt.md").read_text()
+    assert "invalid first line" in (retry.directory / "prompt.md").read_text(encoding="utf-8")
 
 
 def test_nonzero_exit_pauses_via_injected_classifier(store):
@@ -626,7 +626,7 @@ def test_rework_rejects_live_peer_without_superseding_it(tmp_path, monkeypatch):
         def prepare(self, context):
             prepared = super().prepare(context)
             path = context.directory / "scenario.json"
-            scenario = json.loads(path.read_text())
+            scenario = json.loads(path.read_text(encoding="utf-8"))
             scenario.update(sleep=0.1 if context.execution["exec_id"] == "review-0" else 60,
                             report="invalid")
             run_cli.atomic_json(path, scenario)

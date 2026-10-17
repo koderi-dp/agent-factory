@@ -554,7 +554,7 @@ def test_repeated_port_roles_bind_distinct_slots_and_serialize_overflow(
         def prepare(self, context):
             prepared = super().prepare(context)
             path = context.directory / "scenario.json"
-            scenario = json.loads(path.read_text())
+            scenario = json.loads(path.read_text(encoding="utf-8"))
             scenario.update(bind_ports=list(context.ports), sleep=0.7)
             run_cli.atomic_json(path, scenario)
             return prepared

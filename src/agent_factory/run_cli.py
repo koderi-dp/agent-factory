@@ -195,7 +195,9 @@ def posix_descendants(token: str) -> dict[int, float]:
         ]
     else:
         ps = ps_program()
-        output = subprocess.check_output([ps, "eww", "-axo", "pid=,command="], text=True)
+        output = subprocess.check_output([ps, "eww", "-axo", "pid=,command="],
+                                         text=True,
+                                         errors="replace")
         candidates = [
             int(line.split()[0]) for line in output.splitlines() if marker in line.split()[1:]
         ]
@@ -207,7 +209,7 @@ def posix_descendants(token: str) -> dict[int, float]:
                 owned = marker.encode() in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
             else:
                 environment = subprocess.check_output(
-                    [ps, "eww", "-p", str(pid), "-o", "command="], text=True)
+                    [ps, "eww", "-p", str(pid), "-o", "command="], text=True, errors="replace")
                 owned = marker in environment.split()
             # Capture identity BEFORE reading ownership, and reject PID reuse
             # during that read. Never attach an old token to a new process.

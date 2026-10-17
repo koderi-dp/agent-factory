@@ -63,7 +63,7 @@ class StubAdapter:
     def prepare(self, context):
         directory = context.directory
         settings = context.root / "scenario.json"
-        scenario = json.loads(settings.read_text()) if settings.exists() else {}
+        scenario = json.loads(settings.read_text(encoding="utf-8")) if settings.exists() else {}
         defaults = {
             "sleep":
             0.1,

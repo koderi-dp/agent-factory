@@ -27,7 +27,7 @@ def main():
             root = args.root / name
             ids.append(create_repo(root, jobs=0))
             config_path = root / "factory/config.json"
-            config = json.loads(config_path.read_text())
+            config = json.loads(config_path.read_text(encoding="utf-8"))
             task = {
                 "id": "build",
                 "uses": "builder",
