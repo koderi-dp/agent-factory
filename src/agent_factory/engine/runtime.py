@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+from datetime import date, timedelta
 from collections.abc import Mapping
 import hashlib
 import json
@@ -13,7 +14,8 @@ import threading
 from typing import Any
 
 from agent_factory import run_cli
-from agent_factory.engine import backlog, db, gitops, legacy, packet, pipeline, registry, versioning
+from agent_factory.engine import (backlog, db, gitops, legacy, packet, pipeline, registry, usage,
+                                  versioning)
 from agent_factory.engine.adapters.codex import CodexAdapter
 from agent_factory.engine.adapters.opencode import OpencodeAdapter
 from agent_factory.engine.config import load_config, load_machine_settings
@@ -284,6 +286,21 @@ class Runtime:
         page = events[:limit]
         next_cursor = _encode_cursor(page[-1]) if len(events) > limit and page else None
         return {"repos": repos, "events": page, "next": next_cursor}
+
+    def usage(self, days: int, today: date) -> dict[str, Any]:
+        since = (today - timedelta(days=days - 1)).isoformat()
+
+        def read(connection: sqlite3.Connection, repo) -> list[dict[str, Any]]:
+            return [{
+                "repo_id": repo.id,
+                "repo_name": repo.name,
+                **bucket
+            } for bucket in usage.daily(connection, since=since)]
+
+        with self.lock:
+            repos, rows = self._read_repos(None, read)
+        rows.sort(key=lambda row: (row["day"], row["repo_id"], row["provider"]))
+        return {"days": days, "since": since, "repos": repos, "rows": rows}
 
     def overview(self) -> dict[str, Any]:
         with self.lock:

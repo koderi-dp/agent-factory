@@ -119,6 +119,7 @@ const invalidateCrossRepo = (client: QueryClient) =>
   Promise.all([
     client.invalidateQueries({ queryKey: ["jobs"] }),
     client.invalidateQueries({ queryKey: ["activity"] }),
+    client.invalidateQueries({ queryKey: ["usage"] }),
   ]);
 
 export function connectOverview(client: QueryClient, onConnection?: (state: Connection) => void) {

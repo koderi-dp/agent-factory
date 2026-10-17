@@ -210,6 +210,28 @@ export const activityFeedSchema = z.object({
   ),
   next: nullableText,
 });
+const usageMetric = z.object({ value: z.number().nullable(), unknown: id });
+export const usageSchema = z.object({
+  days: id,
+  since: z.string(),
+  repos: z.array(crossRepo),
+  rows: z.array(
+    z.looseObject({
+      day: z.string(),
+      repo_id: z.string(),
+      repo_name: z.string(),
+      provider: z.string(),
+      attempts: id,
+      input: usageMetric,
+      cached_input: usageMetric,
+      output: usageMetric,
+      cost_usd: usageMetric,
+    }),
+  ),
+});
+export type Usage = z.infer<typeof usageSchema>;
+export type UsageRow = Usage["rows"][number];
+export type UsageMetric = z.infer<typeof usageMetric>;
 export type CrossJob = z.infer<typeof crossJobsSchema>["jobs"][number];
 export type ActivityEntry = z.infer<typeof activityFeedSchema>["events"][number];
 export const eventTypes = [
@@ -268,6 +290,7 @@ export const keys = {
     ["jobs", ...(states ?? []), ...(repo ? ["repo", repo] : [])] as const,
   activity: (limit?: number) => ["activity", limit ?? null] as const,
   activityLog: (repo?: string) => ["activity", "log", repo ?? "all"] as const,
+  usage: (days: number) => ["usage", days] as const,
 };
 export const api = {
   overview: () => request("/overview", overviewSchema),
@@ -291,6 +314,7 @@ export const api = {
     const text = query.toString();
     return request(`/activity${text ? `?${text}` : ""}`, activityFeedSchema);
   },
+  usage: (days: number) => request(`/usage?days=${days}`, usageSchema),
   state: (repo: string) => request(`${repoPath(repo)}/state`, stateSchema),
   job: (repo: string, job: string) =>
     request(`${repoPath(repo)}/jobs/${encodeURIComponent(job)}`, detailSchema),

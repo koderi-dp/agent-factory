@@ -41,6 +41,7 @@ export function createDashboardRouter(history: RouterHistory) {
           ...(typeof search.status === "string" && search.status ? { status: search.status } : {}),
         }),
       }),
+      route("/usage"),
       route("/repo/$repo"),
       createRoute({
         getParentRoute: () => root,

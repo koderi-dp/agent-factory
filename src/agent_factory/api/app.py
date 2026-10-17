@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import html
 import json
 import logging
@@ -240,6 +241,10 @@ def create_app(*,
                  cursor: str | None = None,
                  type: Annotated[list[str] | None, Query()] = None) -> dict:
         return engine().activity(limit, repo, cursor, type)
+
+    @app.get("/api/usage")
+    def usage(days: Annotated[int, Query(ge=1, le=366)] = 30) -> dict:
+        return engine().usage(days, datetime.now(timezone.utc).date())
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:

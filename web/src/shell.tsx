@@ -6,6 +6,7 @@ import { connectOverview, connectRepo } from "@/lib/sse";
 import { Board } from "@/features/board/Board";
 import { JobDetail } from "@/features/job/JobDetail";
 import { JobsList } from "@/features/jobs/JobsList";
+import { UsagePage } from "@/features/usage/UsagePage";
 import { ActivityLog } from "@/features/activity/ActivityLog";
 import { Overview } from "@/features/overview/Overview";
 import { Button } from "@/ui/primitives/button";
@@ -79,6 +80,7 @@ export function Shell() {
       : [{ label: "Overview", href: "/", active: pathname === "/" }]),
     { label: "Activity", href: "/activity", active: pathname === "/activity" },
     { label: "Jobs", href: "/jobs", active: pathname === "/jobs" },
+    { label: "Usage", href: "/usage", active: pathname === "/usage" },
     ...(repo
       ? [
           { label: "Board", href: base, active: pathname === `/repo/${repo}` },
@@ -182,6 +184,7 @@ export function Shell() {
         }
       />
     );
+  else if (pathname === "/usage") page = <UsagePage />;
   else if (pathname === "/") page = <Overview repos={overview.data.repos} />;
   else if (selected && pathname.endsWith("/backlog"))
     page = <Backlog key={selected.id} repo={selected.id} />;
