@@ -163,9 +163,14 @@ test("dark screenshot baselines and axe contrast", async ({ page, engine }) => {
       { timeout: 30_000 },
     )
     .toBe("needs_human");
-  await expect(page.getByText("Needs you", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Factory summary" }).getByText("Needs you", { exact: true }),
+  ).toBeVisible();
   await capture("board");
-  await page.getByRole("link", { name: "Visual fixture" }).click();
+  await page
+    .getByRole("region", { name: "test pipeline" })
+    .getByRole("link", { name: "Visual fixture" })
+    .click();
   await expect(page.getByRole("button", { name: "Merge", exact: true })).toBeVisible();
   await capture("job-detail");
   await expect(page.getByRole("list", { name: "Pipeline executions" })).toHaveScreenshot(

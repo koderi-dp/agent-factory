@@ -90,6 +90,11 @@ kanban) is not started and needs a design decision first.
 - Backlog template no longer includes the placeholder "Describe your next feature" as real work.
 - Overview is hidden in the sidebar when only one repository is registered. With one repo, "/"
   redirects to the board, so Overview could never be reached.
+- Factory home (chosen direction): a summary row (running, needs you, queued, merged), a
+  "Waiting on you" panel linking to each job that needs a decision, and the feature box always
+  visible above the pipeline lanes. The shared-ui and redix starter repos use the same component
+  system as `web/src/ui`, and their dashboard is a generic item tracker, so they were used as
+  reference only.
 - Not done: the "Set up this folder" card with prerequisite fixes. The doctor checks are only
   in the CLI; a dashboard version needs a new API endpoint.
 - Verified in the browser on a fresh folder: the empty board renders with the new card. The Run

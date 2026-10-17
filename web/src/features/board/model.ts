@@ -94,3 +94,18 @@ export function activityState(
   const quiet = execution.state === "running" && !!at && now - Date.parse(at) >= 600_000;
   return { text: live?.text ?? attempt?.last_activity ?? "Waiting for activity", at, quiet };
 }
+
+export function jobSummary(jobs: Job[]) {
+  const count = (state: Job["state"][]) => jobs.filter((job) => state.includes(job.state)).length;
+  return {
+    running: count(["running"]),
+    queued: count(["queued"]),
+    needsYou: count(["paused", "needs_human"]),
+    merged: count(["merged"]),
+  };
+}
+
+/** Jobs that stopped for a person: paused on a blocker, or waiting on a decision. */
+export function needsYouJobs(jobs: Job[]): Job[] {
+  return jobs.filter((job) => job.state === "paused" || job.state === "needs_human");
+}

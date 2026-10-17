@@ -6,6 +6,7 @@ import { Badge } from "@/ui/primitives/badge";
 import { LegacyJobCard } from "./LegacyJobCard";
 import { JobCard } from "./JobCard";
 import { StartFeature } from "./StartFeature";
+import { FactorySummary } from "./FactorySummary";
 import { boardColumns, boardGroups, jobColumn } from "./model";
 
 export function Board({ repo, name, now }: { repo: string; name: string; now: number }) {
@@ -28,9 +29,10 @@ export function Board({ repo, name, now }: { repo: string; name: string; now: nu
       <PageHeader
         kicker="Board"
         title={name}
-        description={`${state.jobs.length} jobs · ${state.backlog.length} in backlog`}
+        description={`${state.jobs.length} ${state.jobs.length === 1 ? "job" : "jobs"} · ${state.backlog.length} in backlog`}
       />
-      {!state.jobs.length && <StartFeature repo={repo} pipeline={state.config.defaultPipeline} />}
+      <StartFeature repo={repo} pipeline={state.config.defaultPipeline} />
+      <FactorySummary repo={repo} jobs={state.jobs} />
       {boardGroups(state).map((group, i) => {
         const columns = boardColumns(group.steps, group.jobs);
         return (
