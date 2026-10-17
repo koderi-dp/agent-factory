@@ -44,12 +44,13 @@ export function filterEntries(entries: LogEntry[], filter: { stage?: string; age
 
 export function findMatches(entries: LogEntry[], query: string, raw: boolean): LogMatch[] {
   if (!query) return [];
-  const needle = query.toLowerCase(),
+  // Match case-insensitively on the text itself: lowercasing can change a string's length
+  // (U+0130), which would shift the offsets the highlighter slices with.
+  const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
     matches: LogMatch[] = [];
   for (const entry of entries) {
-    const text = entryText(entry, raw).toLowerCase();
-    for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + needle.length)) {
-      matches.push({ entry, start: at, end: at + needle.length });
+    for (const m of entryText(entry, raw).matchAll(pattern)) {
+      matches.push({ entry, start: m.index, end: m.index + m[0].length });
     }
   }
   return matches;

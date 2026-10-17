@@ -6,7 +6,8 @@ import { appendLog, type LogEntry } from "./log-lines";
 export type LogSource = { attempt: number; stage: string; agent: string; live: boolean };
 
 export function useLogEntries(repo: string, sources: LogSource[]): LogEntry[] {
-  const [buffers, setBuffers] = useState<Record<number, string>>({});
+  // `dropped` counts the head lines the cap discarded, so entry keys stay tied to their line.
+  const [buffers, setBuffers] = useState<Record<number, { text: string; dropped: number }>>({});
   const open = useRef(new Map<number, () => void>());
   const latest = useRef(sources);
   latest.current = sources;
@@ -27,8 +28,16 @@ export function useLogEntries(repo: string, sources: LogSource[]): LogEntry[] {
       if (open.current.has(source.attempt)) continue;
       const id = source.attempt;
       const append = (text: string) =>
-        setBuffers((old) => ({ ...old, [id]: appendLog(old[id] ?? "", text) }));
-      setBuffers((old) => (id in old ? old : { ...old, [id]: "" }));
+        setBuffers((old) => {
+          const previous = old[id] ?? { text: "", dropped: 0 },
+            next = appendLog(previous.text, text),
+            total = previous.text.split("\n").length + text.split("\n").length - 1;
+          return {
+            ...old,
+            [id]: { text: next, dropped: previous.dropped + total - next.split("\n").length },
+          };
+        });
+      setBuffers((old) => (id in old ? old : { ...old, [id]: { text: "", dropped: 0 } }));
       if (source.live) {
         open.current.set(
           id,
@@ -68,10 +77,11 @@ export function useLogEntries(repo: string, sources: LogSource[]): LogEntry[] {
   return useMemo(
     () =>
       sources.flatMap((s) => {
-        const lines = (buffers[s.attempt] ?? "").split("\n");
+        const buffer = buffers[s.attempt] ?? { text: "", dropped: 0 };
+        const lines = buffer.text.split("\n");
         if (lines.at(-1) === "") lines.pop();
         return lines.map((line, i) => ({
-          key: `${s.attempt}:${i}`,
+          key: `${s.attempt}:${buffer.dropped + i}`,
           stage: s.stage,
           agent: s.agent,
           line,

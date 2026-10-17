@@ -109,8 +109,11 @@ export function LogView({
   const scrollTo = useCallback((top: number) => {
     const el = box.current;
     if (!el) return;
-    programmatic.current = true;
+    const before = el.scrollTop;
     el.scrollTop = top;
+    // A scroll event only fires when the position moves; flagging a no-op would swallow the
+    // next user scroll.
+    if (el.scrollTop !== before) programmatic.current = true;
     setScroll(el.scrollTop);
   }, []);
 
@@ -126,6 +129,12 @@ export function LogView({
     setFollowing(false);
     scrollTo((rowOf.get(m.entry.key) ?? 0) * rowHeight - viewport / 2 + rowHeight / 2);
   };
+
+  // Pin the current match to its entry, so newly streamed matches do not take its place.
+  useEffect(() => {
+    if (current && (currentKey?.key !== current.entry.key || currentKey.start !== current.start))
+      setCurrentKey({ key: current.entry.key, start: current.start });
+  }, [current, currentKey]);
 
   useEffect(() => {
     setAgent((a) => (a && agents.includes(a) ? a : undefined));
