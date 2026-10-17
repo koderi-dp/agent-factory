@@ -12,6 +12,7 @@ import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
+import webbrowser
 
 import psutil
 
@@ -167,7 +168,7 @@ def ensure(*, port: int | None = None) -> dict[str, Any]:
             child.wait()
 
 
-def serve(port: int | None = None) -> int:
+def serve(port: int | None = None, *, open_browser: bool = False) -> int:
     home = machine_dir()
     lock = FileLock(home / "service.lock")
     if not lock.acquire():
@@ -177,6 +178,8 @@ def serve(port: int | None = None) -> int:
             data = info()
             if data is not None:
                 print(url(data))
+                if open_browser:
+                    webbrowser.open(url(data))
                 return 0
             time.sleep(0.05)
         raise ServiceError("Service lock is held but service.json is unavailable")
@@ -233,6 +236,8 @@ def serve(port: int | None = None) -> int:
             uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
         app.state.shutdown = lambda: setattr(server, "should_exit", True)
         print(url(data), flush=True)
+        if open_browser:
+            webbrowser.open(url(data))
         server.run(sockets=[listener])
         return 0
     finally:

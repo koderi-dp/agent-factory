@@ -571,8 +571,10 @@ def test_cli_dispatches_via_api_and_waits(api, monkeypatch, capsys, tmp_path):
                                 "factory/jobs/001-via-cli/request.md").read_text(encoding="utf-8")
     assert cli.main(["status", "001-via-cli", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["job"]["pipeline_name"] == "fast"
+    (root / "factory/backlog.md").write_text("# Backlog\n\n- [ ] Ship the next thing\n",
+                                             encoding="utf-8")
     assert cli.main(["next"]) == 0
-    assert "002-describe-your-next-feature" in capsys.readouterr().out
+    assert "002-ship-the-next-thing" in capsys.readouterr().out
     opened = []
     monkeypatch.setattr(cli.webbrowser, "open", opened.append)
     assert cli.main(["dashboard"]) == 0

@@ -5,6 +5,7 @@ import { PageShell } from "@/ui/page-shell";
 import { Badge } from "@/ui/primitives/badge";
 import { LegacyJobCard } from "./LegacyJobCard";
 import { JobCard } from "./JobCard";
+import { StartFeature } from "./StartFeature";
 import { boardColumns, boardGroups, jobColumn } from "./model";
 
 export function Board({ repo, name, now }: { repo: string; name: string; now: number }) {
@@ -29,11 +30,7 @@ export function Board({ repo, name, now }: { repo: string; name: string; now: nu
         title={name}
         description={`${state.jobs.length} jobs · ${state.backlog.length} in backlog`}
       />
-      {!state.jobs.length && (
-        <p className="text-sm text-muted-foreground">
-          No jobs yet. Start a job with factory start or from the backlog.
-        </p>
-      )}
+      {!state.jobs.length && <StartFeature repo={repo} pipeline={state.config.defaultPipeline} />}
       {boardGroups(state).map((group, i) => {
         const columns = boardColumns(group.steps, group.jobs);
         return (

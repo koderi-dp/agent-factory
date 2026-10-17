@@ -325,10 +325,13 @@ def doctor(root: Path | None = None) -> list[dict[str, Any]]:
         if (name in {"codex", "claude", "opencode"} and not override and path
                 and Path(path).is_file()):
             discoveries[name] = str(Path(path).resolve())
+        ok = bool(path and Path(path).is_file())
         checks.append({
             "check": name,
-            "ok": bool(path and Path(path).is_file()),
-            "detail": path or "not found on PATH"
+            "ok": ok,
+            "detail": path or "not found on PATH",
+            "required": name == "git",
+            "fix": None if ok else _TOOL_FIXES[name]
         })
     if discoveries:
         connection = registry.open_registry()
@@ -343,30 +346,74 @@ def doctor(root: Path | None = None) -> list[dict[str, Any]]:
             connection.close()
     if root is not None and shutil.which("git"):
         result = subprocess.run(["git", "status", "--porcelain"], cwd=root, capture_output=True)
-        checks.append({"check": "git repository", "ok": result.returncode == 0})
+        ok = result.returncode == 0
+        checks.append({
+            "check": "git repository",
+            "ok": ok,
+            "detail": "ok" if ok else str(root),
+            "required": False,
+            "fix": None if ok else "Run `factory init` in the project folder."
+        })
     # CLI login stores differ by provider/version; inspect presence, never print secrets.
     home = Path.home()
     import os
     codex_home = Path(os.environ.get("CODEX_HOME", home / ".codex"))
-    for name, candidates in (("codex login", [codex_home / "auth.json"]),
-                             ("claude login", [home / ".claude/.credentials.json"]),
-                             ("opencode login", [home / ".local/share/opencode/auth.json"])):
+    for name, candidates, fix in (
+        ("codex login", [codex_home / "auth.json"], "Run `codex login`."),
+        ("claude login", [home / ".claude/.credentials.json"], "Run `claude` and sign in."),
+        ("opencode login", [home / ".local/share/opencode/auth.json"],
+         "Sign in to OpenCode, then run this check again."),
+    ):
         present = any(path.is_file() for path in candidates)
         checks.append({
-            "check":
-            name,
-            "ok":
-            present,
-            "detail":
-            "saved credentials found (validity checked on use)"
-            if present else "no credential file found; run the provider's login command"
+            "check": name,
+            "ok": present,
+            "detail": "saved credentials found (validity checked on use)"
+            if present else "no credential file found",
+            "required": False,
+            "fix": None if present else fix
         })
     start, end = map(int, settings.ports.range.split("-"))
     occupied = ports.listeners(range(start, end + 1))
+    free = end - start + 1 - len({p.port for p in occupied})
     checks.append({
-        "check": "ports",
-        "ok": len({p.port
-                   for p in occupied}) < end - start + 1,
-        "detail": f"{settings.ports.range}: {len(occupied)} listeners"
+        "check":
+        "ports",
+        "ok":
+        free > 0,
+        "detail":
+        f"{settings.ports.range}: {len(occupied)} listeners",
+        "required":
+        True,
+        "fix":
+        None if free > 0 else "Stop a process using a port in that range, or widen it: "
+        "factory config --machine ports.range=5000-5999"
+    })
+    dashboard_busy = bool(ports.listeners(range(DASHBOARD_PORT, DASHBOARD_PORT + 1)))
+    checks.append({
+        "check":
+        "dashboard port",
+        "ok":
+        not dashboard_busy,
+        "detail":
+        f"127.0.0.1:{DASHBOARD_PORT} " + ("in use" if dashboard_busy else "free"),
+        "required":
+        False,
+        "fix":
+        None if not dashboard_busy else
+        "Something else uses this port. Start the dashboard elsewhere: factory serve --port 5199"
     })
     return checks
+
+
+DASHBOARD_PORT = 5099
+_TOOL_FIXES = {
+    "git": "Install Git (https://git-scm.com), then open a new terminal.",
+    "codex": "Install the Codex CLI, or set its path: factory config --machine cli.codex=<path>",
+    "claude": "Install the Claude Code CLI, or set its path: "
+    "factory config --machine cli.claude=<path>",
+    "opencode": "Install OpenCode, or set its path: factory config --machine cli.opencode=<path>",
+    "agent-browser": "Optional, for browser checks: npm install -g agent-browser && "
+    "agent-browser install",
+    "agent-factory": "Reinstall the engine: uv tool install agent-factory-engine",
+}

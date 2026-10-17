@@ -8,48 +8,103 @@ for you.
 ## Requirements
 
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
-- Git, with a local `main` branch and at least one commit in the project repository.
+- Git. A new folder is set up by `factory init`; an existing repository can use any branch.
 - Claude Code, Codex, or OpenCode CLI, signed in. Install the client you select in the pipeline.
-- [agent-browser](https://github.com/vercel-labs/agent-browser) for browser checks:
-  `npm install -g agent-browser && agent-browser install`.
-- An `AGENTS.md` or `CLAUDE.md` describing project setup, development server, and validation.
+- Optional: [agent-browser](https://github.com/vercel-labs/agent-browser) for browser checks:
+  `npm install -g agent-browser && agent-browser install`. `factory doctor` reports it but does
+  not require it.
 
 ## Install
 
-Install the engine once per machine, then initialize each repository:
+Install the engine once per machine:
 
-```powershell
+```bash
 uv tool install agent-factory-engine
-cd C:\path\to\your-project
-factory init
 ```
 
-`factory init` asks which provider to configure if needed. It writes `factory/config.json`,
-`factory/backlog.md`, and the selected provider's skill wrapper. `--provider opencode` writes
-its wrapper to `.opencode/skills/factory/SKILL.md`. Commit those files and the
-`.gitignore` update. A teammate installs the engine and can then use the repository setup.
+Release candidate, from TestPyPI, until the stable release is published:
+
+```bash
+uv tool install --default-index https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agent-factory-engine
+```
 
 If uv is not installed, `install.py` is an optional bootstrap. It prints uv's official
-installation instructions and asks before running the official installer. It then installs
-the engine; `--target` also runs `factory init` in an existing repository:
+installation instructions and asks before running the official installer, then installs the
+engine:
 
 ```powershell
-python install.py --target C:\path\to\your-project
+python install.py
 ```
+
+Pass `--target path/to/your-project` to also run `factory init` in that folder.
+
+## Quick start
+
+Start from any folder, empty or not:
+
+```bash
+cd path/to/your-project
+factory init
+factory doctor
+factory start "build a todo app"
+```
+
+`factory init` asks which client to configure (Enter keeps Codex), shows the plan, and asks once
+before it changes anything:
+
+```text
+Client (claude/codex/opencode/both) [codex]: claude
+Plan for C:\path\to\your-project:
+  would create: git repository on main
+  would write: AGENTS.md (starter; edit the TODO lines)
+  would commit: AGENTS.md as the first commit on main
+  would write: factory/config.json
+  would write: factory/backlog.md
+  would write: .claude/skills/factory/SKILL.md
+  would update: .gitignore
+Continue? [Y/n]
+```
+
+What init does:
+
+- **No git repository:** creates one on `main` and makes a first commit with the starter
+  instructions file. If git has no name or email configured, it stops and prints the two
+  `git config` commands to run.
+- **Existing repository:** uses its current branch as the base branch and records it in
+  `factory/config.json`. Nothing is renamed.
+- **No `AGENTS.md` or `CLAUDE.md`:** writes a starter with `TODO` lines. Edit them to describe
+  your install, dev server and checks. If the folder has a `package.json` with `dev`, `test`,
+  `build` or `lint` scripts, those commands are filled in.
+
+Then commit the factory files (`factory/`, the skill wrapper and `.gitignore`) before the first
+job. The engine never pushes to a remote.
+
+Run `factory --help` for the commands, or `factory <command> --help` for one of them.
 
 ## Use it
 
-Start work in the repository with the provider's skill command:
+Start work with the skill command from your client:
 
 ```text
-$factory Add a dark mode toggle to settings
+/factory Add a dark mode toggle to settings     (Claude Code)
+$factory Add a dark mode toggle to settings     (Codex)
 ```
 
-Claude Code uses `/factory <feature>`. Other commands include `factory status`,
-`factory start <feature>`, `factory stop <job-id>`, `factory merge <job-id>`,
-`factory rework <job-id> <note>`, and `factory delete <job-id>`. Use `factory --help` for the
-available commands. Add work to `factory/backlog.md` or the dashboard backlog, then start it
-with `factory start`.
+Other commands:
+
+| Command | What it does |
+|---|---|
+| `factory start "<title>"` | Queue a job from the title |
+| `factory status` | List jobs and any that need you |
+| `factory approve <job-id>` | Approve a finished job and merge it into the base branch |
+| `factory rework <job-id> "<note>"` | Send a job back to the builder with a note |
+| `factory resume <job-id>` / `factory stop <job-id>` | Resume or stop a job |
+| `factory delete <job-id>` | Delete a job, its worktree and its branch |
+| `factory doctor` | Check tools, logins and ports, with a fix for each problem |
+| `factory dashboard` | Open this repository's dashboard |
+
+You can also add work to `factory/backlog.md` or the dashboard backlog, then start it with
+`factory next`.
 
 ## Define your pipeline
 
@@ -68,11 +123,11 @@ request in the branch, then resume or rework the job. The engine never pushes to
 
 ## The dashboard
 
-Run `factory serve` and open the URL it prints (by default
-`http://127.0.0.1:5099/`). The dashboard shows jobs across registered repositories, pipeline
-steps, reports, timeline, logs and usage. It also supports backlog management, repository
-and machine settings, and job actions such as stop, resume, merge, rework and delete. The
-service listens on localhost.
+Run `factory dashboard` to open the dashboard for this repository, or `factory serve --open` to
+start the service and open it. By default the URL is `http://127.0.0.1:5099/`. The dashboard shows
+jobs across registered repositories, pipeline steps, reports, timeline, logs and usage. It also
+supports backlog management, repository and machine settings, and job actions such as stop,
+resume, approve, rework and delete. The service listens on localhost only.
 
 ## What a job leaves behind
 
@@ -94,7 +149,8 @@ remain repository-local and can be compared with the built-in version using
 
 Set up the development environment with `uv sync --locked`. The Python suite runs with
 `uv run --locked pytest`. Dashboard commands and release checks are documented in
-[`docs/releasing.md`](docs/releasing.md).
+[`docs/releasing.md`](docs/releasing.md). The first-run work is tracked in
+[`docs/first-run-plan.md`](docs/first-run-plan.md).
 
 ## License
 

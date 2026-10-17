@@ -1,3 +1,3 @@
 # Backlog
 
-- [ ] Describe your next feature
+Add features as `- [ ] Title` lines, then run `factory next` to start the next one.

@@ -66,7 +66,10 @@ export function Shell() {
         : overviewConnection;
   const base = repo ? `/repo/${encodeURIComponent(repo)}` : "";
   const nav = [
-    { label: "Overview", href: "/", active: pathname === "/" },
+    // With one repository, "/" redirects to its board, so Overview would be unreachable.
+    ...(overview.data?.repos.length === 1
+      ? []
+      : [{ label: "Overview", href: "/", active: pathname === "/" }]),
     ...(repo
       ? [
           { label: "Board", href: base, active: pathname === `/repo/${repo}` },

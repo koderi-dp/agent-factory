@@ -15,7 +15,7 @@ Status legend: `not started`, `in progress`, `done`.
 - **Mode:** `init` asks once, shows the full list of what it will do, then does it. No flags are
   needed. Without a terminal it uses the defaults and says so.
 
-## Phase 1: guided `init` from an empty folder (in progress: core done)
+## Phase 1: guided `init` from an empty folder (done)
 
 Done:
 
@@ -50,44 +50,50 @@ Not done yet:
 - Existing repos on another branch will now get a `baseBranch` at init. Repos set up before
   this change keep `main` and are unaffected.
 
-## Phase 2: `doctor` matches `init` (not started)
+## Phase 2: `doctor` matches `init` (done)
 
-- Report the same items as `init`, each with a fix command. Exit non-zero when something is
-  missing.
-- Add the dashboard port (5099) to the port check. Today `ports` checks 5100–5999 only
-  (`scaffold.py:273`).
-- Show one stable path per CLI. Codex currently appears under two different paths between runs.
+- Each check has `required` and, when it fails, a `fix` line. `factory doctor` prints the fix.
+- Exit code 0 only when required checks pass (git, port range, project setup when run in a
+  project) and at least one provider CLI is installed. Output says "Ready to run jobs" or "Not
+  ready".
+- New `dashboard port` check (5099). It is informational.
+- Unset folder: `doctor` reports `project setup` as the failing check and says to run `factory init`.
+- Not reproduced: the Codex path that changed between runs. Both runs used different PATH
+  settings, so it is not a bug in the check.
 
-## Phase 3: CLI help and output (not started)
+## Phase 3: CLI help and output (done)
 
-- One-line descriptions for every command in `factory --help`.
-- Resolve `merge`: the README documents `factory merge <job-id>`, but the CLI has no such
-  command (it has `approve`). Either add it or fix the docs.
-- Document `eject`, `doctor`, `dashboard`, `config` in the README.
-- Provider prompt lists all three providers (claude, codex, opencode). It currently lists two.
-- `factory serve` prints the dashboard URL, and `--open` opens it.
+- Every command has a one-line help string, and the top-level help has a description and an
+  example.
+- `factory merge` does not exist; `approve` is the merge step. The README now says so.
+- The provider prompt already lists claude, codex, opencode and both.
+- `factory serve` prints the URL. `--open` opens it in a browser, including when a service is
+  already running.
 
-## Phase 4: README and install (not started)
+## Phase 4: README and install (done)
 
-- "Try the release candidate" block with the working command:
-  `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agent-factory-engine`.
-  The plain `pip install -i https://test.pypi.org/simple/` fails because TestPyPI has a
-  placeholder `fastapi`.
-- Quickstart from an empty folder: install, `factory init`, `factory start "build a todo app"`,
-  with expected output.
-- Say where to type `$factory` (Codex) vs `/factory` (Claude Code).
-- Say whether `agent-browser` is required, and what `doctor` reports when it is missing.
-- Remove the stray `a.txt` (contains only `x`) from the repo root.
+- Release-candidate install command, checked with `uv pip --dry-run`:
+  `uv tool install --default-index https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agent-factory-engine`.
+- Quick start from any folder, with the real init plan output.
+- `/factory` (Claude Code) and `$factory` (Codex) are both shown.
+- agent-browser is marked optional, matching what `doctor` reports.
+- Commands table with the real commands; `factory merge` removed.
+- `a.txt` removed.
 
-## Phase 5: dashboard first run (not started)
+## Phase 5: dashboard first run (done, scoped)
 
-- Empty state: "Set up this folder" card listing missing prerequisites with fix buttons. Once
-  set up, show a "Describe a feature → Run" prompt box.
-- Backlog: drop the placeholder "Describe your next feature" item and make Run the main action.
-- Repo settings: pipeline as a visual flow (spec → build → reviewers → approve), with the JSON
-  behind "Advanced".
-- Navigation: fix the double highlight, and stop redirecting Overview to Board.
-- Needs a design pass before implementation.
+Scoped to the concrete fixes from the plan. The visual redesign (pipeline graph, live
+kanban) is not started and needs a design decision first.
+
+- Empty board shows "Describe a feature to build" with a feature field and Run. Run calls the
+  existing start API with the default pipeline.
+- Backlog template no longer includes the placeholder "Describe your next feature" as real work.
+- Overview is hidden in the sidebar when only one repository is registered. With one repo, "/"
+  redirects to the board, so Overview could never be reached.
+- Not done: the "Set up this folder" card with prerequisite fixes. The doctor checks are only
+  in the CLI; a dashboard version needs a new API endpoint.
+- Verified in the browser on a fresh folder: the empty board renders with the new card. The Run
+  button was not clicked, because it starts real agents.
 
 ## Verification
 

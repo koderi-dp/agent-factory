@@ -14,18 +14,43 @@ from agent_factory import service
 from agent_factory.engine import registry, roles, scaffold, versioning
 from agent_factory.paths import find_repo, machine_dir
 
+HELP = {
+    "init": "Set up this folder for agent-factory: asks once, then writes the files",
+    "upgrade": "Upgrade an earlier install to the current config version",
+    "eject": "Copy a built-in role into factory/roles/ so you can customise it",
+    "doctor": "Check tools, logins and ports, and say how to fix each problem",
+    "repos": "List, rename or remove registered repositories",
+    "start": "Queue a new job with this title",
+    "next": "Start the next backlog item",
+    "status": "Show all jobs, or one job's details",
+    "stop": "Stop a running job",
+    "resume": "Resume a paused job",
+    "approve": "Approve a job and merge it into the base branch",
+    "rework": "Send a job back to the builder with a note",
+    "delete": "Delete a job, its worktree and its branch",
+    "dashboard": "Open this repository's dashboard in a browser",
+    "serve": "Run the local dashboard and API",
+    "service": "Show, stop or restart the background service",
+    "config": "Read or change machine-wide settings",
+    "version": "Print the engine version",
+}
+
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="factory")
+    parser = argparse.ArgumentParser(
+        prog="factory",
+        description="Run a configurable pipeline of coding agents against a repository.",
+        epilog='Start here: run `factory init` in your project folder, then '
+        '`factory start "your feature"`.')
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--repo",
                         help="Repository path or registered id",
                         default=argparse.SUPPRESS)
     parser.add_argument("--repo", help="Repository path or registered id")
-    commands = parser.add_subparsers(dest="command", required=True)
+    commands = parser.add_subparsers(dest="command", required=True, metavar="<command>")
 
     def command(name: str, section: str) -> argparse.ArgumentParser:
-        sub = commands.add_parser(name, parents=[common])
+        sub = commands.add_parser(name, parents=[common], help=HELP[name], description=HELP[name])
         sub.set_defaults(section=section)
         return sub
 
@@ -63,7 +88,9 @@ def build_parser() -> argparse.ArgumentParser:
         elif name == "delete":
             sub.add_argument("--force", action="store_true")
     command("dashboard", "13.3")
-    command("serve", "3.1").add_argument("--port", type=int)
+    serve = command("serve", "3.1")
+    serve.add_argument("--port", type=int, help="Port to listen on (default 5099)")
+    serve.add_argument("--open", action="store_true", help="Open the dashboard in a browser")
     service = command("service", "3.1").add_subparsers(dest="service_action", required=True)
     service.add_parser("status")
     service.add_parser("stop").add_argument("--stop-running", action="store_true")
@@ -161,6 +188,16 @@ def _wait(data: dict, base: str, job_id: str) -> int:
         time.sleep(0.25)
 
 
+def _print_checks(checks: list[dict]) -> None:
+    for check in checks:
+        if check["ok"]:
+            print(f"{check['check']}: ok {check.get('detail', '')}".rstrip())
+        else:
+            print(f"{check['check']}: check {check.get('detail', '')}".rstrip())
+            if check.get("fix"):
+                print(f"    fix: {check['fix']}")
+
+
 def _ask(prompt: str, default: str, interactive: bool) -> str:
     """Prompt only with a terminal; scripted runs take the default instead of crashing."""
     if not interactive:
@@ -193,8 +230,7 @@ def _run(args: argparse.Namespace) -> int:
             return 1
         for message in scaffold.init(root, provider):
             print(message)
-        for check in scaffold.doctor(root):
-            print(f"{check['check']}: {'ok' if check['ok'] else 'check'} {check.get('detail', '')}")
+        _print_checks(scaffold.doctor(root))
         print('Next: review the starter instructions file and commit the factory files, then run: '
               'factory start "your feature"')
         return 0
@@ -223,12 +259,28 @@ def _run(args: argparse.Namespace) -> int:
         return 0
     if command == "doctor":
         checks = scaffold.doctor(repo)
-        for check in checks:
-            print(f"{check['check']}: {'ok' if check['ok'] else 'check'} {check.get('detail', '')}")
-        return 0 if all(check["ok"] for check in checks
-                        if check["check"] in {"git", "ports"}) else 1
+        found = repo is not None
+        checks.append({
+            "check":
+            "project setup",
+            "ok":
+            found,
+            "detail":
+            str(repo) if found else "no agent-factory project in this folder",
+            "required":
+            True,
+            "fix":
+            None if found else "Run `factory init` in your project folder, or pass --repo.",
+        })
+        _print_checks(checks)
+        # Ready means: required checks pass and at least one provider CLI is installed.
+        providers = {"claude", "codex", "opencode"}
+        ready = all(check["ok"] for check in checks if check.get("required")) and any(
+            check["ok"] for check in checks if check["check"] in providers)
+        print("Ready to run jobs." if ready else "Not ready: fix the items marked check above.")
+        return 0 if ready else 1
     if command == "serve":
-        return service.serve(args.port)
+        return service.serve(args.port, open_browser=args.open)
     if command == "service":
         data = service.info()
         if args.service_action == "status":
