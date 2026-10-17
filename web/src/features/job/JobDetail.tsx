@@ -15,6 +15,7 @@ import {
 import { interventionFor } from "./intervention";
 import { layout } from "./pipeline/layout";
 import { PipelineView } from "./pipeline/PipelineView";
+import { ChangesView } from "./ChangesView";
 import { ReportView } from "./ReportView";
 import { LogView } from "./LogView";
 import { Timeline } from "./Timeline";
@@ -53,7 +54,7 @@ function ExecutionReport({
   if (query.isError) return <p role="alert">Could not load report: {query.error.message}</p>;
   return <ReportView text={query.data} />;
 }
-const tabNames = ["Pipeline", "Reviews", "Reports", "Timeline", "Log", "Usage"];
+const tabNames = ["Pipeline", "Changes", "Reviews", "Reports", "Timeline", "Log", "Usage"];
 const labels: Record<Action, string> = {
   stop: "Stop",
   resume: "Resume",
@@ -252,6 +253,9 @@ export function JobDetail({
                 ))}
             </ul>
           )}
+        </TabsContent>
+        <TabsContent value="Changes">
+          <ChangesView repo={repo} job={job} executions={executions} />
         </TabsContent>
         <TabsContent value="Reviews">
           <ReviewerCards steps={steps} executions={executions} onOpenReport={selectNode} />

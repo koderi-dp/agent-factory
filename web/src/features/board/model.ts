@@ -134,6 +134,38 @@ export function jobActions(job: Job, executions: Execution[]): Action[] {
   ];
 }
 
+/** Whether the job can be merged right now, and the reason when it cannot. */
+export function mergeReadiness(
+  job: Job,
+  executions: Execution[],
+): { ready: boolean; label: string; detail: string } {
+  if (jobActions(job, executions).includes("approve"))
+    return {
+      ready: true,
+      label: "Ready to merge",
+      detail: needsSensitiveConfirm(job)
+        ? "Merging needs the sensitive-path confirmation."
+        : "The job can be merged now.",
+    };
+  const busy = executions.some((e) => e.state === "claimed" || e.state === "running");
+  const no = (label: string, detail: string) => ({ ready: false, label, detail });
+  if (job.state === "merged") return no("Merged", "This job is already merged.");
+  if (job.state === "cancelled")
+    return no("Cancelled", "This job was cancelled and cannot be merged.");
+  if (needsSensitiveConfirm(job))
+    return no(
+      "Needs confirmation",
+      busy
+        ? "Merging needs the sensitive-path confirmation, but the job is still working."
+        : "Merging needs the sensitive-path confirmation.",
+    );
+  if (job.state === "running" || job.state === "queued" || busy)
+    return no("Still working", "The job is still working and cannot be merged yet.");
+  if (job.state === "paused")
+    return no("Paused", `The job is paused${job.pause_reason ? `: ${job.pause_reason}` : ""}.`);
+  return no("Not approved", "The job has not been approved for merge yet.");
+}
+
 function parsed(at: string | null | undefined): number | undefined {
   if (!at) return undefined;
   const ms = Date.parse(at);

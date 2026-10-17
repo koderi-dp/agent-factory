@@ -234,6 +234,32 @@ export type UsageRow = Usage["rows"][number];
 export type UsageMetric = z.infer<typeof usageMetric>;
 export type CrossJob = z.infer<typeof crossJobsSchema>["jobs"][number];
 export type ActivityEntry = z.infer<typeof activityFeedSchema>["events"][number];
+export const changedFileSchema = z.object({
+  path: z.string(),
+  old_path: nullableText,
+  kind: z.enum(["added", "modified", "deleted", "renamed", "type_changed"]),
+  additions: id.nullable(),
+  deletions: id.nullable(),
+  binary: z.boolean(),
+});
+export const changesSchema = z.object({
+  job_id: z.string(),
+  base: z.string(),
+  head: z.string(),
+  files: z.array(changedFileSchema),
+  truncated: z.boolean(),
+});
+export const fileDiffSchema = z.object({
+  path: z.string(),
+  old_path: nullableText,
+  kind: changedFileSchema.shape.kind,
+  binary: z.boolean(),
+  diff: z.string(),
+  truncated: z.boolean(),
+});
+export type ChangedFile = z.infer<typeof changedFileSchema>;
+export type JobChanges = z.infer<typeof changesSchema>;
+export type FileDiff = z.infer<typeof fileDiffSchema>;
 export const eventTypes = [
   "job.state",
   "execution.state",
@@ -286,6 +312,10 @@ export const keys = {
   overview: ["overview"] as const,
   state: (repo: string) => ["repo", repo, "state"] as const,
   job: (repo: string, job: string) => ["repo", repo, "job", job] as const,
+  changes: (repo: string, job: string, version?: string) =>
+    ["repo", repo, "job", job, "changes", version ?? null] as const,
+  changeDiff: (repo: string, job: string, path: string, version?: string) =>
+    ["repo", repo, "job", job, "changes", "diff", path, version ?? null] as const,
   jobs: (states?: readonly string[], repo?: string) =>
     ["jobs", ...(states ?? []), ...(repo ? ["repo", repo] : [])] as const,
   activity: (limit?: number) => ["activity", limit ?? null] as const,
@@ -318,6 +348,13 @@ export const api = {
   state: (repo: string) => request(`${repoPath(repo)}/state`, stateSchema),
   job: (repo: string, job: string) =>
     request(`${repoPath(repo)}/jobs/${encodeURIComponent(job)}`, detailSchema),
+  changes: (repo: string, job: string) =>
+    request(`${repoPath(repo)}/jobs/${encodeURIComponent(job)}/changes`, changesSchema),
+  changeDiff: (repo: string, job: string, path: string) =>
+    request(
+      `${repoPath(repo)}/jobs/${encodeURIComponent(job)}/changes/diff?${new URLSearchParams({ path })}`,
+      fileDiffSchema,
+    ),
   config: (repo: string) => request(`${repoPath(repo)}/config`, configSchema),
   start: (repo: string, body: { title: string; details?: string; pipeline?: string }) =>
     request(`${repoPath(repo)}/jobs`, z.object({ id: nullableText, state: z.literal("queued") }), {
