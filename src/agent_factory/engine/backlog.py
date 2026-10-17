@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 ITEM = re.compile(r"^[-*]\s+\[([ xX])\]\s+(\S.*)")
+STARTED = re.compile(r"^[-*]\s+\[[xX]\]\s+(\S.*?)\s+\((\d+-[a-z0-9][a-z0-9-]*)\)\s*$")
 
 PRIORITIES = ("high", "normal", "low")
 STATUSES = ("ready", "in_progress", "needs_input", "completed")
@@ -89,6 +90,53 @@ def items(path: Path) -> list[dict[str, Any]]:
             entry.get("status", DEFAULT_STATUS)
         })
     return result
+
+
+def _details(block: dict[str, Any]) -> str:
+    return "\n".join(line[2:] if line.startswith("  ") else line for line in block["lines"][1:])
+
+
+def started(path: Path) -> list[dict[str, Any]]:
+    result = []
+    for block in blocks(path):
+        match = STARTED.match(block["lines"][0])
+        if block["open"] or not match:
+            continue
+        result.append({
+            "key": key(block),
+            "title": match[1],
+            "details": _details(block),
+            "job": match[2]
+        })
+    return result
+
+
+def validate_entry(title: Any, details: Any) -> str:
+    if not isinstance(title, str) or not title.strip() or len(title) > 300 or any(c in title
+                                                                                  for c in "\n\r"):
+        raise ValueError("each item needs a one-line title of at most 300 characters")
+    if not isinstance(details, str) or len(details) > 20000:
+        raise ValueError("details must be text of at most 20,000 characters")
+    return title.strip()
+
+
+def block_lines(title: str, details: str, job: str | None = None) -> list[str]:
+    head = f"- [x] {title} ({job})" if job else f"- [ ] {title}"
+    return [head, *("  " + line if line else "" for line in details.splitlines())]
+
+
+def rekey_meta(path: Path, old_key: str, new_key: str) -> bytes | None:
+    document = _load_meta_document(path)
+    if document is None:
+        return None
+    moved = dict(document)
+    if old_key != new_key and old_key in moved:
+        moved[new_key] = moved.pop(old_key)
+    open_keys = _open_keys(path)
+    moved = {k: v for k, v in moved.items() if k in open_keys}
+    if moved == document:
+        return None
+    return _render_meta(moved)
 
 
 def _render_meta(meta: dict[str, Any]) -> bytes:

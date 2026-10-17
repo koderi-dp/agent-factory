@@ -123,6 +123,10 @@ export const backlogSchema = z.array(
     status: backlogStatusSchema,
   }),
 );
+export const startedBacklogSchema = z.array(
+  z.object({ key: z.string(), title: z.string(), details: z.string(), job: z.string() }),
+);
+export type StartedBacklogItem = z.infer<typeof startedBacklogSchema>[number];
 export const legacyJobSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -136,6 +140,7 @@ export const stateSchema = z.object({
   legacy_jobs: z.array(legacyJobSchema).optional(),
   executions: z.array(executionSchema),
   backlog: backlogSchema,
+  started: startedBacklogSchema.default([]),
   config: configSchema,
   last_event_id: id,
   activity: z.array(activitySchema),
@@ -312,7 +317,7 @@ export const api = {
     request(
       `${repoPath(repo)}/backlog`,
       z.union([
-        z.object({ backlog: backlogSchema }),
+        z.object({ backlog: backlogSchema, started: startedBacklogSchema.default([]) }),
         z.object({ id: nullableText, state: z.literal("queued") }),
       ]),
       { method: "POST", body: JSON.stringify(body) },
@@ -321,12 +326,19 @@ export const api = {
     repo: string,
     body: { key: string; priority?: BacklogPriority; status?: BacklogStatus },
   ) =>
-    request(`${repoPath(repo)}/backlog/meta`, z.object({ backlog: backlogSchema }), {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
+    request(
+      `${repoPath(repo)}/backlog/meta`,
+      z.object({ backlog: backlogSchema, started: startedBacklogSchema.default([]) }),
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      },
+    ),
   backlogList: (repo: string) =>
-    request(`${repoPath(repo)}/backlog`, z.object({ backlog: backlogSchema })),
+    request(
+      `${repoPath(repo)}/backlog`,
+      z.object({ backlog: backlogSchema, started: startedBacklogSchema.default([]) }),
+    ),
   log: (repo: string, attempt: number, offset = 0) =>
     request(
       `${repoPath(repo)}/attempts/${attempt}/log?offset=${offset}`,

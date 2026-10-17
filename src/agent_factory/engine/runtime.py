@@ -164,6 +164,7 @@ class Runtime:
                     "legacy_jobs": legacy.jobs(root),
                     "executions": executions,
                     "backlog": backlog.items(root / "factory/backlog.md"),
+                    "started": backlog.started(root / "factory/backlog.md"),
                     "config": load_config(root).model_dump(),
                     "last_event_id": last,
                     "activity": activity
@@ -480,21 +481,23 @@ class Runtime:
                     for entry in entries:
                         title = entry.get("text") if isinstance(entry, dict) else None
                         details = entry.get("details", "") if isinstance(entry, dict) else None
-                        if not isinstance(title,
-                                          str) or not title.strip() or len(title) > 300 or any(
-                                              c in title for c in "\n\r"):
-                            raise ValueError(
-                                "each item needs a one-line title of at most 300 characters")
-                        if not isinstance(details, str) or len(details) > 20000:
-                            raise ValueError("details must be text of at most 20,000 characters")
-                        values.append({
-                            "open":
-                            True,
-                            "lines": [
-                                f"- [ ] {title.strip()}",
-                                *("  " + line if line else "" for line in details.splitlines())
-                            ]
-                        })
+                        title = backlog.validate_entry(title, details)
+                        values.append({"open": True, "lines": backlog.block_lines(title, details)})
+                elif action == "edit":
+                    old_key = body.get("key")
+                    block = next((b for b in values if backlog.key(b) == old_key), None)
+                    started_match = backlog.STARTED.match(block["lines"][0]) if block else None
+                    if block is None or not (block["open"] or started_match):
+                        raise ValueError("Backlog item changed; refresh before trying again")
+                    if block["open"]:
+                        queued = writer.call(lambda connection: connection.execute(
+                            "SELECT 1 FROM start_queue WHERE backlog_key=?",
+                            (old_key, )).fetchone())
+                        if queued:
+                            raise ValueError("This backlog item has already been started")
+                    title = backlog.validate_entry(body.get("text"), body.get("details", ""))
+                    block["lines"] = backlog.block_lines(
+                        title, body.get("details", ""), None if block["open"] else started_match[2])
                 elif action == "remove":
                     del values[slots[index("index")]]
                 elif action in {"move", "reorder"}:
@@ -503,13 +506,17 @@ class Runtime:
                     for slot, value in zip(slots, moved):
                         values[slot] = value
                 else:
-                    raise ValueError("action must be add, remove, move, reorder or start")
+                    raise ValueError("action must be add, edit, remove, move, reorder or start")
                 if action != "start":
                     run_cli.atomic_write(path, backlog.render(values))
                 if action == "remove":
                     pruned = backlog.prune_meta(path)
                     if pruned is not None:
                         run_cli.atomic_write(backlog.meta_path(path), pruned)
+                if action == "edit" and block["open"]:
+                    rekeyed = backlog.rekey_meta(path, old_key, backlog.key(block))
+                    if rekeyed is not None:
+                        run_cli.atomic_write(backlog.meta_path(path), rekeyed)
             if action == "start":
                 title, details, key = selected
                 return self.enqueue(repo_id, title, details, body.get("pipeline"), backlog_key=key)
@@ -520,7 +527,7 @@ class Runtime:
                                     {"action": action})
 
             writer.call(event)
-            return {"backlog": backlog.items(path)}
+            return {"backlog": backlog.items(path), "started": backlog.started(path)}
 
     def edit_backlog_meta(self, repo_id: str, body: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
@@ -546,7 +553,7 @@ class Runtime:
                                     {"action": "meta"})
 
             writer.call(event)
-            return {"backlog": backlog.items(path)}
+            return {"backlog": backlog.items(path), "started": backlog.started(path)}
 
     def action(self, repo_id: str, job_id: str, action: str, body: dict[str,
                                                                         Any]) -> dict[str, Any]:

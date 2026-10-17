@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { api, keys } from "@/lib/api";
+import { api, keys, type StartedBacklogItem } from "@/lib/api";
 import { PageShell } from "@/ui/page-shell";
 import { Button } from "@/ui/primitives/button";
 import { Input } from "@/ui/primitives/input";
@@ -11,12 +11,61 @@ import { Tabs, TabsList, TabsTrigger } from "@/ui/primitives/tabs";
 import { BacklogKanban } from "./BacklogKanban";
 import { metaChange, priorityLabel, statusLabel, type BacklogTarget } from "./model";
 
+const textareaClass = "min-h-24 w-full rounded-md border border-border bg-inset p-3 text-sm";
+
+function EditForm({
+  item,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  item: { key: string; title: string; details: string };
+  busy: boolean;
+  onSave: (text: string, details: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(item.title);
+  const [body, setBody] = useState(item.details);
+  return (
+    <form
+      className="grid gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(text, body);
+      }}
+    >
+      <label>
+        Title
+        <Input required maxLength={300} value={text} onChange={(e) => setText(e.target.value)} />
+      </label>
+      <label>
+        Details
+        <textarea
+          className={textareaClass}
+          maxLength={20000}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+        />
+      </label>
+      <div className="flex gap-2">
+        <Button loading={busy} disabled={!text.trim() || busy}>
+          Save
+        </Button>
+        <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export function Backlog({ repo }: { repo: string }) {
   const state = useQuery({ queryKey: keys.state(repo), queryFn: () => api.state(repo) });
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const [pipeline, setPipeline] = useState("");
   const [drag, setDrag] = useState<string>();
+  const [editing, setEditing] = useState<string>();
   const [waiting, setWaiting] = useState<typeof state.data>();
   const mutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.backlog(repo, body),
@@ -36,7 +85,9 @@ export function Backlog({ repo }: { repo: string }) {
   const busy =
     mutation.isPending ||
     metaMutation.isPending ||
-    (waiting !== undefined && JSON.stringify(waiting.backlog) === JSON.stringify(data?.backlog));
+    (waiting !== undefined &&
+      JSON.stringify(waiting.backlog) === JSON.stringify(data?.backlog) &&
+      JSON.stringify(waiting.started) === JSON.stringify(data?.started));
   const selected =
     data && Object.hasOwn(data.config.pipelines, pipeline)
       ? pipeline
@@ -44,6 +95,13 @@ export function Backlog({ repo }: { repo: string }) {
   function move(key: string, to: number) {
     const index = data?.backlog.findIndex((item) => item.key === key) ?? -1;
     if (index >= 0 && index !== to && !busy) mutation.mutate({ action: "reorder", index, to, key });
+  }
+  function save(key: string, text: string, details: string) {
+    if (busy) return;
+    mutation.mutate(
+      { action: "edit", key, text, details },
+      { onSuccess: () => setEditing(undefined) },
+    );
   }
   function moveMeta(item: Parameters<typeof metaChange>[0], target: BacklogTarget) {
     const body = metaChange(item, target);
@@ -136,7 +194,7 @@ export function Backlog({ repo }: { repo: string }) {
               {data.backlog.map((item, i) => (
                 <li
                   key={item.key}
-                  draggable={!busy}
+                  draggable={!busy && editing !== item.key}
                   onDragStart={(e) => {
                     setDrag(item.key);
                     e.dataTransfer.setData("text/plain", item.key);
@@ -150,14 +208,25 @@ export function Backlog({ repo }: { repo: string }) {
                   }}
                   className="rounded-md border border-border bg-card p-4"
                 >
-                  <h2 className="font-medium">{item.title}</h2>
-                  <div className="mt-1 flex gap-2">
-                    <Badge variant="outline">{priorityLabel(item.priority)}</Badge>
-                    <Badge>{statusLabel(item.status)}</Badge>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                    {item.details}
-                  </p>
+                  {editing === item.key ? (
+                    <EditForm
+                      item={item}
+                      busy={busy}
+                      onSave={(text, details) => save(item.key, text, details)}
+                      onCancel={() => setEditing(undefined)}
+                    />
+                  ) : (
+                    <>
+                      <h2 className="font-medium">{item.title}</h2>
+                      <div className="mt-1 flex gap-2">
+                        <Badge variant="outline">{priorityLabel(item.priority)}</Badge>
+                        <Badge>{statusLabel(item.status)}</Badge>
+                      </div>
+                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                        {item.details}
+                      </p>
+                    </>
+                  )}
                   <div className="mt-3 flex gap-2">
                     <Button
                       disabled={busy}
@@ -171,6 +240,14 @@ export function Backlog({ repo }: { repo: string }) {
                       }
                     >
                       Start
+                    </Button>
+                    <Button
+                      variant="outline"
+                      aria-label={`Edit ${item.title}`}
+                      disabled={busy}
+                      onClick={() => setEditing(item.key)}
+                    >
+                      Edit
                     </Button>
                     <Button
                       variant="outline"
@@ -201,6 +278,48 @@ export function Backlog({ repo }: { repo: string }) {
                 </li>
               ))}
             </ol>
+          )}
+          {(data.started ?? []).length > 0 && (
+            <section className="grid gap-3" aria-label="Started items">
+              <h2 className="text-lg font-medium">Started</h2>
+              <ul className="grid gap-3">
+                {(data.started ?? []).map((item: StartedBacklogItem) => (
+                  <li key={item.key} className="rounded-md border border-border bg-card p-4">
+                    {editing === item.key ? (
+                      <EditForm
+                        item={item}
+                        busy={busy}
+                        onSave={(text, details) => save(item.key, text, details)}
+                        onCancel={() => setEditing(undefined)}
+                      />
+                    ) : (
+                      <>
+                        <h3 className="font-medium">{item.title}</h3>
+                        <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                          {item.details}
+                        </p>
+                        <div className="mt-3 flex gap-2">
+                          <a
+                            className="text-sm underline"
+                            href={`#/repo/${encodeURIComponent(repo)}/job/${encodeURIComponent(item.job)}`}
+                          >
+                            Open job
+                          </a>
+                          <Button
+                            variant="outline"
+                            aria-label={`Edit ${item.title}`}
+                            disabled={busy}
+                            onClick={() => setEditing(item.key)}
+                          >
+                            Edit
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
         </>
       )}

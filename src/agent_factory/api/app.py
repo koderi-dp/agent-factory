@@ -397,7 +397,8 @@ def create_app(*,
     def list_backlog(repo: str) -> dict:
         with engine().lock:
             root, _ = engine().repo(repo)
-            return {"backlog": backlog.items(root / "factory/backlog.md")}
+            path = root / "factory/backlog.md"
+            return {"backlog": backlog.items(path), "started": backlog.started(path)}
 
     @app.put("/api/repos/{repo}/backlog/meta")
     def edit_backlog_meta(repo: str, body: dict = Body()) -> dict:
