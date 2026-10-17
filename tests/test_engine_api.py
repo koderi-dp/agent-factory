@@ -7,6 +7,7 @@ import sys
 import time
 
 from fastapi.testclient import TestClient
+import psutil
 import pytest
 
 from agent_factory import __version__, cli, service
@@ -402,6 +403,28 @@ def test_file_lock_single_instance(tmp_path):
         assert second.acquire()
     finally:
         second.close()
+
+
+def test_exited_helper_treats_unreaped_zombie_and_gone_as_exited():
+
+    class Zombie:
+
+        def status(self):
+            return psutil.STATUS_ZOMBIE
+
+    class Gone:
+
+        def status(self):
+            raise psutil.NoSuchProcess(1)
+
+    class Alive:
+
+        def status(self):
+            return psutil.STATUS_RUNNING
+
+    assert service._exited(Zombie())
+    assert service._exited(Gone())
+    assert not service._exited(Alive())
 
 
 def test_real_service_auto_start_second_serve_and_restart(tmp_path, monkeypatch):

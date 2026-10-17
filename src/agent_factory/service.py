@@ -100,6 +100,14 @@ def spawn(port: int | None = None) -> subprocess.Popen:
                                 **flags)
 
 
+def _exited(process: psutil.Process) -> bool:
+    """True when the process is gone or an unreaped POSIX zombie (all handles freed)."""
+    try:
+        return process.status() == psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return True
+
+
 def stop(data: dict[str, Any], *, stop_running: bool = False) -> None:
     process = None
     try:
@@ -120,7 +128,12 @@ def stop(data: dict[str, Any], *, stop_running: bool = False) -> None:
                     try:
                         process.wait(timeout=max(0, deadline - time.monotonic()))
                     except psutil.TimeoutExpired:
-                        raise ServiceError("Service released its lock but did not exit") from None
+                        # A POSIX parent that is not reaping (for example a foreground
+                        # launcher) leaves the exited service as a zombie. It has already
+                        # released the lock and every handle, so treat it as stopped.
+                        if not _exited(process):
+                            raise ServiceError(
+                                "Service released its lock but did not exit") from None
                 return
         finally:
             lock.close()
