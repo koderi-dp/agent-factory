@@ -4,17 +4,55 @@ No provider-specific command building/classification is implemented here (§1.6)
 """
 
 import json
+import os
 from pathlib import Path
+import socket
 import sys
 import time
 
 from agent_factory import run_cli
-from agent_factory.engine import pipeline, registry, reports
-from agent_factory.engine.config import RepoConfig
+from agent_factory.engine import pipeline, ports, registry, reports
+from agent_factory.engine.config import RepoConfig, save_machine_settings
 from agent_factory.engine.scheduler import Scheduler
 from agent_factory.engine.supervisor import EventUpdate, ExitOutcome, Prepared, Supervisor
 
 FAKE_CLI = Path(__file__).with_name("fake_cli.py").resolve()
+
+
+def free_range(blocks=2):
+    """Find a real test range that the engine also treats as free.
+
+    The bind probe rules out ports the OS reserves (Windows excluded ranges); the
+    listener check uses the engine's own machine-wide oracle, which also sees IPv6
+    and wildcard listeners that a 127.0.0.1 probe cannot.
+    """
+    for base in range(22000, 60000, 10):
+        block = range(base, base + blocks * 10)
+        if ports.listeners(block):
+            continue
+        probes = []
+        try:
+            for port in block:
+                probe = socket.socket()
+                probes.append(probe)
+                if os.name == "nt":
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                probe.bind(("127.0.0.1", port))
+                probe.listen()
+        except OSError:
+            continue
+        finally:
+            for probe in probes:
+                probe.close()
+        return base
+    raise AssertionError("No free test range")
+
+
+def configure_range(scheduler, base, blocks=2):
+    scheduler.machine.call(lambda connection: save_machine_settings(
+        connection, {"ports": {
+            "range": f"{base}-{base + 10 * blocks - 1}"
+        }}))
 
 
 class StubAdapter:

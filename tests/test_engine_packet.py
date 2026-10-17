@@ -91,8 +91,8 @@ def test_approval_packet_exposes_recorded_review_head(repo, reviewed_head):
 def test_acceptance_full_and_fast_and_latest_rework(repo):
     context = context_for(repo, add_job(repo))
     folder = context.root / "factory/jobs" / context.job["id"]
-    (folder / "rework-2.md").write_text("old")
-    (folder / "rework-10.md").write_text("latest")
+    (folder / "rework-2.md").write_text("STALE-REWORK-BODY")
+    (folder / "rework-10.md").write_text("LATEST-REWORK-BODY")
     spec = completed(context,
                      10,
                      role="spec-writer",
@@ -100,7 +100,8 @@ def test_acceptance_full_and_fast_and_latest_rework(repo):
     builder = completed(context, 11)
     data = packet.build(context, executions=[spec, builder]).packet
     assert "1. Must work" in data["acceptance_criteria"]
-    assert "latest" in data["request"] and "old" not in data["request"]
+    assert "LATEST-REWORK-BODY" in data["request"]
+    assert "STALE-REWORK-BODY" not in data["request"]
     approval = replace(context,
                        execution={
                            **context.execution, "step_id": "approve",

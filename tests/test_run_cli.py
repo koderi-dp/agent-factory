@@ -450,3 +450,10 @@ def test_posix_descendant_scan_rejects_pid_reuse_during_ownership_read(monkeypat
     monkeypatch.setattr(run_cli, "Path", Mock(side_effect=[proc, environment]))
     monkeypatch.setattr(run_cli, "posix_create_time", Mock(side_effect=[10, 11 if reused else 10]))
     assert run_cli.posix_descendants("owner") == ({} if reused else {123: 10})
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="only macOS uses the ps fallback")
+def test_posix_descendants_run_without_a_path(monkeypatch):
+    """The wrapper must work with an empty PATH, so ps must be resolved absolutely."""
+    monkeypatch.setenv("PATH", "")
+    assert run_cli.posix_descendants("absent-owner") == {}

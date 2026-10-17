@@ -177,6 +177,15 @@ def posix_create_time(pid: int | None = None) -> float:
     raise RuntimeError(f"Unsupported process start-time platform: {sys.platform}")
 
 
+def ps_program() -> str:
+    """`ps` must be absolute: the wrapper inherits the caller's PATH, which may be
+    empty (a documented launch requirement), and a bare name would then fail."""
+    for candidate in ("/bin/ps", "/usr/bin/ps"):
+        if Path(candidate).exists():
+            return candidate
+    return "ps"
+
+
 def posix_descendants(token: str) -> dict[int, float]:
     """Find inherited owner tokens even after reparenting or setsid()."""
     marker = "FACTORY_ATTEMPT_TOKEN=" + token
@@ -185,7 +194,8 @@ def posix_descendants(token: str) -> dict[int, float]:
             int(entry.name) for entry in Path("/proc").iterdir() if entry.name.isdecimal()
         ]
     else:
-        output = subprocess.check_output(["ps", "eww", "-axo", "pid=,command="], text=True)
+        ps = ps_program()
+        output = subprocess.check_output([ps, "eww", "-axo", "pid=,command="], text=True)
         candidates = [
             int(line.split()[0]) for line in output.splitlines() if marker in line.split()[1:]
         ]
@@ -197,7 +207,7 @@ def posix_descendants(token: str) -> dict[int, float]:
                 owned = marker.encode() in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
             else:
                 environment = subprocess.check_output(
-                    ["ps", "eww", "-p", str(pid), "-o", "command="], text=True)
+                    [ps, "eww", "-p", str(pid), "-o", "command="], text=True)
                 owned = marker in environment.split()
             # Capture identity BEFORE reading ownership, and reject PID reuse
             # during that read. Never attach an old token to a new process.

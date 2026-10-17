@@ -58,7 +58,11 @@ def sensitive_paths(root: Path, job: Mapping[str, Any]) -> list[str]:
 
 
 def git(*args: str, cwd: str | Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args],
+    """Windows needs core.longpaths; otherwise git stats arguments as paths and
+    refuses any path past MAX_PATH, which pauses deep worktrees with a bogus
+    "Filename too long" error."""
+    long_paths = ("-c", "core.longpaths=true") if os.name == "nt" else ()
+    return subprocess.run(["git", *long_paths, *args],
                           cwd=cwd,
                           capture_output=True,
                           text=True,

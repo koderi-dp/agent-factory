@@ -19,7 +19,7 @@ from agent_factory.engine import db, winjob
 from agent_factory.engine.config import save_machine_settings
 from agent_factory.engine.scheduler import Scheduler
 from agent_factory.engine.supervisor import Supervisor, UnsupportedProviderError
-from engine_harness import StubAdapter, create_repo
+from engine_harness import StubAdapter, configure_range, create_repo, free_range
 from test_run_cli import alive, wait_for
 
 HARNESS = Path(__file__).with_name("engine_harness.py")
@@ -615,9 +615,11 @@ def test_rework_rejects_live_peer_without_superseding_it(tmp_path, monkeypatch):
             return prepared
 
     supervisor = Supervisor(scheduler, {"codex": UnevenAdapter()})
+    configure_range(scheduler, free_range())
     try:
         supervisor.start()
         launched = supervisor.tick()
+        assert len(launched) == 2, state(scheduler, identifier)
         peer = next(c for c in launched if c.execution["exec_id"] == "review-1")
         wait_for(lambda: (peer.directory / "ready.json").exists())
         settle(supervisor, scheduler, identifier)

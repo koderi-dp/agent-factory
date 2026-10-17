@@ -16,40 +16,11 @@ import pytest
 
 from agent_factory import run_cli
 from agent_factory.engine import db, ports, winjob
-from agent_factory.engine.config import save_machine_settings
 from agent_factory.engine.scheduler import Scheduler
 from agent_factory.engine.supervisor import Supervisor
-from engine_harness import StubAdapter, create_repo
+from engine_harness import StubAdapter, configure_range, create_repo, free_range
 from test_engine_supervisor import rows, state, store
 from test_run_cli import alive, port_released, read_json, wait_for
-
-
-def free_range(blocks=2):
-    """Find a real contiguous test range; release probes before the engine uses it."""
-    for base in range(22000, 60000, 10):
-        probes = []
-        try:
-            for port in range(base, base + blocks * 10):
-                probe = socket.socket()
-                probes.append(probe)
-                if os.name == "nt":
-                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-                probe.bind(("127.0.0.1", port))
-                probe.listen()
-            return base
-        except OSError:
-            continue
-        finally:
-            for probe in probes:
-                probe.close()
-    raise AssertionError("No free test range")
-
-
-def configure_range(scheduler, base, blocks=2):
-    scheduler.machine.call(lambda connection: save_machine_settings(
-        connection, {"ports": {
-            "range": f"{base}-{base + 10 * blocks - 1}"
-        }}))
 
 
 def leases(scheduler):
@@ -593,7 +564,7 @@ def test_repeated_port_roles_bind_distinct_slots_and_serialize_overflow(
     try:
         supervisor.start()
         first = supervisor.tick()
-        assert len(first) == 3
+        assert len(first) == 3, state(scheduler, identifier)
         assert len({port for claim in first for port in claim.ports}) == 9
         assert scheduler.claim_next() is None
         for claim in first:

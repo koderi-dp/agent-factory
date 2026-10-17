@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -38,6 +39,28 @@ def repo(tmp_path, monkeypatch):
             gitops.git("worktree", "remove", "--force", line[9:], cwd=root)
     machine.close()
     connection.close()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="MAX_PATH only constrains Windows")
+def test_git_revision_arguments_survive_paths_past_max_path(tmp_path):
+    """Deep worktrees must keep working: without core.longpaths git stats a
+    revision argument as a path and dies with "Filename too long"."""
+    deep = tmp_path / "factory"
+    while len(str(deep)) < 185:
+        deep = deep / "job-002-show-the-number-of-open-todos"
+    try:
+        deep.mkdir(parents=True)
+        (deep / "app.txt").write_text("one\n", encoding="utf-8")
+    except OSError:
+        pytest.skip("this filesystem cannot create paths past MAX_PATH")
+    for args in [("init", "-q", "-b", "main"), ("config", "user.name", "test"),
+                 ("config", "user.email", "test@localhost"), ("add", "-A"),
+                 ("commit", "-qm", "base")]:
+        gitops.checked(*args, cwd=deep)
+    head = gitops.checked("rev-parse", "HEAD", cwd=deep).strip()
+    revision = f"{head}..{head}"
+    assert len(str(deep)) + 1 + len(revision) > 260
+    assert gitops.git("diff", "--stat", revision, cwd=deep).returncode == 0
 
 
 def add_job(repo, job_id="001-test", *, state="approved", change=True):
