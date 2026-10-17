@@ -133,6 +133,22 @@ export function JobDetail({
       setPending(false);
     }
   };
+  const toSource = (e: (typeof executions)[number]) => {
+    const attempt = latestAttempt(e, attempts);
+    return attempt
+      ? [
+          {
+            attempt: attempt.id,
+            stage: e.step_id,
+            agent: e.exec_id,
+            live: ["launching", "running"].includes(attempt.state),
+          },
+        ]
+      : [];
+  };
+  const logSources = (history ? executions : current).flatMap(toSource);
+  const nodeAttempt = selected && latestAttempt(selected, attempts);
+  const nodeSources = selected ? toSource(selected) : [];
   const executionPicker = (
     <label className="block text-sm">
       Execution{" "}
@@ -237,12 +253,7 @@ export function JobDetail({
         </TabsContent>
         <TabsContent value="Log">
           <div className="space-y-4">
-            {executionPicker}
-            <LogView
-              key={`${repo}:${execution && latestAttempt(execution, attempts)?.id}`}
-              repo={repo}
-              attempt={execution && latestAttempt(execution, attempts)?.id}
-            />
+            <LogView key={repo} repo={repo} sources={logSources} fileName={job.id} />
           </div>
         </TabsContent>
         <TabsContent value="Usage">
@@ -286,9 +297,10 @@ export function JobDetail({
             </TabsContent>
             <TabsContent value="Log">
               <LogView
-                key={`${repo}:${selected && latestAttempt(selected, attempts)?.id}`}
+                key={`${repo}:${nodeAttempt?.id}`}
                 repo={repo}
-                attempt={selected && latestAttempt(selected, attempts)?.id}
+                sources={nodeSources}
+                fileName={job.id}
               />
             </TabsContent>
             <TabsContent value="Timeline">
