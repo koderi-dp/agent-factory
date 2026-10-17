@@ -177,6 +177,7 @@ export function removeStage(config: Config, name: string, i: number): Config {
   const next = structuredClone(config);
   const list = next.pipelines[name];
   const [removed] = list.splice(i, 1);
+  if (list.some((step) => step.id === removed.id)) return next;
   for (const step of list) if (step.onChanges === removed.id) delete step.onChanges;
   return next;
 }
@@ -204,7 +205,9 @@ export function setStageField(
   if (field === "id") {
     const old = step.id;
     step.id = value;
-    for (const other of list) if (other.onChanges === old) other.onChanges = value;
+    // A reference to an id another step still carries belongs to that step.
+    if (!list.some((other) => other.id === old))
+      for (const other of list) if (other.onChanges === old) other.onChanges = value;
   } else if (value === "") delete step[field];
   else step[field] = value;
   return next;
