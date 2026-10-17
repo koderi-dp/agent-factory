@@ -1,4 +1,4 @@
-import { ApiError, configSchema, type RepoState } from "@/lib/api";
+import { ApiError, configSchema, type PipelinePreview, type RepoState } from "@/lib/api";
 import type { Step } from "@/features/board/model";
 export type Config = RepoState["config"];
 export type Entry = Config["pipelines"][string][number];
@@ -108,18 +108,200 @@ export function editExecution(
   name: string,
   si: number,
   ei: number,
-  field: "provider" | "model" | "effort",
+  field: "uses" | "provider" | "model" | "effort",
   value: string,
 ): Config {
   const next = structuredClone(config);
   const target = entries(next.pipelines[name][si])[ei];
-  if (field === "provider") target.provider = value as "codex" | "claude" | "opencode";
+  if (field === "uses") target.uses = value;
+  else if (field === "provider") target.provider = value as "codex" | "claude" | "opencode";
   else
     target.profiles[target.provider] = {
       ...(target.profiles[target.provider] ?? { model: "", effort: "" }),
       [field]: value,
     };
   return next;
+}
+
+export const MAX_STAGES = 32;
+export const MAX_GROUP_MEMBERS = 16;
+export type StageKind = "task" | "review" | "approval";
+type Single = Exclude<Entry, { parallel: unknown }>;
+type Group = Extract<Entry, { parallel: unknown }>;
+export const isGroup = (step: Entry): step is Group => "parallel" in step;
+
+function takenIds(steps: Entry[]) {
+  const taken = new Set<string>();
+  for (const step of steps) {
+    taken.add(step.id);
+    for (const entry of entries(step)) taken.add(entry.id);
+  }
+  return taken;
+}
+function freshId(steps: Entry[], base: string) {
+  const taken = takenIds(steps);
+  let n = 2;
+  while (taken.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+function stageBase(id: string) {
+  return id.replace(/-\d+$/, "") || "stage";
+}
+/** Drop an onChanges that no longer names an earlier step. */
+function pruneOnChanges(steps: Entry[]) {
+  steps.forEach((step, i) => {
+    if (!step.onChanges) return;
+    const target = steps.findIndex((other) => other.id === step.onChanges);
+    if (target >= i) delete step.onChanges;
+  });
+}
+
+export function addStage(config: Config, name: string, at: number): Config {
+  const steps = config.pipelines[name];
+  if (!steps || steps.length >= MAX_STAGES) return config;
+  const next = structuredClone(config);
+  const list = next.pipelines[name];
+  const source = entries(list[Math.min(Math.max(at, 0), list.length - 1)])[0];
+  const stage: Single = {
+    id: freshId(list, "stage"),
+    uses: source.uses,
+    provider: source.provider,
+    profiles: structuredClone(source.profiles),
+  };
+  list.splice(at + 1, 0, stage);
+  return next;
+}
+export function removeStage(config: Config, name: string, i: number): Config {
+  const steps = config.pipelines[name];
+  if (!steps || steps.length <= 1 || !steps[i]) return config;
+  const next = structuredClone(config);
+  const list = next.pipelines[name];
+  const [removed] = list.splice(i, 1);
+  for (const step of list) if (step.onChanges === removed.id) delete step.onChanges;
+  return next;
+}
+export function moveStage(config: Config, name: string, i: number, delta: number): Config {
+  const steps = config.pipelines[name];
+  const j = i + delta;
+  if (!steps || !steps[i] || j < 0 || j >= steps.length) return config;
+  const next = structuredClone(config);
+  const list = next.pipelines[name];
+  [list[i], list[j]] = [list[j], list[i]];
+  pruneOnChanges(list);
+  return next;
+}
+export function setStageField(
+  config: Config,
+  name: string,
+  i: number,
+  field: "id" | "label" | "onChanges",
+  value: string,
+): Config {
+  if (!config.pipelines[name]?.[i]) return config;
+  const next = structuredClone(config);
+  const list = next.pipelines[name];
+  const step = list[i];
+  if (field === "id") {
+    const old = step.id;
+    step.id = value;
+    for (const other of list) if (other.onChanges === old) other.onChanges = value;
+  } else if (value === "") delete step[field];
+  else step[field] = value;
+  return next;
+}
+export function groupWithNext(config: Config, name: string, i: number): Config {
+  const steps = config.pipelines[name];
+  const first = steps?.[i];
+  const second = steps?.[i + 1];
+  if (!first || !second || isGroup(first) || isGroup(second)) return config;
+  const next = structuredClone(config);
+  const list = next.pipelines[name];
+  const [a, b] = list.slice(i, i + 2) as [Single, Single];
+  const member = (entry: Single, id: string): Group["parallel"][number] => ({
+    id,
+    uses: entry.uses,
+    provider: entry.provider,
+    profiles: entry.profiles,
+    ...(entry.timeoutMinutes != null && { timeoutMinutes: entry.timeoutMinutes }),
+    ...(entry.maxBudgetUsd != null && { maxBudgetUsd: entry.maxBudgetUsd }),
+  });
+  const group: Group = {
+    id: a.id,
+    parallel: [member(a, freshId(list, stageBase(a.id))), member(b, b.id)],
+  };
+  if (a.label) group.label = a.label;
+  if (a.onChanges) group.onChanges = a.onChanges;
+  list.splice(i, 2, group);
+  return next;
+}
+export function addGroupMember(config: Config, name: string, i: number): Config {
+  const step = config.pipelines[name]?.[i];
+  if (!step || !isGroup(step) || step.parallel.length >= MAX_GROUP_MEMBERS) return config;
+  const next = structuredClone(config);
+  const list = next.pipelines[name];
+  const group = list[i] as Group;
+  const last = group.parallel[group.parallel.length - 1];
+  group.parallel.push({ ...structuredClone(last), id: freshId(list, stageBase(last.id)) });
+  return next;
+}
+export function removeGroupMember(config: Config, name: string, i: number, j: number): Config {
+  const step = config.pipelines[name]?.[i];
+  if (!step || !isGroup(step) || step.parallel.length <= 1 || !step.parallel[j]) return config;
+  const next = structuredClone(config);
+  const list = next.pipelines[name];
+  const group = list[i] as Group;
+  group.parallel.splice(j, 1);
+  if (group.parallel.length === 1) {
+    const only = group.parallel[0];
+    const single: Single = { ...only, id: group.id };
+    if (group.label) single.label = group.label;
+    if (group.onChanges) single.onChanges = group.onChanges;
+    list[i] = single;
+  }
+  return next;
+}
+export function ungroup(config: Config, name: string, i: number): Config {
+  const step = config.pipelines[name]?.[i];
+  if (!step || !isGroup(step)) return config;
+  const next = structuredClone(config);
+  const list = next.pipelines[name];
+  const group = list[i] as Group;
+  const singles: Single[] = group.parallel.map((member, j) => {
+    const single: Single = { ...member };
+    if (j === 0 && group.label) single.label = group.label;
+    if (j === 0 && group.onChanges) single.onChanges = group.onChanges;
+    return single;
+  });
+  list.splice(i, 1, ...singles);
+  return next;
+}
+
+/** Each step's role type: from the matching validate preview, else from the resolved roles. */
+export function stageKinds(
+  steps: Entry[],
+  preview: PipelinePreview | undefined,
+  roles: { name: string; provider: string; type: string }[],
+): (StageKind | undefined)[] {
+  const kind = (value: string | undefined) =>
+    value === "task" || value === "review" || value === "approval" ? value : undefined;
+  const matches =
+    !!preview &&
+    preview.stages.length === steps.length &&
+    preview.stages.every((stage, i) => stage.id === steps[i].id);
+  return steps.map((step, i) => {
+    if (matches) return kind(preview.stages[i].type);
+    const first = entries(step)[0];
+    return kind(roles.find((r) => r.name === first?.uses && r.provider === first.provider)?.type);
+  });
+}
+export type FieldError = { path: string; message: string };
+export function errorsAt(errors: FieldError[], path: string): string[] {
+  return errors.filter((error) => error.path === path).map((error) => error.message);
+}
+export function errorsUnder(errors: FieldError[], prefix: string): string[] {
+  return errors
+    .filter((error) => error.path === prefix || error.path.startsWith(`${prefix}.`))
+    .map((error) => error.message);
 }
 
 export type SettingsDraft = { text: string; base: string };

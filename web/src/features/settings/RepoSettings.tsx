@@ -2,19 +2,18 @@ import { z } from "zod";
 import { stepSchema } from "@/features/board/model";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, keys, settingsApi } from "@/lib/api";
+import { api, keys, settingsApi, type PipelinePreview } from "@/lib/api";
 import { PageShell } from "@/ui/page-shell";
 import { Button } from "@/ui/primitives/button";
-import { Input } from "@/ui/primitives/input";
 import { Select } from "@/ui/primitives/select";
 import { SettingsSaveFooter } from "@/ui/settings-section";
 import { PipelineView } from "@/features/job/pipeline/PipelineView";
 import { DirtyGuard } from "./DirtyGuard";
+import { PipelineEditor } from "./PipelineEditor";
 import {
   draftPipelineNames,
   draftState,
-  editExecution,
-  entries,
+  errorsAt,
   fieldErrors,
   invalidSteps,
   parseDraft,
@@ -45,6 +44,7 @@ export function RepoSettings({ repo }: { repo: string }) {
     text: string;
     error: unknown;
     pipelines?: Record<string, unknown[]>;
+    preview?: Record<string, PipelinePreview>;
   }>();
   useEffect(() => {
     if (!text) return;
@@ -58,7 +58,13 @@ export function RepoSettings({ repo }: { repo: string }) {
       }
       settingsApi.validate(repo, body).then(
         (result) => {
-          if (active) setValidation({ text, error: null, pipelines: result.pipelines });
+          if (active)
+            setValidation({
+              text,
+              error: null,
+              pipelines: result.pipelines,
+              preview: result.preview,
+            });
         },
         (error) => {
           if (active) setValidation({ text, error });
@@ -162,6 +168,11 @@ export function RepoSettings({ repo }: { repo: string }) {
                       <option key={p}>{p}</option>
                     ))}
                   </Select>
+                  {errorsAt(errors, "defaultPipeline").map((message, i) => (
+                    <span key={i} className="block text-xs text-danger">
+                      {message}
+                    </span>
+                  ))}
                 </label>
                 <label>
                   Edit pipeline
@@ -171,67 +182,14 @@ export function RepoSettings({ repo }: { repo: string }) {
                     ))}
                   </Select>
                 </label>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr>
-                        {["Step", "Execution / Role", "Provider", "Model", "Effort"].map((h) => (
-                          <th key={h} className="p-2">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(config.pipelines[name] ?? []).flatMap((step, si) =>
-                        entries(step).map((entry, ei) => {
-                          const profile = entry.profiles[entry.provider] ?? {
-                            model: "",
-                            effort: "",
-                          };
-                          function change(field: "provider" | "model" | "effort", value: string) {
-                            update(editExecution(config!, name, si, ei, field, value));
-                          }
-                          return (
-                            <tr key={`${si}/${ei}`} className="border-t border-border">
-                              <td className="p-2">{step.id}</td>
-                              <td className="p-2">
-                                {entry.id}
-                                <br />
-                                <span className="text-muted-foreground">{entry.uses}</span>
-                              </td>
-                              <td className="p-2">
-                                <Select
-                                  aria-label={`${entry.id} provider`}
-                                  value={entry.provider}
-                                  onChange={(e) => change("provider", e.target.value)}
-                                >
-                                  <option>codex</option>
-                                  <option>claude</option>
-                                  <option>opencode</option>
-                                </Select>
-                              </td>
-                              <td className="p-2">
-                                <Input
-                                  aria-label={`${entry.id} model`}
-                                  value={profile.model}
-                                  onChange={(e) => change("model", e.target.value)}
-                                />
-                              </td>
-                              <td className="p-2">
-                                <Input
-                                  aria-label={`${entry.id} effort`}
-                                  value={profile.effort}
-                                  onChange={(e) => change("effort", e.target.value)}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        }),
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <PipelineEditor
+                  config={config}
+                  name={name}
+                  errors={errors}
+                  preview={validation?.text === text ? validation.preview?.[name] : undefined}
+                  roles={roles.data?.roles ?? []}
+                  onChange={update}
+                />
               </>
             )}
             <h2 className="font-medium">Pipeline preview</h2>

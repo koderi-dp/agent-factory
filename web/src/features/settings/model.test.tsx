@@ -4,8 +4,19 @@ import { ApiError, configSchema } from "@/lib/api";
 import { PipelineView } from "@/features/job/pipeline/PipelineView";
 import {
   draftPipelineNames,
+  addGroupMember,
+  addStage,
   draftState,
   editExecution,
+  errorsAt,
+  errorsUnder,
+  groupWithNext,
+  moveStage,
+  removeGroupMember,
+  removeStage,
+  setStageField,
+  stageKinds,
+  ungroup,
   entries,
   fieldErrors,
   invalidSteps,
@@ -48,6 +59,66 @@ const roles = [
   { name: "builder", provider: "codex", type: "task" },
   { name: "approver", provider: "codex", type: "approval" },
 ];
+
+describe("pipeline edit operations", () => {
+  const review = (id: string) => ({
+    id,
+    uses: "reviewer",
+    provider: "codex" as const,
+    profiles: { codex: { model: "sol", effort: "low" } },
+  });
+  const reviews = (() => {
+    const next = structuredClone(config);
+    next.pipelines.fast = [review("a"), review("b"), review("c")];
+    return next;
+  })();
+  it("adds with a unique id, refuses at 32 and removal of the last stage", () => {
+    const added = addStage(config, "fast", 0);
+    expect(added.pipelines.fast.map((s) => s.id)).toEqual(["build", "stage-2", "approve"]);
+    expect(addStage(added, "fast", 0).pipelines.fast[1].id).toBe("stage-3");
+    let full = config;
+    while (full.pipelines.fast.length < 32) full = addStage(full, "fast", 0);
+    expect(addStage(full, "fast", 0)).toBe(full);
+    const single = { ...config, pipelines: { fast: [config.pipelines.fast[0]] } };
+    expect(removeStage(single, "fast", 0)).toBe(single);
+  });
+  it("keeps onChanges consistent on remove, move and rename", () => {
+    expect(removeStage(config, "fast", 0).pipelines.fast[0].onChanges).toBeUndefined();
+    expect(moveStage(config, "fast", 1, -1).pipelines.fast[0].onChanges).toBeUndefined();
+    expect(setStageField(config, "fast", 0, "id", "make").pipelines.fast[1].onChanges).toBe("make");
+    expect(setStageField(config, "fast", 1, "onChanges", "").pipelines.fast[1]).not.toHaveProperty(
+      "onChanges",
+    );
+  });
+  it("groups, grows, shrinks and ungroups review stages", () => {
+    const grouped = groupWithNext(reviews, "fast", 0);
+    const group = grouped.pipelines.fast[0];
+    expect(group.id).toBe("a");
+    expect("parallel" in group && group.parallel.map((m) => m.id)).toEqual(["a-2", "b"]);
+    const grown = addGroupMember(grouped, "fast", 0);
+    expect(entries(grown.pipelines.fast[0]).map((m) => m.id)).toEqual(["a-2", "b", "b-2"]);
+    const shrunk = removeGroupMember(removeGroupMember(grown, "fast", 0, 2), "fast", 0, 0);
+    expect(shrunk.pipelines.fast[0]).toMatchObject({ id: "a", uses: "reviewer" });
+    expect("parallel" in shrunk.pipelines.fast[0]).toBe(false);
+    expect(ungroup(grown, "fast", 0).pipelines.fast.map((s) => s.id)).toEqual([
+      "a-2",
+      "b",
+      "b-2",
+      "c",
+    ]);
+  });
+  it("derives kinds and finds field errors by path", () => {
+    expect(stageKinds(config.pipelines.fast, undefined, roles)).toEqual(["task", "approval"]);
+    expect(stageKinds(config.pipelines.fast, undefined, [])).toEqual([undefined, undefined]);
+    const errors = [
+      { path: "pipelines.fast.0.id", message: "duplicate" },
+      { path: "pipelines.fast.0.parallel.1.id", message: "other" },
+    ];
+    expect(errorsAt(errors, "pipelines.fast.0.id")).toEqual(["duplicate"]);
+    expect(errorsUnder(errors, "pipelines.fast.0")).toEqual(["duplicate", "other"]);
+    expect(errorsUnder(errors, "pipelines.fast.1")).toEqual([]);
+  });
+});
 
 describe("settings draft and preview", () => {
   it("switches provider without changing either profile and edits only the selected one", () => {
@@ -136,7 +207,14 @@ async function renderSettingsRoute(path: string) {
     activity: [],
     last_event_id: 0,
     backlog: [
-      { index: 0, key: "item-key", title: "Feature <script>", details: "Keep the details", priority: "normal", status: "ready" },
+      {
+        index: 0,
+        key: "item-key",
+        title: "Feature <script>",
+        details: "Keep the details",
+        priority: "normal",
+        status: "ready",
+      },
     ],
   });
   client.setQueryData(["roles", "alpha", config], {
