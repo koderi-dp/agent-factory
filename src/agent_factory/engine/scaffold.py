@@ -9,10 +9,9 @@ import subprocess
 import tempfile
 from typing import Any
 
-from agent_factory import __version__
 from agent_factory import run_cli
 from agent_factory.engine import gitops, registry, versioning
-from agent_factory.engine.config import template_config, upgrade_v1, validate_config
+from agent_factory.engine.config import engine_range, template_config, upgrade_v1, validate_config
 
 TEMPLATES = Path(__file__).parent.parent / "templates"
 
@@ -22,8 +21,7 @@ def upgrade(root: Path, *, dry_run: bool = False) -> str:
     root = root.resolve()
     raw = json.loads((root / "factory/config.json").read_text(encoding="utf-8-sig"))
     converted = upgrade_v1(raw)
-    major = int(__version__.split(".")[0])
-    converted["engine"] = f">={major}.0,<{major + 1}"
+    converted["engine"] = engine_range()
     writes = {"factory/config.json": (json.dumps(converted, indent=2) + "\n").encode()}
     deletes: set[str] = set()
     clients = set()
@@ -169,8 +167,7 @@ def init(root: Path, provider: str, *, dry_run: bool = False) -> list[str]:
     if provider not in {"claude", "codex", "both"}:
         raise ValueError("Client must be claude, codex or both")
     raw = template_config()
-    major = int(__version__.split(".")[0])
-    raw["engine"] = f">={major}.0,<{major + 1}"
+    raw["engine"] = engine_range()
     if provider != "both":
         for steps in raw["pipelines"].values():
             for step in steps:

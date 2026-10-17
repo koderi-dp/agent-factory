@@ -9,3 +9,6 @@
   remains deferred (plan §18 item 1); do not claim Claude support.
 - Existing v1 repositories require `factory upgrade`; migrated repos keep their
   provider (Claude by default) and are not yet verified against a live v1 repo.
+- `factory init` and `factory upgrade` record an engine range that includes the
+  running release candidate (for example `>=1.0.0rc1,<2`), so a prerelease install
+  can initialise and then operate its own repository.

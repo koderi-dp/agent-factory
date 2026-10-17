@@ -11,7 +11,7 @@ from pydantic import (BaseModel, ConfigDict, Field, PrivateAttr, StringConstrain
                       field_validator, model_validator)
 
 from agent_factory import __version__
-from agent_factory.engine import db
+from agent_factory.engine import db, versioning
 from agent_factory.engine.roles import Provider, Role, resolve_role
 
 Identifier = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9-]{0,31}$")]
@@ -150,7 +150,7 @@ def template_config() -> dict[str, Any]:
     return json.loads(TEMPLATE.read_text(encoding="utf-8"))
 
 
-def upgrade_v1(raw: dict[str, Any], *, engine_version: str = __version__) -> dict[str, Any]:
+def upgrade_v1(raw: dict[str, Any], *, engine_version: str | None = None) -> dict[str, Any]:
     """Return an independent v2 dictionary without mutating or writing the input."""
     if not isinstance(raw, dict):
         raise ValueError("Config must be an object")
@@ -181,7 +181,7 @@ def upgrade_v1(raw: dict[str, Any], *, engine_version: str = __version__) -> dic
     # v1 defaulted to auto; new v2 repos default to verify in the template.
     result.setdefault("merge", "auto")
     result.update(version=2,
-                  engine=_engine_range(engine_version),
+                  engine=engine_range(engine_version),
                   defaultPipeline="full",
                   pipelines={
                       "full": pipeline,
@@ -191,9 +191,19 @@ def upgrade_v1(raw: dict[str, Any], *, engine_version: str = __version__) -> dic
     return result
 
 
-def _engine_range(version: str) -> str:
+def engine_range(version: str | None = None) -> str:
+    """PEP 440 range covering the running engine's major release.
+
+    A prerelease such as ``1.0.0rc1`` sorts below the stable ``>=1.0`` bound, so fall
+    back to the running version (minus any local segment) as the lower bound. That keeps
+    a repository usable by the engine that created it while the next major stays excluded.
+    """
+    version = __version__ if version is None else version
     major = int(version.split(".", 1)[0])
-    return f">={major}.0,<{major + 1}"
+    bound = f">={major}.0,<{major + 1}"
+    if not versioning.matches(version, bound):
+        return f">={version.split('+', 1)[0]},<{major + 1}"
+    return bound
 
 
 # Materialised once so upgrade_v1 is a pure transformation, including the omitted-pipeline case.

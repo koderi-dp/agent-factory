@@ -9,8 +9,8 @@ import pytest
 from pydantic import ValidationError
 
 from agent_factory import __version__
-from agent_factory.engine import db
-from agent_factory.engine.config import (MachineSettings, RepoConfig, load_config,
+from agent_factory.engine import db, versioning
+from agent_factory.engine.config import (MachineSettings, RepoConfig, engine_range, load_config,
                                          load_machine_settings, save_machine_settings,
                                          template_config, upgrade_v1, validate_config)
 from agent_factory.engine.registry import open_registry
@@ -342,6 +342,18 @@ def test_empty_v1_config_preserves_defaults_and_current_major(tmp_path):
     assert config.merge == "auto"
     assert config.permissions == "auto" and config.maxRounds == 3
     assert all(e.provider == "claude" for s in config.pipelines["full"] for e in s.executions)
+
+
+@pytest.mark.parametrize("version,expected", [("1.4.2", ">=1.0,<2"), ("2.1.0", ">=2.0,<3"),
+                                              ("1.0.0rc1", ">=1.0.0rc1,<2"),
+                                              ("2.0.0b2", ">=2.0.0b2,<3")])
+def test_engine_range_always_covers_its_source_version(version, expected):
+    assert engine_range(version) == expected
+    assert versioning.matches(version, engine_range(version))
+
+
+def test_engine_range_defaults_to_running_version():
+    assert engine_range() == engine_range(__version__)
 
 
 def test_upgrade_v2_is_idempotent_and_does_not_alias(raw):
