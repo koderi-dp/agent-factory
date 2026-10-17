@@ -1,5 +1,7 @@
 """Machine service coordinator. Serialises job/file mutations with scheduling."""
 
+import base64
+import binascii
 from collections.abc import Mapping
 import hashlib
 import json
@@ -21,6 +23,24 @@ from agent_factory.engine.supervisor import Supervisor
 from agent_factory.paths import machine_dir
 
 LOG = logging.getLogger(__name__)
+ACTIVE_STATES = ("running", "queued", "paused", "needs_human")
+
+
+def _encode_cursor(event: Mapping[str, Any]) -> str:
+    raw = json.dumps([event["ts"], event["repo_id"], event["id"]], separators=(",", ":"))
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[str, str, int]:
+    try:
+        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+        ts, repo_id, event_id = json.loads(raw)
+    except (ValueError, TypeError, binascii.Error):
+        raise ValueError("Malformed activity cursor") from None
+    if (not isinstance(ts, str) or not isinstance(repo_id, str) or not isinstance(event_id, int)
+            or isinstance(event_id, bool)):
+        raise ValueError("Malformed activity cursor")
+    return ts, repo_id, event_id
 
 
 class Runtime:
@@ -151,18 +171,125 @@ class Runtime:
             finally:
                 connection.close()
 
+    def _repo_statuses(self, repo_id: str | None = None) -> list[tuple[Any, str, str | None]]:
+        repos = self.scheduler.machine.call(registry.list_repos)
+        if repo_id is not None:
+            repos = [repo for repo in repos if repo.id == repo_id]
+            if not repos:
+                raise KeyError(f"Unknown repository: {repo_id}")
+        result = []
+        for repo in repos:
+            status, detail = "missing" if repo.missing else "available", None
+            if not repo.missing:
+                try:
+                    versioning.check(Path(repo.path), new_jobs=True)
+                except versioning.VersionMismatch as error:
+                    status, detail = "version_mismatch", str(error)
+            result.append((repo, status, detail))
+        return result
+
+    def _read_repos(self, repo_id: str | None,
+                    read) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Run ``read(connection, repo)`` on every non-missing repository, read only."""
+        summaries, rows = [], []
+        for repo, status, detail in self._repo_statuses(repo_id):
+            if status != "missing":
+                try:
+                    connection = pipeline.open_repo(repo.path)
+                    try:
+                        rows.extend(read(connection, repo))
+                    finally:
+                        connection.close()
+                except (sqlite3.Error, ValueError) as error:
+                    status, detail = "unreadable", str(error)
+            summaries.append({"id": repo.id, "name": repo.name, "status": status, "detail": detail})
+        return summaries, rows
+
+    def jobs(self,
+             states: list[str] | tuple[str, ...] | None = None,
+             repo_id: str | None = None,
+             limit: int = 200) -> dict[str, Any]:
+        states = tuple(states) if states else ACTIVE_STATES
+        marks = ",".join("?" * len(states))
+
+        def read(connection: sqlite3.Connection, repo) -> list[dict[str, Any]]:
+            return [{
+                "repo_id": repo.id,
+                "repo_name": repo.name,
+                **dict(row)
+            } for row in connection.execute(
+                "SELECT id,seq,title,state,pause_reason,note,current_step,pipeline_name,branch,"
+                f"round,created_at,updated_at FROM jobs WHERE state IN ({marks})", states)]
+
+        with self.lock:
+            repos, jobs = self._read_repos(repo_id, read)
+        jobs.sort(key=lambda job: job["seq"], reverse=True)
+        jobs.sort(key=lambda job: job["repo_id"])
+        jobs.sort(key=lambda job: job["updated_at"], reverse=True)
+        return {"repos": repos, "jobs": jobs[:limit], "truncated": len(jobs) > limit}
+
+    def activity(self,
+                 limit: int = 50,
+                 repo_id: str | None = None,
+                 cursor: str | None = None,
+                 types: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
+        after = _decode_cursor(cursor) if cursor else None
+
+        def read(connection: sqlite3.Connection, repo) -> list[dict[str, Any]]:
+            where, params = [], []
+            if after is not None:
+                ts0, repo0, id0 = after
+                if repo.id < repo0:
+                    where.append("e.ts <= ?")
+                    params.append(ts0)
+                elif repo.id == repo0:
+                    where.append("(e.ts < ? OR (e.ts = ? AND e.id < ?))")
+                    params.extend([ts0, ts0, id0])
+                else:
+                    where.append("e.ts < ?")
+                    params.append(ts0)
+            if types:
+                where.append(f"e.type IN ({','.join('?' * len(types))})")
+                params.extend(types)
+            clause = f"WHERE {' AND '.join(where)} " if where else ""
+            rows = connection.execute(
+                "SELECT e.id,e.job_id,j.title AS job_title,e.type,e.ts,e.payload FROM events e "
+                f"LEFT JOIN jobs j ON j.id=e.job_id {clause}ORDER BY e.ts DESC, e.id DESC LIMIT ?",
+                (*params, limit + 1)).fetchall()
+            result = []
+            for row in rows:
+                try:
+                    payload = json.loads(row["payload"])
+                except ValueError:
+                    payload = None
+                fields = payload if isinstance(payload, dict) else {}
+                result.append({
+                    "repo_id": repo.id,
+                    "repo_name": repo.name,
+                    "id": row["id"],
+                    "job_id": row["job_id"],
+                    "job_title": row["job_title"],
+                    "type": row["type"],
+                    "ts": row["ts"],
+                    "state": fields.get("state"),
+                    "stage": fields.get("step_id"),
+                    "payload": payload
+                })
+            return result
+
+        with self.lock:
+            repos, events = self._read_repos(repo_id, read)
+        events.sort(key=lambda event: (event["ts"], event["repo_id"], event["id"]), reverse=True)
+        page = events[:limit]
+        next_cursor = _encode_cursor(page[-1]) if len(events) > limit and page else None
+        return {"repos": repos, "events": page, "next": next_cursor}
+
     def overview(self) -> dict[str, Any]:
         with self.lock:
-            repos = self.scheduler.machine.call(registry.list_repos)
             result = []
-            for repo in repos:
+            for repo, status, detail in self._repo_statuses():
                 counts = {"running": 0, "needs-you": 0, "queued": 0}
-                status, detail = "missing" if repo.missing else "available", None
                 if not repo.missing:
-                    try:
-                        versioning.check(Path(repo.path), new_jobs=True)
-                    except versioning.VersionMismatch as error:
-                        status, detail = "version_mismatch", str(error)
                     connection = pipeline.open_repo(repo.path)
                     try:
                         for state, n in connection.execute(

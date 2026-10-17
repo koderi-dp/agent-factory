@@ -930,6 +930,8 @@ item twice is rejected by the unique `backlog_key`.
 ```
 GET  /api/health                                  {version, pid}; no token needed
 GET  /api/overview                                all repos: name, path, status, counts (running, needs-you, queued)
+GET  /api/jobs?state=&repo=&limit=                active jobs across repos (default running, queued, paused, needs_human; limit ≤1000): repos with status, jobs with repo, stage, pause reason, timestamps, truncated
+GET  /api/activity?limit=&repo=&cursor=&type=     recent events across repos, newest first (limit ≤200): repos with status, events with repo, job, state, stage, payload; next cursor
 GET  /api/overview/stream                         SSE: in-memory overview updates (no replay; on reconnect refetch /api/overview)
 GET  /api/machine/settings   PUT …                concurrency.global, cli paths, ports.range
 GET  /api/repos/{repo}/state                      snapshot: jobs, current executions, backlog, config summary, last event id

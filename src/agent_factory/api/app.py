@@ -8,7 +8,7 @@ import logging
 import os
 from pathlib import Path
 import secrets
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
@@ -24,6 +24,7 @@ from agent_factory.engine.config import (MachineSettings, load_config, load_mach
 from agent_factory.engine.runtime import Runtime
 
 BODY_LIMIT = 100_000
+JobState = Literal["queued", "running", "paused", "needs_human", "approved", "merged", "cancelled"]
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard_dist"
 
 
@@ -226,6 +227,19 @@ def create_app(*,
     @app.get("/api/overview")
     def overview() -> dict:
         return engine().overview()
+
+    @app.get("/api/jobs")
+    def jobs(state: Annotated[list[JobState] | None, Query()] = None,
+             repo: str | None = None,
+             limit: Annotated[int, Query(ge=1, le=1000)] = 200) -> dict:
+        return engine().jobs(state, repo, limit)
+
+    @app.get("/api/activity")
+    def activity(limit: Annotated[int, Query(ge=1, le=200)] = 50,
+                 repo: str | None = None,
+                 cursor: str | None = None,
+                 type: Annotated[list[str] | None, Query()] = None) -> dict:
+        return engine().activity(limit, repo, cursor, type)
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
