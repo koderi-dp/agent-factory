@@ -37,7 +37,7 @@ Speculative optimisations (code index, evidence reuse) run only when measurement
    focused handoffs instead of agents rereading the whole job history.
 3. **Unattended operation:** Start in the dashboard runs a job to completion without any client
    session left open.
-4. **Mixed providers:** each execution chooses Claude or Codex, so one review group can mix them.
+4. **Mixed providers:** each execution chooses Claude, Codex, or OpenCode, so one review group can mix them.
 5. **One install, many repos:** upgrade once per machine; repos carry only project-specific files.
 6. **Measured, not promised:** per-phase timings and token usage for every attempt.
 
@@ -226,7 +226,7 @@ src/agent_factory/
     pipeline.py          pure functions: next step, rewind, verdict aggregation (ported from job.advance)
     scheduler.py         claims executions under machine-wide limits
     supervisor.py        launch, tail, re-adopt, stop, exit classification
-    adapters/base.py, claude.py, codex.py
+    adapters/base.py, claude.py, codex.py, opencode.py
     packet.py            builds the execution prompt/handoff (§8)
     reports.py           report parsing and contract validation (§7)
     gitops.py            worktree create/remove, head, diff, merge (ported from job.py)
@@ -240,7 +240,7 @@ src/agent_factory/
     routes_*.py
   roles/                 built-in roles: spec-writer, builder, reviewer-*, approver, fast-approver
     builder.md, builder.codex.md, …       (provider variants where they differ)
-  templates/             files `factory init` writes: config.json, backlog.md, SKILL.md (claude, codex)
+  templates/             files `factory init` writes: config.json, backlog.md, SKILL.md (claude, codex, opencode)
   dashboard_dist/        (gitignored) built dashboard; included in the wheel
 web/                     dashboard source (React, §13.3)
 tests/                   pytest; tests/fake_cli.py
@@ -259,6 +259,7 @@ factory/
   jobs/<job-id>/       gitignored: request.md, reports, prompts, logs
 .claude/skills/factory/SKILL.md    committed: thin /factory wrapper (if Claude selected)
 .agents/skills/factory/SKILL.md    committed: thin $factory wrapper (if Codex selected)
+.opencode/skills/factory/SKILL.md  committed: thin OpenCode wrapper (if OpenCode selected)
 .gitignore             + /factory/state/  + /factory/jobs/
 ```
 
@@ -357,24 +358,24 @@ Rules, enforced by Pydantic validators and checked before saving or creating a j
   Step ids no longer double as stage names (§6.1), so nothing is reserved.
 - `uses` matches the existing `NAME` pattern and must resolve to a role for the selected
   provider (§5.3).
-- `provider` ∈ {claude, codex}. `profiles[provider]` must exist with an explicit `model` and
-  `effort`. Profiles for the unselected provider are optional and preserved, so switching
-  back in the dashboard restores them.
+- `provider` ∈ {claude, codex, opencode}. `profiles[provider]` must exist with an explicit
+  `model` and `effort`. Profiles for the unselected provider are optional and preserved, so
+  switching back in the dashboard restores them.
 - **Roles may repeat** across executions, including inside one parallel group (e.g. the
-  same reviewer through both providers), because report paths are keyed by execution id (§7.1).
+  same reviewer through different providers), because report paths are keyed by execution id (§7.1).
 - Each pipeline ends with exactly one `approval` step. ≤ 32 steps, ≤ 16 executions per group.
 - `onChanges` must name an **earlier task** step. It is allowed on review and approval steps.
 - `concurrency.perJob` is 1–16. The machine-wide limit lives in machine settings (§5.2).
 - An optional per-execution `timeoutMinutes` overrides `timeouts.executionMinutes`.
 - An optional per-execution `maxBudgetUsd` is passed to Claude's `--max-budget-usd` and
-  ignored for Codex, with a validation warning.
+  ignored for Codex and OpenCode, with a validation warning.
 
 ### 5.2 Machine settings
 
 Stored in `machine.db`, edited in the dashboard's machine Settings or with `factory config --machine`:
 - `concurrency.global` (default 6, range 1–32): live attempts across all repos.
-- `cli.claude`, `cli.codex`: absolute paths, detected by `factory doctor` (§12.1), so the
-  service doesn't depend on the PATH of whatever started it.
+- `cli.claude`, `cli.codex`, `cli.opencode`: absolute paths, detected by `factory doctor`
+  (§12.1), so the service doesn't depend on the PATH of whatever started it.
 - `ports.range`: default `5100-5999`.
 
 ### 5.3 Roles: built-ins, overrides, eject
@@ -382,12 +383,12 @@ Stored in `machine.db`, edited in the dashboard's machine Settings or with `fact
 Resolution for `uses: <name>` with provider `<p>`, first match wins:
 
 1. `factory/roles/<name>.<p>.md` (repo, provider-specific)
-2. `factory/roles/<name>.md` (repo, both providers)
+2. `factory/roles/<name>.md` (repo, all providers)
 3. built-in `<name>.<p>.md`
 4. built-in `<name>.md`
 
 Nothing found → a validation error listing the paths tried. There's still **no fallback to
-the other provider's file**. A provider-specific file is only used for that provider.
+another provider's file**. A provider-specific file is only used for that provider.
 
 - **Built-in roles** ship in the package: `spec-writer`, `builder`, `reviewer-security`,
   `reviewer-ux`, `reviewer-ui`, `reviewer-code`, `approver`, `fast-approver`. Engine upgrades
@@ -670,14 +671,32 @@ codex exec --json -m <model> -c model_reasoning_effort="<effort>"
 ```
 Resume: `codex exec resume --json <session_id> -` with the same flags.
 
-The executable comes from machine settings `cli.claude` / `cli.codex` (§5.2), falling back to PATH.
+OpenCode:
+```
+opencode run --format json --standalone --auto
+             --model <provider>/<model>#<variant>
+             [--session <sessionID>]
+             < prompt.md            (stdin)
+cwd = worktree
+```
+Resume: add `--session <sessionID>` to continue that session (creating it if absent).
+
+`--standalone` runs a private server per attempt instead of the user's shared background
+service, so the attempt stays inside the wrapper's killable process tree. `--auto` approves
+everything not explicitly denied, so both repo `permissions` values (`auto`, `bypass`) map to
+it; configured `deny` rules and policies stay enforced. `--model` is `provider/model` plus the
+profile's `effort` as the model's `#variant`; an unknown variant fails immediately, and a
+configured `model` that already contains `#` passes through unchanged.
+
+The executable comes from machine settings `cli.claude` / `cli.codex` / `cli.opencode` (§5.2), falling back to PATH.
 
 - `system.md` = the factory's fixed preamble (contracts, report path rules, port rules, "never push",
   "never touch the main checkout") + the resolved role instructions. It is byte-identical
-  across jobs for the same role and engine version, so providers can cache it. For Codex,
-  which has no system-prompt flag in `exec`, `system.md` is prepended to the prompt. Phase 0
+  across jobs for the same role and engine version, so providers can cache it. For Codex and
+  OpenCode, which have no system-prompt flag in `exec`/`run`, `system.md` is prepended to the
+  prompt. Phase 0
   checks whether `-c developer_instructions=…` is supported and better.
-- **Project instructions are not copied in.** Both CLIs load `CLAUDE.md`/`AGENTS.md` from
+- **Project instructions are not copied in.** The CLIs load `CLAUDE.md`/`AGENTS.md` from
   the worktree themselves. The packet only refers to them.
 - `prompt.md` = the packet rendered as Markdown, in a fixed section order.
 
@@ -813,10 +832,10 @@ holding `factory/config.json`). `--repo <path|id>` overrides this.
 
 ```
 Setup
-  factory init [--provider claude|codex|both] [--dry-run]   set up this repo (§12.2)
+  factory init [--provider claude|codex|opencode|both] [--dry-run]   set up this repo (§12.2)
   factory upgrade [--dry-run]                               update this repo's files to the engine's format (§15.4)
   factory eject <role> [--provider p] [--diff]              copy a built-in role into factory/roles/
-  factory doctor                                            check git, claude/codex (+ login), agent-browser, ports, PATH
+  factory doctor                                            check git, claude/codex/opencode (+ login), agent-browser, ports, PATH
   factory repos [list | remove <id> | rename <id> <name>]
 
 Jobs
@@ -850,7 +869,7 @@ Service and dashboard
 `factory init`, in a project folder:
 1. Checks that it's a Git repo with a `main` branch and at least one commit, and that
    `AGENTS.md` or `CLAUDE.md` exists. If not, it explains what's missing (no files written).
-2. Asks for the client (claude / codex / both), unless `--provider` is given.
+2. Asks for the client (claude / codex / opencode / both), unless `--provider` is given.
 3. Writes `factory/config.json` (from the template, with `"engine": ">=<major>.0,<<major+1>"`),
    `factory/backlog.md`, the selected skill wrappers, and the `.gitignore` entries.
    Existing files are never overwritten; it reports them and skips.
@@ -871,7 +890,8 @@ prints a summary and leaves the diff for the user to review and commit.
 
 ### 12.3 Skills (committed in the repo, written by `init`)
 
-`/factory <feature>` (Claude) and `$factory <feature>` (Codex) are ~30-line wrappers:
+`/factory <feature>` (Claude), `$factory <feature>` (Codex), and OpenCode's
+`.opencode/skills/factory/SKILL.md` are ~30-line wrappers:
 
 - They map the user's words to commands: `<feature>` → `factory start`, plus `next`,
   `status`, `approve`, `rework`, `stop`, `resume`, `dashboard`, and an optional
@@ -1158,6 +1178,7 @@ MIT) are generated at build time into `dashboard_dist/THIRD_PARTY_NOTICES.txt` a
 - Usage is parsed by the adapters and stored raw + normalised as `{input, cached_input, output, cost_usd|null}`.
   - Claude: the final `result` event (`usage`, `total_cost_usd`, `duration_ms`, `num_turns`, `permission_denials`).
   - Codex: `turn.completed` events (`usage.input_tokens`, `cached_input_tokens`, `output_tokens`); cost is null.
+  - OpenCode: `step_finish` events (`part.tokens` input/output/reasoning and cache read/write; `part.cost` in USD).
   - Missing values stay `null` and show as "unknown". Never estimate.
 - Logs: `events.jsonl` per attempt, in the repo's gitignored `factory/jobs/`. Folders older
   than 30 days for merged or deleted jobs are compressed (gzip) at service start. The
@@ -1407,6 +1428,12 @@ input/output, from third-party API price lists):
 Effort levels: Light (`low`), Medium, High, Extra High, Max (more thinking on one task),
 and Ultra (parallel subagents; not available on Luna). Higher effort means more output
 (reasoning) tokens, which are the expensive side.
+
+**OpenCode models:** the adapter passes `--model <provider>/<model>` and forwards the
+profile's `effort` as the model's `#variant`, so `effort` must name one of the model's
+variants; an unknown variant fails immediately, and a configured `model` that already
+contains `#` passes through unchanged. Recorded fixtures use the free model
+`opencode/deepseek-v4.1-flash-free`.
 
 **What cost means depends on how Codex is signed in:**
 - **ChatGPT sign-in (Plus/Pro/Business):** no per-token bill. Usage counts against the plan's

@@ -75,7 +75,7 @@ v1. The builder commit and clean-worktree rules require git (session 1.8).
 | Role frontmatter `output` determines filenames; collisions rejected; same role forbidden twice in a group | Reports are attempt-local `report.md` paths keyed by step/execution/round/attempt; duplicate roles are allowed (§5.1, §5.3, §7.1) |
 | Changed report signature implies freshness | Report mtime must be strictly later than launch (§7.2) |
 | Approval only accepts APPROVE/ESCALATE | Contract parser and generic transition accept CHANGES only with `onChanges` (§7.2, §10.1). Fast workflow integration remains session 2.2 |
-| Provider/model settings constrained to v1's known values; terminal words reserved as step ids | Per-execution provider and explicit nonempty profiles; v2 id pattern permits terminal words without confusing states (§5.1; session 1.2 tests) |
+| Provider/model settings constrained to v1's known values; terminal words reserved as step ids | Per-execution provider (claude, codex or opencode) and explicit nonempty profiles; v2 id pattern permits terminal words without confusing states (§5.1; session 1.2 tests) |
 
 There are no additional intended deviations. Git operations/validation (1.8),
 scheduling/attempt recovery (1.5), Fast integration and sensitive-path checks (2.2)

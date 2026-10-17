@@ -26,7 +26,7 @@ def write_role(path, text="---\ntype: task\n---\nInstructions.\n"):
     path.write_text(text, encoding="utf-8")
 
 
-@pytest.mark.parametrize("provider", ["claude", "codex"])
+@pytest.mark.parametrize("provider", ["claude", "codex", "opencode"])
 def test_resolution_order_and_freezing_evidence(tmp_path, provider):
     repo = tmp_path / "repo"
     builtins = tmp_path / "builtins"
@@ -49,7 +49,8 @@ def test_resolution_order_and_freezing_evidence(tmp_path, provider):
         assert f"Instructions {i}." in role.instructions
 
 
-@pytest.mark.parametrize("provider,other", [("claude", "codex"), ("codex", "claude")])
+@pytest.mark.parametrize("provider,other", [("claude", "codex"), ("codex", "claude"),
+                                            ("opencode", "codex")])
 def test_no_cross_provider_fallback_and_error_lists_all_paths(tmp_path, provider, other):
     builtins = tmp_path / "builtins"
     roles = tmp_path / "factory" / "roles"
@@ -111,9 +112,10 @@ def test_unsafe_role_names_are_rejected(tmp_path, name):
         resolve_role(name, "codex", root=tmp_path)
 
 
-def test_unknown_provider_is_rejected(tmp_path):
+@pytest.mark.parametrize("provider", ["other", "gemini"])
+def test_unknown_provider_is_rejected(tmp_path, provider):
     with pytest.raises(RoleError, match="provider"):
-        resolve_role("builder", "other", root=tmp_path)
+        resolve_role("builder", provider, root=tmp_path)
 
 
 @pytest.mark.parametrize("path", sorted(BUILTIN_DIR.glob("*.md")), ids=lambda p: p.name)
@@ -129,7 +131,7 @@ def test_every_builtin_file_fits_byte_budget_and_has_report_sections(path):
 
 
 @pytest.mark.parametrize("name", BUILTINS)
-@pytest.mark.parametrize("provider", ["claude", "codex"])
+@pytest.mark.parametrize("provider", ["claude", "codex", "opencode"])
 def test_builtin_contract_and_packet_handoff(tmp_path, name, provider):
     role = resolve_role(name, provider, root=tmp_path)
     assert (role.type, role.contract) == BUILTINS[name][:2]

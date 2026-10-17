@@ -281,6 +281,18 @@ def test_reusing_role_in_later_steps_keeps_separate_settings(engine):
     assert (task["exec_id"], task["model"], task["effort"]) == ("polish", "gpt-6-luna", "low")
 
 
+def test_opencode_execution_uses_its_own_provider_settings(engine):
+    engine.raw["pipelines"]["full"].insert(
+        1, execution("polish", "writer", "opencode", "opencode/deepseek-v4.1-flash-free", "high"))
+    engine.create("002-opencode")
+    engine.job_id = "002-opencode"
+    engine.start()
+    engine.finish()
+    task = engine.plan()[0]
+    assert (task["exec_id"], task["provider"], task["model"],
+            task["effort"]) == ("polish", "opencode", "opencode/deepseek-v4.1-flash-free", "high")
+
+
 def test_pipeline_models_limits_roles_and_preamble_are_frozen(engine):
     original, _ = engine.load()
     engine.raw.update(merge="auto", maxRounds=5, permissions="bypass")

@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "--standalone",
+    "--auto",
+    "--model",
+    "opencode/deepseek-v4.1-flash-free"
+  ],
+  "prompt": "Run the shell command `git status --porcelain` with a tool, then reply with exactly: done",
+  "exit_code": 0,
+  "killed": false,
+  "elapsed_seconds": 6.36,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  },
+  "stdout_bytes": 2055,
+  "stderr_bytes": 0
+}

@@ -5,14 +5,14 @@ import difflib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from agent_factory import __version__
 
-Provider = Literal["claude", "codex"]
+Provider = Literal["claude", "codex", "opencode"]
 RoleType = Literal["task", "review", "approval"]
 NAME = re.compile(r"[a-z][a-z0-9-]{0,63}\Z")
 BUILTIN_DIR = Path(__file__).resolve().parent.parent / "roles"
@@ -63,7 +63,7 @@ def resolve_role(name: str,
     """Resolve the first existing file; an invalid override never falls through."""
     if not NAME.fullmatch(name):
         raise RoleError(f"Invalid role name: {name!r}")
-    if provider not in {"claude", "codex"}:
+    if provider not in get_args(Provider):
         raise RoleError(f"Unknown provider: {provider!r}")
     repo_roles = Path(root).resolve() / "factory" / "roles"
     builtins = BUILTIN_DIR if builtin_dir is None else Path(builtin_dir).resolve()

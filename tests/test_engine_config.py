@@ -280,6 +280,26 @@ def test_codex_budget_warns_and_claude_budget_is_preserved(raw, tmp_path):
     assert config.pipelines["fast"][1].maxBudgetUsd == 4
 
 
+def test_opencode_budget_warns_and_is_preserved(raw, tmp_path):
+    execution = raw["pipelines"]["fast"][0]
+    execution["provider"] = "opencode"
+    execution["maxBudgetUsd"] = 3
+    with pytest.warns(UserWarning, match="maxBudgetUsd is ignored for OpenCode"):
+        config = validate(raw, tmp_path)
+    assert config.pipelines["fast"][0].maxBudgetUsd == 3
+
+
+def test_opencode_model_must_be_provider_slash_model(raw, tmp_path):
+    execution = raw["pipelines"]["fast"][0]
+    execution["provider"] = "opencode"
+    execution["profiles"]["opencode"] = {"model": "deepseek-v4.1-flash-free", "effort": "high"}
+    with pytest.raises(ValidationError, match="provider/model"):
+        validate(raw, tmp_path)
+    execution["profiles"]["opencode"]["model"] = "opencode/deepseek-v4.1-flash-free"
+    assert validate(raw, tmp_path).pipelines["fast"][0].profiles["opencode"].model == (
+        "opencode/deepseek-v4.1-flash-free")
+
+
 @pytest.mark.parametrize("field,value", [("version", 3),
                                          ("merge", "other"), ("permissions", "other"),
                                          ("maxRounds", 0), ("maxRounds", 6), ("engine", "")])
@@ -390,12 +410,14 @@ def test_machine_settings_defaults_and_persistence_respect_factory_home(tmp_path
         assert defaults.concurrency.global_ == 6
         assert defaults.ports.range == "5100-5999"
         assert defaults.cli.claude is None and defaults.cli.codex is None
+        assert defaults.cli.opencode is None
         settings = MachineSettings.model_validate({
             "concurrency": {
                 "global": 32
             },
             "cli": {
-                "codex": str(tmp_path / "CLI with spaces" / "codex.exe")
+                "codex": str(tmp_path / "CLI with spaces" / "codex.exe"),
+                "opencode": str(tmp_path / "CLI with spaces" / "opencode.exe")
             },
             "ports": {
                 "range": "6000-6999"
@@ -423,7 +445,7 @@ def test_machine_concurrency_is_one_to_32(limit):
         MachineSettings.model_validate({"concurrency": {"global": limit}})
 
 
-@pytest.mark.parametrize("provider", ["claude", "codex"])
+@pytest.mark.parametrize("provider", ["claude", "codex", "opencode"])
 def test_machine_cli_path_must_be_absolute(provider):
     with pytest.raises(ValidationError, match="absolute"):
         MachineSettings.model_validate({"cli": {provider: "relative/cli.exe"}})

@@ -9,4 +9,7 @@ def get_adapter(provider: str, **kwargs: Any) -> Adapter:
     if provider == "codex":
         from agent_factory.engine.adapters.codex import CodexAdapter
         return CodexAdapter(**kwargs)
+    if provider == "opencode":
+        from agent_factory.engine.adapters.opencode import OpencodeAdapter
+        return OpencodeAdapter(**kwargs)
     raise UnsupportedProviderError(f"Unsupported provider: {provider}; no adapter is installed")

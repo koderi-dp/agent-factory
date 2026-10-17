@@ -16,6 +16,10 @@
           "codex": {
             "model": "gpt-6.1-sol",
             "effort": "medium"
+          },
+          "opencode": {
+            "model": "opencode/deepseek-v4.1-flash-free",
+            "effort": "high"
           }
         }
       },
@@ -31,6 +35,10 @@
           "codex": {
             "model": "gpt-6.1-sol",
             "effort": "medium"
+          },
+          "opencode": {
+            "model": "opencode/deepseek-v4.1-flash-free",
+            "effort": "high"
           }
         },
         "onChanges": "build"
@@ -49,6 +57,10 @@
           "codex": {
             "model": "gpt-6.1-sol",
             "effort": "medium"
+          },
+          "opencode": {
+            "model": "opencode/deepseek-v4.1-flash-free",
+            "effort": "high"
           }
         }
       },
@@ -64,6 +76,10 @@
           "codex": {
             "model": "gpt-6.1-sol",
             "effort": "medium"
+          },
+          "opencode": {
+            "model": "opencode/deepseek-v4.1-flash-free",
+            "effort": "high"
           }
         }
       },
@@ -83,6 +99,10 @@
               "codex": {
                 "model": "gpt-6.1-sol",
                 "effort": "medium"
+              },
+              "opencode": {
+                "model": "opencode/deepseek-v4.1-flash-free",
+                "effort": "high"
               }
             }
           },
@@ -98,6 +118,10 @@
               "codex": {
                 "model": "gpt-6.1-sol",
                 "effort": "medium"
+              },
+              "opencode": {
+                "model": "opencode/deepseek-v4.1-flash-free",
+                "effort": "high"
               }
             }
           },
@@ -113,6 +137,10 @@
               "codex": {
                 "model": "gpt-6.1-sol",
                 "effort": "medium"
+              },
+              "opencode": {
+                "model": "opencode/deepseek-v4.1-flash-free",
+                "effort": "high"
               }
             }
           },
@@ -128,6 +156,10 @@
               "codex": {
                 "model": "gpt-6.1-sol",
                 "effort": "medium"
+              },
+              "opencode": {
+                "model": "opencode/deepseek-v4.1-flash-free",
+                "effort": "high"
               }
             }
           }
@@ -145,6 +177,10 @@
           "codex": {
             "model": "gpt-6.1-sol",
             "effort": "medium"
+          },
+          "opencode": {
+            "model": "opencode/deepseek-v4.1-flash-free",
+            "effort": "high"
           }
         }
       }

@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "--standalone",
+    "--auto",
+    "--model",
+    "opencode/deepseek-v4.1-flash-free"
+  ],
+  "prompt": "Reply with exactly: ok",
+  "exit_code": 0,
+  "killed": false,
+  "elapsed_seconds": 4.07,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  },
+  "stdout_bytes": 309,
+  "stderr_bytes": 0
+}

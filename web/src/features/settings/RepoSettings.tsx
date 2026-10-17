@@ -208,6 +208,7 @@ export function RepoSettings({ repo }: { repo: string }) {
                                 >
                                   <option>codex</option>
                                   <option>claude</option>
+                                  <option>opencode</option>
                                 </Select>
                               </td>
                               <td className="p-2">

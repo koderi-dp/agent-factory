@@ -46,6 +46,15 @@ class Execution(ConfigModel):
             warnings.warn(f"{self.id}: maxBudgetUsd is ignored for Codex",
                           UserWarning,
                           stacklevel=2)
+        if self.provider == "opencode":
+            if self.maxBudgetUsd is not None:
+                warnings.warn(f"{self.id}: maxBudgetUsd is ignored for OpenCode",
+                              UserWarning,
+                              stacklevel=2)
+            # `opencode run --model` needs the CLI's provider/model[#variant] form.
+            if "/" not in self.profiles["opencode"].model:
+                raise ValueError(f"{self.id}: profiles[opencode].model must be provider/model "
+                                 "for OpenCode")
         return self
 
 
@@ -235,8 +244,9 @@ class GlobalConcurrency(ConfigModel):
 class CliPaths(ConfigModel):
     claude: str | None = None
     codex: str | None = None
+    opencode: str | None = None
 
-    @field_validator("claude", "codex")
+    @field_validator("claude", "codex", "opencode")
     @classmethod
     def absolute_path(cls, value: str | None) -> str | None:
         if value is not None and not Path(value).is_absolute():
@@ -265,7 +275,7 @@ class MachineSettings(ConfigModel):
     ports: Ports = Field(default_factory=Ports)
 
 
-_MACHINE_KEYS = {"concurrency.global", "cli.claude", "cli.codex", "ports.range"}
+_MACHINE_KEYS = {"concurrency.global", "cli.claude", "cli.codex", "cli.opencode", "ports.range"}
 
 
 def load_machine_settings(connection: sqlite3.Connection) -> MachineSettings:

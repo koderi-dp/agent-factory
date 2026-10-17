@@ -15,6 +15,13 @@ from agent_factory.engine.config import engine_range, template_config, upgrade_v
 
 TEMPLATES = Path(__file__).parent.parent / "templates"
 
+# OpenCode V2 discovers skills in .opencode/skills/<id>/SKILL.md.
+CLIENT_SKILLS = {
+    "claude": ".claude/skills/factory/SKILL.md",
+    "codex": ".agents/skills/factory/SKILL.md",
+    "opencode": ".opencode/skills/factory/SKILL.md",
+}
+
 
 def upgrade(root: Path, *, dry_run: bool = False) -> str:
     """Plan every file change before writing; dry-run has no registry/service side effects."""
@@ -71,9 +78,9 @@ def upgrade(root: Path, *, dry_run: bool = False) -> str:
             deletes.update(
                 p.relative_to(root).as_posix() for p in directory.rglob("*") if p.is_file())
     for client in sorted(clients):
-        directory = ".claude" if client == "claude" else ".agents"
-        writes[f"{directory}/skills/factory/SKILL.md"] = (TEMPLATES /
-                                                          f"SKILL.{client}.md").read_bytes()
+        path = CLIENT_SKILLS.get(client)
+        if path is not None:
+            writes[path] = (TEMPLATES / f"SKILL.{client}.md").read_bytes()
     ignore = root / ".gitignore"
     content = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
     missing = [
@@ -164,8 +171,8 @@ def check_init(root: Path) -> Path:
 
 def init(root: Path, provider: str, *, dry_run: bool = False) -> list[str]:
     root = check_init(root)
-    if provider not in {"claude", "codex", "both"}:
-        raise ValueError("Client must be claude, codex or both")
+    if provider not in {"claude", "codex", "opencode", "both"}:
+        raise ValueError("Client must be claude, codex, opencode or both")
     raw = template_config()
     raw["engine"] = engine_range()
     if provider != "both":
@@ -177,11 +184,10 @@ def init(root: Path, provider: str, *, dry_run: bool = False) -> list[str]:
         "factory/config.json": json.dumps(raw, indent=2) + "\n",
         "factory/backlog.md": (TEMPLATES / "backlog.md").read_text(encoding="utf-8")
     }
-    for client, directory in (("claude", ".claude"), ("codex", ".agents")):
-        if provider in {client, "both"}:
-            files[f"{directory}/skills/factory/SKILL.md"] = (TEMPLATES /
-                                                             f"SKILL.{client}.md").read_text(
-                                                                 encoding="utf-8")
+    for client, path in CLIENT_SKILLS.items():
+        # "both" stays claude + codex; opencode is opted into explicitly.
+        if provider == client or (provider == "both" and client in {"claude", "codex"}):
+            files[path] = (TEMPLATES / f"SKILL.{client}.md").read_text(encoding="utf-8")
     messages = []
     for name, content in files.items():
         target = root / name
@@ -222,10 +228,11 @@ def doctor(root: Path | None = None) -> list[dict[str, Any]]:
         connection.close()
     checks = []
     discoveries = {}
-    for name in ("git", "codex", "claude", "agent-browser", "agent-factory"):
+    for name in ("git", "codex", "claude", "opencode", "agent-browser", "agent-factory"):
         override = getattr(settings.cli, name, None)
         path = override or shutil.which(name)
-        if name in {"codex", "claude"} and not override and path and Path(path).is_file():
+        if (name in {"codex", "claude", "opencode"} and not override and path
+                and Path(path).is_file()):
             discoveries[name] = str(Path(path).resolve())
         checks.append({
             "check": name,
@@ -251,7 +258,8 @@ def doctor(root: Path | None = None) -> list[dict[str, Any]]:
     import os
     codex_home = Path(os.environ.get("CODEX_HOME", home / ".codex"))
     for name, candidates in (("codex login", [codex_home / "auth.json"]),
-                             ("claude login", [home / ".claude/.credentials.json"])):
+                             ("claude login", [home / ".claude/.credentials.json"]),
+                             ("opencode login", [home / ".local/share/opencode/auth.json"])):
         present = any(path.is_file() for path in candidates)
         checks.append({
             "check":

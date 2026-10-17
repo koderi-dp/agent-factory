@@ -78,7 +78,7 @@ const profile = z.object({ model: z.string(), effort: z.string() });
 const configuredExecution = z.object({
   id: z.string(),
   uses: z.string(),
-  provider: z.enum(["codex", "claude"]),
+  provider: z.enum(["codex", "claude", "opencode"]),
   profiles: z.record(z.string(), profile),
   timeoutMinutes: z.number().positive().nullable().optional(),
   maxBudgetUsd: z.number().positive().nullable().optional(),
@@ -253,7 +253,7 @@ export type StatusInfo = {
 
 export const machineSchema = z.object({
   concurrency: z.object({ global: z.number().int().min(1).max(32) }),
-  cli: z.object({ claude: nullableText, codex: nullableText }),
+  cli: z.object({ claude: nullableText, codex: nullableText, opencode: nullableText }),
   ports: z.object({ range: z.string() }),
 });
 export const rolesSchema = z.object({

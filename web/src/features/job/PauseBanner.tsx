@@ -1,6 +1,10 @@
 import type { Job, Execution } from "@/features/board/model";
 export function PauseBanner({ job, executions = [] }: { job: Job; executions?: Execution[] }) {
   if (!["paused", "needs_human"].includes(job.state)) return null;
+  const provider = executions.find((e) => ["stopped", "failed", "running"].includes(e.state))
+    ?.provider;
+  const loginCommand =
+    { claude: "claude login", opencode: "opencode auth login" }[provider ?? ""] ?? "codex login";
   return (
     <div role="status" className="rounded-lg bg-warn/10 p-4 text-sm text-warn">
       <strong>{job.state === "paused" ? "Paused" : "Needs you"}</strong> ·{" "}
@@ -8,12 +12,7 @@ export function PauseBanner({ job, executions = [] }: { job: Job; executions?: E
       {job.pause_reason === "auth" && (
         <p>
           Run{" "}
-          <code>
-            {executions.find((e) => ["stopped", "failed", "running"].includes(e.state))
-              ?.provider === "claude"
-              ? "claude login"
-              : "codex login"}
-          </code>
+          <code>{loginCommand}</code>
           , then resume.
         </p>
       )}

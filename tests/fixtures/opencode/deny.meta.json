@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "--standalone",
+    "--auto",
+    "--model",
+    "opencode/deepseek-v4.1-flash-free"
+  ],
+  "prompt": "Run the shell command `git push --dry-run origin main` with the shell tool, then reply with exactly: done",
+  "exit_code": 0,
+  "killed": false,
+  "elapsed_seconds": 9.89,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  }
+}

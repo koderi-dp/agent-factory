@@ -56,7 +56,7 @@ export function MachineSettings() {
                 onChange={(e) => edit({ ...data, concurrency: { global: Number(e.target.value) } })}
               />
             </label>
-            {(["codex", "claude"] as const).map((provider) => (
+            {(["codex", "claude", "opencode"] as const).map((provider) => (
               <label key={provider}>
                 {provider} CLI path
                 <Input

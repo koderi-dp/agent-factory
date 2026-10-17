@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "--standalone",
+    "--auto",
+    "--model",
+    "opencode/deepseek-v4.1-flash-free",
+    "--session",
+    "ses_eb63d9728ffeGDClAS9tMa4HCd"
+  ],
+  "prompt": "What number did you just reply with? Reply with just that number.",
+  "exit_code": 0,
+  "killed": false,
+  "elapsed_seconds": 4.88,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  },
+  "stdout_bytes": 308,
+  "stderr_bytes": 0
+}

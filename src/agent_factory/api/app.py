@@ -263,9 +263,9 @@ def create_app(*,
         with engine().lock:
             result = engine().scheduler.machine.call(
                 lambda connection: save_machine_settings(connection, body))
-            adapter = engine().supervisor.adapters.get("codex")
-            if adapter is not None and hasattr(adapter, "settings"):
-                adapter.settings = result
+            for adapter in engine().supervisor.adapters.values():
+                if hasattr(adapter, "settings"):
+                    adapter.settings = result
             return result.model_dump(by_alias=True)
 
     @app.get("/api/repos/{repo}/state")

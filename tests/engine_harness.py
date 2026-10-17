@@ -144,7 +144,14 @@ class StubAdapter:
                            current_head="head")
 
 
-def create_repo(root, *, jobs=1, parallel=0, per_job=4):
+def create_repo(root,
+                *,
+                jobs=1,
+                parallel=0,
+                per_job=4,
+                provider="codex",
+                model="fake",
+                effort="low"):
     root.mkdir(parents=True)
     roles = root / "factory/roles"
     roles.mkdir(parents=True)
@@ -155,11 +162,11 @@ def create_repo(root, *, jobs=1, parallel=0, per_job=4):
         return {
             "id": identifier,
             "uses": uses,
-            "provider": "codex",
+            "provider": provider,
             "profiles": {
-                "codex": {
-                    "model": "fake",
-                    "effort": "low"
+                provider: {
+                    "model": model,
+                    "effort": effort
                 }
             }
         }

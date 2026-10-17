@@ -89,7 +89,16 @@ def smoke(directory: Path, root: Path) -> None:
     }, set(first) - set(before)
     run(factory, 'init', '--provider', 'both')
     assert snapshot(repo) == first, 'init is not idempotent'
-    # init --provider both tests both wrapper sets. Execution stays Codex-only (§17).
+    run(factory, 'init', '--provider', 'opencode', '--dry-run')
+    assert snapshot(repo) == first, 'init --provider opencode --dry-run wrote repository files'
+    run(factory, 'init', '--provider', 'opencode')
+    second = snapshot(repo)
+    assert set(second) - set(first) == {
+        '.opencode/skills/factory/SKILL.md',
+    }, set(second) - set(first)
+    run(factory, 'init', '--provider', 'opencode')
+    assert snapshot(repo) == second, 'init --provider opencode is not idempotent'
+    # init covers every client. Execution stays Codex-only (§17).
     config_path = repo / 'factory/config.json'
     config = json.loads(config_path.read_text(encoding='utf-8'))
     for step in config['pipelines']['fast']:

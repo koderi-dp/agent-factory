@@ -113,7 +113,7 @@ export function editExecution(
 ): Config {
   const next = structuredClone(config);
   const target = entries(next.pipelines[name][si])[ei];
-  if (field === "provider") target.provider = value as "codex" | "claude";
+  if (field === "provider") target.provider = value as "codex" | "claude" | "opencode";
   else
     target.profiles[target.provider] = {
       ...(target.profiles[target.provider] ?? { model: "", effort: "" }),

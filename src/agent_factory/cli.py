@@ -30,12 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
         return sub
 
     init = command("init", "12.2")
-    init.add_argument("--provider", choices=["claude", "codex", "both"])
+    init.add_argument("--provider", choices=["claude", "codex", "opencode", "both"])
     init.add_argument("--dry-run", action="store_true")
     command("upgrade", "15.4").add_argument("--dry-run", action="store_true")
     eject = command("eject", "5.3")
     eject.add_argument("role")
-    eject.add_argument("--provider", choices=["claude", "codex"])
+    eject.add_argument("--provider", choices=["claude", "codex", "opencode"])
     eject.add_argument("--diff", action="store_true")
     command("doctor", "12.1")
     repos = command("repos", "4.3").add_subparsers(dest="repos_action")
@@ -167,9 +167,9 @@ def _run(args: argparse.Namespace) -> int:
         root = scaffold.check_init(Path(args.repo or Path.cwd()).resolve())
         provider = args.provider
         if provider is None:
-            provider = input("Client (claude/codex/both) [codex]: ").strip() or "codex"
-            if provider not in {"claude", "codex", "both"}:
-                raise ValueError("Client must be claude, codex or both")
+            provider = input("Client (claude/codex/opencode/both) [codex]: ").strip() or "codex"
+            if provider not in {"claude", "codex", "opencode", "both"}:
+                raise ValueError("Client must be claude, codex, opencode or both")
         for message in scaffold.init(root, provider, dry_run=args.dry_run):
             print(message)
         if not args.dry_run:
@@ -231,7 +231,8 @@ def _run(args: argparse.Namespace) -> int:
             for item in args.settings:
                 key, separator, value = item.partition("=")
                 if not separator or key not in {
-                        "concurrency.global", "cli.claude", "cli.codex", "ports.range"
+                        "concurrency.global", "cli.claude", "cli.codex", "cli.opencode",
+                        "ports.range"
                 }:
                     raise ValueError(f"Unknown machine setting: {item}")
                 group, field = key.split(".")

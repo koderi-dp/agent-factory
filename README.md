@@ -1,7 +1,7 @@
 # Agent factory
 
-Agent factory runs a configurable pipeline of Claude Code and Codex agents against your
-repository. Each job gets its own branch and worktree. The engine stores job state, streams
+Agent factory runs a configurable pipeline of Claude Code, Codex, and OpenCode agents against
+your repository. Each job gets its own branch and worktree. The engine stores job state, streams
 logs to a local dashboard, and either merges a verified result or pauses with a clear request
 for you.
 
@@ -9,7 +9,7 @@ for you.
 
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 - Git, with a local `main` branch and at least one commit in the project repository.
-- Claude Code or Codex CLI, signed in. Install the client you select in the pipeline.
+- Claude Code, Codex, or OpenCode CLI, signed in. Install the client you select in the pipeline.
 - [agent-browser](https://github.com/vercel-labs/agent-browser) for browser checks:
   `npm install -g agent-browser && agent-browser install`.
 - An `AGENTS.md` or `CLAUDE.md` describing project setup, development server, and validation.
@@ -25,7 +25,8 @@ factory init
 ```
 
 `factory init` asks which provider to configure if needed. It writes `factory/config.json`,
-`factory/backlog.md`, and the selected provider's skill wrapper. Commit those files and the
+`factory/backlog.md`, and the selected provider's skill wrapper. `--provider opencode` writes
+its wrapper to `.opencode/skills/factory/SKILL.md`. Commit those files and the
 `.gitignore` update. A teammate installs the engine and can then use the repository setup.
 
 If uv is not installed, `install.py` is an optional bootstrap. It prints uv's official
@@ -84,9 +85,10 @@ The machine registry and service state live in the user data directory (or `FACT
 
 Built-in roles ship with the engine. To customize a role for one repository, run
 `factory eject <role>` and edit the resulting file in `factory/roles/`. The dashboard Settings
-page edits pipeline configuration; machine settings control provider executable paths,
-concurrency and available ports. Ejected roles remain repository-local and can be compared
-with the built-in version using `factory eject <role> --diff`.
+page edits pipeline configuration; machine settings control provider executable paths
+(`cli.claude`, `cli.codex`, `cli.opencode`), concurrency and available ports. Ejected roles
+remain repository-local and can be compared with the built-in version using
+`factory eject <role> --diff`.
 
 ## Working on this repo
 

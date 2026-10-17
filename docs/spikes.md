@@ -412,3 +412,116 @@ unambiguous command and avoid installing a global `factory` alias: multiple unre
 npm packages already claim that command, so PATH precedence would make the result depend
 on install order. Skills and automation should invoke `agent-factory`, as proposed in
 plan §18 item 3. No package or command was registered by this check.
+
+## OpenCode — session 5.1
+
+Measured on **2026-10-17** with `opencode` **2.0.30** (OpenCode V2), using the free route
+`opencode/deepseek-v4.1-flash-free`. No factory runtime code changed during recording.
+These observations describe this CLI version, not a permanent API.
+
+### Reproduction and evidence
+
+The engine's own contract was mirrored: the prompt on stdin from a file, stdout and
+stderr captured separately (`run_cli.py` merges stderr into `events.jsonl`, so the adapter
+must tolerate both), and cwd a scratch directory standing in for the job worktree. Base
+command, with `M` = `opencode/deepseek-v4.1-flash-free`:
+
+```text
+opencode run --format json --standalone --auto --model M
+```
+
+`--standalone` gives each run a private server instead of the user's shared background
+service, so a killed wrapper kills the agent with it. `--auto` is the only
+non-interactive approval mode OpenCode offers. Eight captures live in
+`tests/fixtures/opencode/<case>.{jsonl,stderr,meta.json}` — `text`, `tool`, `resume`,
+`shell`, `deny`, `write`, `error-model`, `error-variant` — with their prompts, exit codes
+and per-case findings tabulated in `tests/fixtures/opencode/README.md`.
+
+### JSON grammar and session continuity
+
+Every line is one JSON object carrying a top-level `sessionID`, `type` and `timestamp`.
+Types observed are `step_start`, `text`, `tool_use`, `step_finish` and `error`.
+`step_finish` carries the turn's `part.tokens` (input/output/reasoning/cache read+write)
+and `part.cost` in USD. stderr stayed empty in every case: with `--format json` the CLI
+reports failures as JSON `error` lines on stdout, so the empty `.stderr` captures are
+evidence rather than omissions.
+
+`--session <id>` both continues an existing session and creates a missing one, and the run
+echoes that id on every line, so resume needs no separate lookup and cannot silently
+start a fresh conversation. The `resume` capture answers a follow-up about the previous
+run's answer, which a new session could not know.
+
+### Approvals, denials and the report contract
+
+A blanket `{"action": "shell", "resource": "*", "effect": "deny"}` removes the shell tool
+entirely; the agent then improvised with Code Mode tools instead of observing a denial.
+The retained `deny` capture therefore uses a narrow rule (`shell` allowed,
+`git push *` denied), which produced `part.state.status == "error"` with
+`part.state.error == "Permission denied: shell"` while the run still exited zero, because
+the model continued and refused to claim success. A denial therefore reaches
+classification as a contract failure in that shape, and only becomes a permission failure
+when the exit code is non-zero or no report exists.
+
+Writing `report.md` outside the worktree succeeded under the default policy, which is what
+the engine's report destination requires; no extra permission configuration is needed.
+
+### Failures fail fast
+
+An unroutable model and an undefined variant each print one `error` line
+(`provider.no-route`, "Model unavailable" / "Variant unavailable") and exit 1 before any
+model call, so these probes cost nothing to reproduce. The consequence for configuration
+is that a profile's `effort` must name a variant the model defines; the adapter forwards
+it as the `#<variant>` suffix unless the configured model already carries one.
+
+### Adapter follow-through — session 5.1
+
+`engine/adapters/opencode.py` reads the session id from `sessionID`, normalizes each
+`step_finish`'s tokens and cost without estimating missing fields, summarizes tool
+activity per tool with secret masking, and detects denials from a `tool_use` whose state
+reports an error. Classification rereads `events.jsonl` and the report evidence, so a new
+adapter instance can finalize an adopted run, and it treats the exit code as authoritative
+so a stale error line cannot fail a run that exits zero and validates. `cli.opencode` wins
+over the PATH fallback, and `--standalone` keeps every attempt inside the wrapper's
+killable process tree.
+
+`tests/test_engine_opencode_adapter.py` parses every retained capture and classifies every
+recorded exit; the remaining classification rows are synthetic test inputs, not new CLI
+experiment evidence.
+
+### End-to-end engine run — session 5.1
+
+Measured on **2026-10-17**, Windows, `opencode` 2.0.30. A greenfield repository (its own
+`AGENTS.md` defining setup and validation, nothing else) was initialised with
+`factory init --provider opencode` and run with `factory start "Add a greeting module with
+a unit test" --pipeline fast --wait`, under an isolated `FACTORY_HOME`. Both executions
+resolved to `opencode/deepseek-v4.1-flash-free#high`, and both `command.json` files record
+the same invocation:
+
+```text
+opencode.exe run --format json --standalone --auto
+              --model opencode/deepseek-v4.1-flash-free#high
+cwd = <job worktree>   stdin = prompt.md   env = {PYTHONUTF8: 1}
+```
+
+`init` wrote `.opencode/skills/factory/SKILL.md`, and `doctor` reported both
+`opencode: ok <path>` and `opencode login: ok saved credentials found`. The job took
+**104 s** (build 60 s, approve 43 s) and both attempts exited 0: the builder committed
+`greeting.py` and `tests/test_greeting.py` on the job branch and wrote `STATUS: READY` to
+the packet's absolute report path outside the worktree, and the approver, in a *separate*
+run and session, re-read `base_head..HEAD`, ran the instructed test command and
+`git merge-tree`, and wrote `APPROVE`. The job then paused at `needs_human` / `verify`,
+which is the designed human merge gate for `merge: verify` rather than a failure;
+`factory approve` merged the branch into `main`. That is the same stopping point the
+release smoke asserts for Codex, so OpenCode is verified end to end — on a local run only,
+since CI's smoke still drives Codex through the fake CLI.
+
+One engine-side observation from the same session, unrelated to the adapter: the CLI only
+waits **10 seconds** for a spawned service, and `serve` runs
+`icacls <home> /inheritance:r /grant:r …` before it publishes `service.json`. Pointing
+`FACTORY_HOME` at a large existing directory (here, a user profile root) made that start
+take about **14 minutes**, so the CLI gave up while the service stayed locked and every
+later attempt reported "Service lock is held but service.json is unavailable". A fresh
+dedicated directory started in **0.6 s**, and the CLI's own spawn path in **1.2 s**.
+`FACTORY_HOME` should therefore always be a dedicated directory.
+
+

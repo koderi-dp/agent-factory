@@ -653,6 +653,42 @@ reproduction steps. Don't fix things in this session unless I ask.
 
 ---
 
+## Post-release provider work
+
+Sessions after the 4.4 release candidate; these do not gate Phase 4.
+
+### 5.1 OpenCode provider · Sol · Medium
+
+```text
+{PREAMBLE}
+
+Read: plan §5.1-§5.3, §6.5, §8.1, §13.4, §14, docs/spikes.md and tests/fixtures/opencode/.
+
+Task: add `opencode` as a third provider next to codex:
+- engine/adapters/opencode.py, mirroring CodexAdapter (command, prepare, parse_event,
+  summarize, classify);
+- machine setting cli.opencode plus provider/role/config validation and defaults;
+- dashboard provider lists, `factory init`/`eject`/`config` surfaces and doctor probes;
+- docs and CHANGELOG.
+
+Record the evidence first, before implementing the parser: run
+`opencode run --format json --standalone --auto --model opencode/deepseek-v4.1-flash-free`
+with the prompt on stdin, and keep complete redacted stdout/stderr/metadata under
+tests/fixtures/opencode/. Evidence beats guessing: the recorded shapes decide the parser.
+
+OpenCode notes: one JSON object per line, every line carrying sessionID; step_finish
+carries tokens and cost; `--session` continues real conversation state; `--auto` is the
+only non-interactive approval mode; an undefined model variant fails fast, so the
+profile's effort becomes the `#variant`; `--standalone` keeps the run inside the
+wrapper's killable process tree.
+
+Tests: every opencode fixture parses and classifies; the §6.5 table is covered row by row
+for the new provider; provider/config/dashboard surfaces accept and validate opencode;
+codex behaviour and its fixtures are unchanged.
+```
+
+---
+
 ## Phase 5 (conditional)
 
 Only if Phase 2's benchmarks meet the §17 Phase 5 trigger. Write that phase's prompt then,

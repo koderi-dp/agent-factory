@@ -30,10 +30,10 @@ uv run --no-project --python 3.11 python tools/release_smoke.py dist
 ```
 
 The smoke test uses isolated uv tool and machine directories, runs `factory init`
-with both clients (dry run and idempotence included), starts the installed service,
+with every client (dry run and idempotence included), starts the installed service,
 checks health, overview, and dashboard HTML, runs doctor, and completes the built-in
-Fast pipeline through the Codex adapter using the fake CLI. It never invokes Claude
-or Codex and shuts down the service before removing its temporary files.
+Fast pipeline through the Codex adapter using the fake CLI. It never invokes Claude,
+Codex or OpenCode and shuts down the service before removing its temporary files.
 
 The installed smoke test covers v1 migration, customised-role preservation and
 read-only legacy jobs; `tools/upgrade_smoke.py` covers live uv replacement,
@@ -47,6 +47,11 @@ Python, copied wrapper) and keeps running, and the restarted service re-adopts i
 A Windows upgrade is therefore: stop the service, replace the tool, and let the next
 command restart and re-adopt.
 
-Codex is the verified provider for this release. Claude parity (session 1.11 and
-its fresh phase review) remains deferred until Claude usage returns; do not claim
-Claude support until then.
+Codex and OpenCode are verified end-to-end on a real job. OpenCode's evidence is a
+greenfield `factory init --provider opencode` project that ran the Fast pipeline to
+`merged` on 2026-10-17 on the free `opencode/deepseek-v4.1-flash-free` route, plus the
+recorded real CLI captures in `tests/fixtures/opencode/`. That run was local: the release
+smoke drives Codex through the fake CLI, so OpenCode has no CI coverage and any further
+verification claim must stay tied to recorded evidence. Claude
+parity (session 1.11 and its fresh phase review) remains deferred until Claude usage
+returns; do not claim Claude support until then.

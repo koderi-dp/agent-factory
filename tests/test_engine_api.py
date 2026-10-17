@@ -209,6 +209,7 @@ def test_snapshots_config_roles_logs_and_safe_html(api, tmp_path, monkeypatch):
 @pytest.mark.parametrize("provider,wrappers", [
     ("codex", [".agents/skills/factory/SKILL.md"]),
     ("claude", [".claude/skills/factory/SKILL.md"]),
+    ("opencode", [".opencode/skills/factory/SKILL.md"]),
     ("both", [".agents/skills/factory/SKILL.md", ".claude/skills/factory/SKILL.md"]),
 ])
 def test_init_exact_files_idempotent_and_dry_run(repo, provider, wrappers):
@@ -261,6 +262,16 @@ def test_init_preconditions_and_v1_do_not_write(repo):
     with pytest.raises(ValueError, match="factory upgrade"):
         scaffold.init(repo, "codex")
     assert not (repo / "factory/config.json").exists()
+
+
+def test_machine_settings_update_refreshes_every_installed_adapter(api):
+    client, runtime, _, repo = api
+    paths = {provider: str(Path(repo) / f"{provider}.exe") for provider in ("codex", "opencode")}
+    response = client.put("/api/machine/settings", json={"cli": paths}, headers=headers())
+    assert response.status_code == 200
+    for provider, path in paths.items():
+        assert response.json()["cli"][provider] == path
+        assert getattr(runtime.supervisor.adapters[provider].settings.cli, provider) == path
 
 
 def test_backlog_details_duplicate_start_and_queue_replay(api):

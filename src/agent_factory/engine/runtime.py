@@ -13,6 +13,7 @@ from typing import Any
 from agent_factory import run_cli
 from agent_factory.engine import backlog, db, gitops, legacy, packet, pipeline, registry, versioning
 from agent_factory.engine.adapters.codex import CodexAdapter
+from agent_factory.engine.adapters.opencode import OpencodeAdapter
 from agent_factory.engine.config import load_config, load_machine_settings
 from agent_factory.engine.locking import FileLock
 from agent_factory.engine.scheduler import Scheduler
@@ -30,7 +31,10 @@ class Runtime:
         self.scheduler = Scheduler()
         settings = self.scheduler.machine.call(load_machine_settings)
         self.supervisor = Supervisor(
-            self.scheduler, adapters if adapters is not None else {"codex": CodexAdapter(settings)})
+            self.scheduler, adapters if adapters is not None else {
+                "codex": CodexAdapter(settings),
+                "opencode": OpencodeAdapter(settings)
+            })
 
     def start(self) -> None:
         with self.lock:

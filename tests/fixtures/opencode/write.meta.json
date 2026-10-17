@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "--standalone",
+    "--auto",
+    "--model",
+    "opencode/deepseek-v4.1-flash-free"
+  ],
+  "prompt": "Create the file <REPORT_DIR>\\report.md containing exactly these three lines:\n---\nverdict: pass\n---\nDo not create or modify any other file. Then reply with exactly: done",
+  "exit_code": 0,
+  "killed": false,
+  "elapsed_seconds": 8.28,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  }
+}

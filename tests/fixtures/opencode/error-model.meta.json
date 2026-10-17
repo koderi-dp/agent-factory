@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "--standalone",
+    "--auto",
+    "--model",
+    "invalid/none"
+  ],
+  "prompt": "Reply with exactly: ok",
+  "exit_code": 1,
+  "killed": false,
+  "elapsed_seconds": 2.17,
+  "env_overrides": {
+    "PYTHONUTF8": "1"
+  }
+}
