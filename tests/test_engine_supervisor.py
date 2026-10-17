@@ -67,6 +67,12 @@ def state(scheduler, repo_id):
     return job["state"], job["pause_reason"]
 
 
+def paused(scheduler, repo_id):
+    """State, reason and note: why a launch paused is otherwise opaque in CI."""
+    job = rows(scheduler, repo_id, "jobs")[0]
+    return job["state"], job["pause_reason"], job["note"]
+
+
 def settle(supervisor, scheduler, repo_id):
 
     def check():
@@ -183,6 +189,18 @@ def test_recovery_dead_or_missing_identity_after_record_pauses_never_relaunches(
     supervisor.tick()
     assert len(rows(scheduler, identifier, "attempts")) == 1
     assert not (root / "invocations").exists()
+
+
+def test_lost_attempt_note_reports_the_wrapper_error(store):
+    """A wrapper that dies without exit.json must explain itself in the note."""
+    _, identifier, scheduler, supervisor = store
+    claim = scheduler.claim_next()
+    dead_proc(claim)
+    run_cli.atomic_write(claim.directory / "events.jsonl",
+                         b'{"type": "wrapper.error", "message": "Job Object already exists"}\n')
+    supervisor.start()
+    assert state(scheduler, identifier) == ("paused", "process")
+    assert "Job Object already exists" in rows(scheduler, identifier, "jobs")[0]["note"]
 
 
 def test_recovery_token_scan_waits_for_proc_then_adopts_real_process(store):
@@ -619,7 +637,7 @@ def test_rework_rejects_live_peer_without_superseding_it(tmp_path, monkeypatch):
     try:
         supervisor.start()
         launched = supervisor.tick()
-        assert len(launched) == 2, state(scheduler, identifier)
+        assert len(launched) == 2, paused(scheduler, identifier)
         peer = next(c for c in launched if c.execution["exec_id"] == "review-1")
         wait_for(lambda: (peer.directory / "ready.json").exists())
         settle(supervisor, scheduler, identifier)

@@ -19,7 +19,7 @@ from agent_factory.engine import db, ports, winjob
 from agent_factory.engine.scheduler import Scheduler
 from agent_factory.engine.supervisor import Supervisor
 from engine_harness import StubAdapter, configure_range, create_repo, free_range
-from test_engine_supervisor import rows, state, store
+from test_engine_supervisor import paused, rows, state, store
 from test_run_cli import alive, port_released, read_json, wait_for
 
 
@@ -564,7 +564,7 @@ def test_repeated_port_roles_bind_distinct_slots_and_serialize_overflow(
     try:
         supervisor.start()
         first = supervisor.tick()
-        assert len(first) == 3, state(scheduler, identifier)
+        assert len(first) == 3, paused(scheduler, identifier)
         assert len({port for claim in first for port in claim.ports}) == 9
         assert scheduler.claim_next() is None
         for claim in first:

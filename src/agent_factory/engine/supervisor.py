@@ -69,6 +69,27 @@ def _json(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def _lost_detail(directory: Path) -> str:
+    """Prefer the wrapper's own account of an infrastructure failure: a bare
+    'gone without exit.json' note gives an operator nothing to act on."""
+    try:
+        text = _read_with_retry(
+            lambda: (directory / "events.jsonl").read_text(encoding="utf-8", errors="replace"))
+    except (FileNotFoundError, PermissionError):
+        pass
+    else:
+        for line in reversed(text.splitlines()):
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict) and event.get("type") == "wrapper.error":
+                message = str(event.get("message") or "").strip()
+                if message:
+                    return f"Wrapper error: {message}"
+    return "Wrapper gone without exit.json"
+
+
 def _token_processes(token: str) -> list[psutil.Process]:
     """Fallback for the small spawn-before-proc.json publication window."""
     matches = []
@@ -411,7 +432,7 @@ class Supervisor:
             if (directory / "exit.json").exists():
                 self.finalise(context)
             else:
-                self._lost(context)
+                self._lost(context, _lost_detail(directory))
             return
         matches = _token_processes(context.attempt["owner_token"])
         if matches:
@@ -426,7 +447,7 @@ class Supervisor:
         elif context.attempt["t_launch"] is None and context.attempt["state"] == "launching":
             self._unclaim(context)
         else:
-            self._lost(context)
+            self._lost(context, _lost_detail(directory))
 
     @staticmethod
     def _expired(context: Claim) -> bool:
