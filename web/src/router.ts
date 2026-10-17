@@ -42,6 +42,8 @@ export function createDashboardRouter(history: RouterHistory) {
         }),
       }),
       route("/usage"),
+      route("/pipelines"),
+      route("/repositories"),
       route("/repo/$repo"),
       createRoute({
         getParentRoute: () => root,

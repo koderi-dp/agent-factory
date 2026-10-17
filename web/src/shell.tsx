@@ -6,6 +6,8 @@ import { connectOverview, connectRepo } from "@/lib/sse";
 import { Board } from "@/features/board/Board";
 import { JobDetail } from "@/features/job/JobDetail";
 import { JobsList } from "@/features/jobs/JobsList";
+import { PipelinesPage } from "@/features/pipelines/PipelinesPage";
+import { RepositoriesPage } from "@/features/repositories/RepositoriesPage";
 import { UsagePage } from "@/features/usage/UsagePage";
 import { ActivityLog } from "@/features/activity/ActivityLog";
 import { Overview } from "@/features/overview/Overview";
@@ -80,6 +82,8 @@ export function Shell() {
       : [{ label: "Overview", href: "/", active: pathname === "/" }]),
     { label: "Activity", href: "/activity", active: pathname === "/activity" },
     { label: "Jobs", href: "/jobs", active: pathname === "/jobs" },
+    { label: "Pipelines", href: "/pipelines", active: pathname === "/pipelines" },
+    { label: "Repositories", href: "/repositories", active: pathname === "/repositories" },
     { label: "Usage", href: "/usage", active: pathname === "/usage" },
     ...(repo
       ? [
@@ -185,6 +189,8 @@ export function Shell() {
       />
     );
   else if (pathname === "/usage") page = <UsagePage />;
+  else if (pathname === "/pipelines") page = <PipelinesPage repos={overview.data.repos} />;
+  else if (pathname === "/repositories") page = <RepositoriesPage repos={overview.data.repos} />;
   else if (pathname === "/") page = <Overview repos={overview.data.repos} />;
   else if (selected && pathname.endsWith("/backlog"))
     page = <Backlog key={selected.id} repo={selected.id} />;
