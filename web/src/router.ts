@@ -4,6 +4,7 @@ import {
   createRouter,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { jobStates } from "./lib/api";
 import { isSummaryKey } from "./features/overview/model";
 import { Shell } from "./shell";
 
@@ -19,6 +20,17 @@ export function createDashboardRouter(history: RouterHistory) {
           ...(typeof search.state === "string" && isSummaryKey(search.state)
             ? { state: search.state }
             : {}),
+        }),
+      }),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/jobs",
+        validateSearch: (search: Record<string, unknown>) => ({
+          ...(typeof search.state === "string" &&
+          (jobStates as readonly string[]).includes(search.state)
+            ? { state: search.state }
+            : {}),
+          ...(typeof search.repo === "string" && search.repo ? { repo: search.repo } : {}),
         }),
       }),
       route("/repo/$repo"),

@@ -23,6 +23,7 @@ export const jobSchema = z.looseObject({
   created_at: z.string(),
   updated_at: z.string(),
 });
+export const jobStates = jobSchema.shape.state.options;
 export const executionSchema = z.looseObject({
   id,
   job_id: z.string(),
@@ -263,7 +264,8 @@ export const keys = {
   overview: ["overview"] as const,
   state: (repo: string) => ["repo", repo, "state"] as const,
   job: (repo: string, job: string) => ["repo", repo, "job", job] as const,
-  jobs: (states?: readonly string[]) => ["jobs", ...(states ?? [])] as const,
+  jobs: (states?: readonly string[], repo?: string) =>
+    ["jobs", ...(states ?? []), ...(repo ? ["repo", repo] : [])] as const,
   activity: (limit?: number) => ["activity", limit ?? null] as const,
 };
 export const api = {

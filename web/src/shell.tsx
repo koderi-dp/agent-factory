@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { api, keys } from "@/lib/api";
 import { connectOverview, connectRepo } from "@/lib/sse";
 import { Board } from "@/features/board/Board";
 import { JobDetail } from "@/features/job/JobDetail";
+import { JobsList } from "@/features/jobs/JobsList";
 import { Overview } from "@/features/overview/Overview";
 import { Button } from "@/ui/primitives/button";
 import { Select } from "@/ui/primitives/select";
@@ -23,6 +24,7 @@ export function Shell() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const params = useParams({ strict: false }) as { repo?: string; job?: string };
   const repo = params.repo;
+  const search = useSearch({ strict: false }) as { state?: string; repo?: string };
   const [overviewConnection, setOverviewConnection] = useState<Connection>("connecting");
   const [repoConnection, setRepoConnection] = useState<{ repo?: string; state: Connection }>({
     state: "connecting",
@@ -70,6 +72,7 @@ export function Shell() {
     ...(overview.data?.repos.length === 1
       ? []
       : [{ label: "Overview", href: "/", active: pathname === "/" }]),
+    { label: "Jobs", href: "/jobs", active: pathname === "/jobs" },
     ...(repo
       ? [
           { label: "Board", href: base, active: pathname === `/repo/${repo}` },
@@ -127,6 +130,23 @@ export function Shell() {
         repo={selected.id}
         job={params.job}
         name={selected.name}
+      />
+    );
+  else if (pathname === "/jobs")
+    page = (
+      <JobsList
+        state={search.state}
+        repo={search.repo}
+        repos={overview.data.repos}
+        onFilter={(next) =>
+          void navigate({
+            to: "/jobs",
+            search: {
+              ...(next.state ? { state: next.state } : {}),
+              ...(next.repo ? { repo: next.repo } : {}),
+            },
+          })
+        }
       />
     );
   else if (pathname === "/") page = <Overview repos={overview.data.repos} />;
