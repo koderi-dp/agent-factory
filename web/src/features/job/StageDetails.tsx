@@ -37,10 +37,7 @@ export function StageDetails({
   const role = execution?.uses ?? entry?.uses ?? entry?.id ?? step?.id ?? "—";
   const type = execution?.type ?? step?.type;
   const provider = execution?.provider ?? entry?.provider;
-  const profile = entry?.profiles
-    ? (entry.profiles[Object.keys(entry.profiles)[0] ?? ""] as
-        { model: string; effort: string } | undefined)
-    : undefined;
+  const profile = entry?.profiles?.[entry.provider ?? ""];
   const configured = execution ? "" : " (configured)";
   const model = execution?.model ?? profile?.model;
   const effort = execution?.effort ?? profile?.effort;
