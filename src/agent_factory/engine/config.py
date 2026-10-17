@@ -148,6 +148,8 @@ class RepoConfig(ConfigModel):
             tasks: set[str] = set()
             kinds: dict[int, str] = {}
             unresolved = False
+            # Steps whose role did not resolve have no known type to check onChanges against.
+            untyped: set[str] = set()
             approvals: list[int] = []
             for i, step in enumerate(steps):
                 where: tuple[str | int, ...] = ("pipelines", name, i)
@@ -175,6 +177,7 @@ class RepoConfig(ConfigModel):
                     roles.append(role)
                 if not step_ok:
                     unresolved = True
+                    untyped.add(step.id)
                     continue
                 types = {role.type for role in roles}
                 if isinstance(step, ParallelStep) and types != {"review"}:
@@ -182,7 +185,7 @@ class RepoConfig(ConfigModel):
                                    f"{name}/{step.id}: parallel groups must contain only reviews"))
                 kind = roles[0].type
                 if step.onChanges is not None and (kind not in {"review", "approval"}
-                                                   or step.onChanges not in tasks):
+                                                   or step.onChanges not in tasks | untyped):
                     issues.append((where + ("onChanges", ),
                                    f"{name}/{step.id}: onChanges must name an earlier task step "
                                    "and is allowed only on review or approval steps"))
