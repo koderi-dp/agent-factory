@@ -8,16 +8,19 @@ import {
   currentExecutions,
   latestAttempt,
   jobActions,
+  needsSensitiveConfirm,
   type Action,
   type Execution,
 } from "@/features/board/model";
+import { interventionFor } from "./intervention";
 import { layout } from "./pipeline/layout";
 import { PipelineView } from "./pipeline/PipelineView";
 import { ReportView } from "./ReportView";
 import { LogView } from "./LogView";
 import { Timeline } from "./Timeline";
 import { UsagePanel } from "./UsagePanel";
-import { PauseBanner } from "./PauseBanner";
+import { InterventionPanel } from "./PauseBanner";
+import { ReviewerCards } from "./ReviewerCards";
 import { PageShell } from "@/ui/page-shell";
 import { JobHeader } from "./JobHeader";
 import { StageDetails } from "./StageDetails";
@@ -50,7 +53,7 @@ function ExecutionReport({
   if (query.isError) return <p role="alert">Could not load report: {query.error.message}</p>;
   return <ReportView text={query.data} />;
 }
-const tabNames = ["Pipeline", "Reports", "Timeline", "Log", "Usage"];
+const tabNames = ["Pipeline", "Reviews", "Reports", "Timeline", "Log", "Usage"];
 const labels: Record<Action, string> = {
   stop: "Stop",
   resume: "Resume",
@@ -118,6 +121,18 @@ export function JobDetail({
   const stageEntry = node
     ? stageStep?.executions[node.execIndex]
     : stageStep?.executions.find((e) => e.id === selected?.exec_id);
+  const needsYou = job.state === "paused" || job.state === "needs_human";
+  const startAction = (a: Action) => {
+    setAction(a);
+    setError("");
+    setSensitive(false);
+    setForce(false);
+    setNote("");
+  };
+  const sensitiveRequired = action === "approve" && needsSensitiveConfirm(job);
+  const sensitivePaths = sensitiveRequired
+    ? (interventionFor(job, steps, current)?.sensitivePaths ?? [])
+    : [];
   const confirm = async () => {
     if (!action) return;
     setPending(true);
@@ -172,23 +187,24 @@ export function JobDetail({
         attempts={attempts}
         repo={repo}
         name={name}
-        actions={actions.map((a) => (
+        actions={(needsYou ? actions.filter((a) => a === "delete") : actions).map((a) => (
           <Button
             key={a}
             variant={a === "delete" ? "destructive" : "outline"}
-            onClick={() => {
-              setAction(a);
-              setError("");
-              setSensitive(false);
-              setForce(false);
-              setNote("");
-            }}
+            onClick={() => startAction(a)}
           >
             {labels[a]}
           </Button>
         ))}
       />
-      <PauseBanner job={job} executions={current} />
+      <InterventionPanel
+        job={job}
+        steps={steps}
+        executions={current}
+        actions={actions}
+        onAction={startAction}
+        onOpenReport={selectNode}
+      />
       <Tabs defaultValue={file ? "Reports" : "Pipeline"}>
         <TabsList aria-label="Job views">
           {tabNames.map((t) => (
@@ -236,6 +252,9 @@ export function JobDetail({
                 ))}
             </ul>
           )}
+        </TabsContent>
+        <TabsContent value="Reviews">
+          <ReviewerCards steps={steps} executions={executions} onOpenReport={selectNode} />
         </TabsContent>
         <TabsContent value="Reports">
           <div className="space-y-4">
@@ -324,6 +343,7 @@ export function JobDetail({
         confirmLabel={action ? labels[action] : "Confirm"}
         destructive={action === "delete" || action === "stop"}
         pending={pending}
+        confirmDisabled={(sensitiveRequired && !sensitive) || (action === "rework" && !note.trim())}
         onOpenChange={(open) => {
           if (!open && !pending) setAction(undefined);
         }}
@@ -342,7 +362,14 @@ export function JobDetail({
               checked={sensitive}
               onChange={(e) => setSensitive(e.target.checked)}
             />{" "}
-            Confirm changes to sensitive paths
+            {sensitiveRequired ? (
+              <>
+                I reviewed the changes to these sensitive paths
+                {sensitivePaths.length > 0 && <>: {sensitivePaths.join(", ")}</>}
+              </>
+            ) : (
+              "Confirm changes to sensitive paths"
+            )}
           </label>
         )}
         {action === "delete" && (

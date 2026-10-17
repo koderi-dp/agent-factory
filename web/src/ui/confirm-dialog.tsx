@@ -17,6 +17,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   destructive = false,
   pending = false,
+  confirmDisabled = false,
   onOpenChange,
   onConfirm,
   children,
@@ -28,6 +29,7 @@ export function ConfirmDialog({
   cancelLabel?: string;
   destructive?: boolean;
   pending?: boolean;
+  confirmDisabled?: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   children?: ReactNode;
@@ -54,7 +56,7 @@ export function ConfirmDialog({
             loading={pending}
             type="button"
             variant={destructive ? "destructive" : "default"}
-            disabled={pending}
+            disabled={pending || confirmDisabled}
             onClick={onConfirm}
           >
             {confirmLabel}

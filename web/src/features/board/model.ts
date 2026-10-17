@@ -112,15 +112,24 @@ export function needsYouJobs(jobs: Job[]): Job[] {
 
 export type Action = "stop" | "resume" | "approve" | "rework" | "delete";
 
-/** Actions the job's current state allows, in display order. */
+const decisionReasons = ["verify", "escalate", "sensitive", "busy_merge"];
+
+/** True when the backend will only merge after the sensitive-path confirmation. */
+export function needsSensitiveConfirm(job: Job): boolean {
+  return job.pause_reason === "sensitive";
+}
+
+/** Actions the backend accepts for the job right now, in display order. */
 export function jobActions(job: Job, executions: Execution[]): Action[] {
   const busy = executions.some((e) => e.state === "claimed" || e.state === "running");
+  const waiting = job.state === "needs_human";
+  const canMerge =
+    job.state === "approved" || (waiting && decisionReasons.includes(job.pause_reason ?? ""));
   return [
-    ...(job.state === "running" || job.state === "queued" ? ["stop" as const] : []),
+    ...(job.state === "running" || (job.state === "paused" && busy) ? ["stop" as const] : []),
     ...(job.state === "paused" ? ["resume" as const] : []),
-    ...((job.state === "approved" || job.state === "needs_human") && !busy
-      ? ["approve" as const, "rework" as const]
-      : []),
+    ...(canMerge && !busy ? ["approve" as const] : []),
+    ...((job.state === "approved" || waiting) && !busy ? ["rework" as const] : []),
     ...(!busy ? ["delete" as const] : []),
   ];
 }
