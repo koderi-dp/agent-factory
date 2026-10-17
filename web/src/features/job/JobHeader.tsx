@@ -43,7 +43,9 @@ export function JobHeader({
         <Field label="Status">
           <StatusBadge state={job.state} />
         </Field>
-        <Field label="Started">{clockTime(timing.startedAt)}</Field>
+        <Field label="Started">
+          <time dateTime={timing.startedAt ?? undefined}>{clockTime(timing.startedAt)}</time>
+        </Field>
         <Field label="Elapsed">
           <span role="timer" aria-label="Elapsed time">
             {duration(timing.elapsedSeconds)}
