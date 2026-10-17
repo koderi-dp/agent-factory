@@ -30,11 +30,11 @@ export function JobsList({
 }) {
   const states = state ? [state] : jobStates;
   const query = useQuery({
-    queryKey: keys.jobs(states, repo),
+    queryKey: [...keys.jobs(states, repo), "limit", LIMIT],
     queryFn: () => api.jobs({ states, repo, limit: LIMIT }),
   });
   const jobs = query.data?.jobs ?? [];
-  const repoOptions = query.data?.repos ?? repos;
+  const repoOptions = repo ? repos : (query.data?.repos ?? repos);
   const unavailable = (query.data?.repos ?? []).filter((r) => r.status !== "available");
   const filtered = Boolean(state || repo);
   return (
