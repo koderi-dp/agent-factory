@@ -21,7 +21,7 @@ from agent_factory import __version__, run_cli
 from agent_factory.api import streams
 from agent_factory.engine import backlog, changes, db, gitops, pipeline, roles as role_files, versioning
 from agent_factory.engine.config import (MachineSettings, load_config, load_machine_settings,
-                                         save_machine_settings, validate_config)
+                                         preview_pipeline, save_machine_settings, validate_config)
 from agent_factory.engine.runtime import Runtime
 
 BODY_LIMIT = 100_000
@@ -355,6 +355,10 @@ def create_app(*,
                 "pipelines": {
                     name: pipeline.freeze(parsed, name, preamble="",
                                           preamble_version="")["pipeline"]
+                    for name in parsed.pipelines
+                },
+                "preview": {
+                    name: preview_pipeline(parsed, name)
                     for name in parsed.pipelines
                 }
             }

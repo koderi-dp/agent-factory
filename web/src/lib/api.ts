@@ -401,6 +401,41 @@ export const rolesSchema = z.object({
     }),
   ),
 });
+export const pipelinePreviewSchema = z.object({
+  name: z.string(),
+  default: z.boolean(),
+  maxRounds: z.number().int(),
+  stages: z.array(
+    z.object({
+      index: z.number().int(),
+      id: z.string(),
+      label: z.string(),
+      type: z.string(),
+      approval: z.boolean(),
+      parallel: z.boolean(),
+      group: z.string().nullable(),
+      executions: z.array(
+        z.object({
+          id: z.string(),
+          uses: z.string(),
+          provider: z.string(),
+          model: z.string(),
+          effort: z.string(),
+        }),
+      ),
+    }),
+  ),
+  loops: z.array(
+    z.object({
+      from: z.string(),
+      to: z.string(),
+      fromIndex: z.number().int(),
+      toIndex: z.number().int(),
+      maxReturns: z.number().int(),
+    }),
+  ),
+});
+export type PipelinePreview = z.infer<typeof pipelinePreviewSchema>;
 export const settingsApi = {
   machine: () => request("/machine/settings", machineSchema),
   saveMachine: (body: z.infer<typeof machineSchema>) =>
@@ -408,7 +443,10 @@ export const settingsApi = {
   validate: (repo: string, body: unknown) =>
     request(
       `${repoPath(repo)}/config/validate`,
-      z.object({ pipelines: z.record(z.string(), z.array(z.unknown())) }),
+      z.object({
+        pipelines: z.record(z.string(), z.array(z.unknown())),
+        preview: z.record(z.string(), pipelinePreviewSchema),
+      }),
       { method: "POST", body: JSON.stringify(body) },
     ),
   roles: (repo: string) => request(`${repoPath(repo)}/roles`, rolesSchema),
