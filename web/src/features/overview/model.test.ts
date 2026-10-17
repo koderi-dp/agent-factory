@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attentionItem, describeEvent, isSummaryKey } from "./model";
+import { attentionItem, describeEvent, eventTypeLabel, isSummaryKey } from "./model";
 
 describe("overview model", () => {
   it("describes attention items in plain words", () => {
@@ -16,7 +16,11 @@ describe("overview model", () => {
   });
   it("describes events and validates filter keys", () => {
     expect(describeEvent({ type: "job.state", state: "merged", stage: null })).toBe("Job merged");
-    expect(describeEvent({ type: "note", state: null, stage: null })).toBe("note");
+    expect(describeEvent({ type: "note", state: null, stage: null })).toBe("Note added");
+    expect(describeEvent({ type: "usage", state: null, stage: null })).toBe("Usage recorded");
+    expect(describeEvent({ type: "mystery", state: null, stage: null })).toBe("mystery");
+    expect(eventTypeLabel("job.state")).toBe("Job");
+    expect(eventTypeLabel("mystery")).toBe("mystery");
     expect(isSummaryKey("attention")).toBe(true);
     expect(isSummaryKey("bogus")).toBe(false);
   });

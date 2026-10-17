@@ -6,6 +6,7 @@ import { connectOverview, connectRepo } from "@/lib/sse";
 import { Board } from "@/features/board/Board";
 import { JobDetail } from "@/features/job/JobDetail";
 import { JobsList } from "@/features/jobs/JobsList";
+import { ActivityLog } from "@/features/activity/ActivityLog";
 import { Overview } from "@/features/overview/Overview";
 import { Button } from "@/ui/primitives/button";
 import { Select } from "@/ui/primitives/select";
@@ -24,7 +25,11 @@ export function Shell() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const params = useParams({ strict: false }) as { repo?: string; job?: string };
   const repo = params.repo;
-  const search = useSearch({ strict: false }) as { state?: string; repo?: string };
+  const search = useSearch({ strict: false }) as {
+    state?: string;
+    repo?: string;
+    status?: string;
+  };
   const [overviewConnection, setOverviewConnection] = useState<Connection>("connecting");
   const [repoConnection, setRepoConnection] = useState<{ repo?: string; state: Connection }>({
     state: "connecting",
@@ -72,6 +77,7 @@ export function Shell() {
     ...(overview.data?.repos.length === 1
       ? []
       : [{ label: "Overview", href: "/", active: pathname === "/" }]),
+    { label: "Activity", href: "/activity", active: pathname === "/activity" },
     { label: "Jobs", href: "/jobs", active: pathname === "/jobs" },
     ...(repo
       ? [
@@ -145,6 +151,33 @@ export function Shell() {
               ...(next.state ? { state: next.state } : {}),
               ...(next.repo ? { repo: next.repo } : {}),
             },
+          })
+        }
+      />
+    );
+  else if (pathname === "/activity")
+    page = (
+      <ActivityLog
+        repo={search.repo}
+        status={search.status}
+        onRepoChange={(next) =>
+          void navigate({
+            to: "/activity",
+            search: {
+              ...(next ? { repo: next } : {}),
+              ...(search.status ? { status: search.status } : {}),
+            },
+            replace: true,
+          })
+        }
+        onStatusChange={(next) =>
+          void navigate({
+            to: "/activity",
+            search: {
+              ...(search.repo ? { repo: search.repo } : {}),
+              ...(next ? { status: next } : {}),
+            },
+            replace: true,
           })
         }
       />

@@ -66,5 +66,23 @@ export function describeEvent(entry: Pick<ActivityEntry, "type" | "state" | "sta
     return entry.stage ? `Stage ${entry.stage} is now ${state}` : `Stage is now ${state}`;
   if (entry.type === "attempt.state" && state)
     return entry.stage ? `Attempt for ${entry.stage} is now ${state}` : `Attempt is now ${state}`;
+  if (entry.type === "usage") return "Usage recorded";
+  if (entry.type === "note") return "Note added";
+  if (entry.type === "config") return "Configuration changed";
+  if (entry.type === "backlog") return "Backlog updated";
   return entry.type;
+}
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  "job.state": "Job",
+  "execution.state": "Stage",
+  "attempt.state": "Attempt",
+  usage: "Usage",
+  note: "Note",
+  config: "Config",
+  backlog: "Backlog",
+};
+
+export function eventTypeLabel(type: string): string {
+  return EVENT_TYPE_LABELS[type] ?? type;
 }

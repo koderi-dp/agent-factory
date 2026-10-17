@@ -33,6 +33,14 @@ export function createDashboardRouter(history: RouterHistory) {
           ...(typeof search.repo === "string" && search.repo ? { repo: search.repo } : {}),
         }),
       }),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/activity",
+        validateSearch: (search: Record<string, unknown>) => ({
+          ...(typeof search.repo === "string" && search.repo ? { repo: search.repo } : {}),
+          ...(typeof search.status === "string" && search.status ? { status: search.status } : {}),
+        }),
+      }),
       route("/repo/$repo"),
       createRoute({
         getParentRoute: () => root,

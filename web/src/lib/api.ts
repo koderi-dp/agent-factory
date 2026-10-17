@@ -267,6 +267,7 @@ export const keys = {
   jobs: (states?: readonly string[], repo?: string) =>
     ["jobs", ...(states ?? []), ...(repo ? ["repo", repo] : [])] as const,
   activity: (limit?: number) => ["activity", limit ?? null] as const,
+  activityLog: (repo?: string) => ["activity", "log", repo ?? "all"] as const,
 };
 export const api = {
   overview: () => request("/overview", overviewSchema),
