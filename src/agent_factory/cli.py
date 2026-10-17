@@ -161,24 +161,42 @@ def _wait(data: dict, base: str, job_id: str) -> int:
         time.sleep(0.25)
 
 
+def _ask(prompt: str, default: str, interactive: bool) -> str:
+    """Prompt only with a terminal; scripted runs take the default instead of crashing."""
+    if not interactive:
+        return default
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        # Windows reports the NUL device as a terminal, so EOF is the real signal.
+        print()
+        return default
+
+
 def _run(args: argparse.Namespace) -> int:
     command = args.command
     if command == "init":
-        root = scaffold.check_init(Path(args.repo or Path.cwd()).resolve())
-        provider = args.provider
-        if provider is None:
-            provider = input("Client (claude/codex/opencode/both) [codex]: ").strip() or "codex"
-            if provider not in {"claude", "codex", "opencode", "both"}:
-                raise ValueError("Client must be claude, codex, opencode or both")
-        for message in scaffold.init(root, provider, dry_run=args.dry_run):
+        root = Path(args.repo or Path.cwd()).resolve()
+        interactive = sys.stdin.isatty()
+        provider = args.provider or _ask("Client (claude/codex/opencode/both) [codex]: ", "codex",
+                                         interactive)
+        plan = scaffold.init(root, provider, dry_run=True)
+        print("Plan for " + str(root) + ":")
+        for message in plan:
+            print("  " + message)
+        if args.dry_run:
+            return 0
+        if not interactive:
+            print("No terminal: continuing with these defaults.")
+        elif _ask("Continue? [Y/n] ", "y", interactive).lower() not in {"y", "yes"}:
+            print("Cancelled. Nothing changed.")
+            return 1
+        for message in scaffold.init(root, provider):
             print(message)
-        if not args.dry_run:
-            for check in scaffold.doctor(root):
-                print(
-                    f"{check['check']}: {'ok' if check['ok'] else 'check'} {check.get('detail', '')}"
-                )
-            print('Commit the listed files. Check AGENTS.md describes dev-server ports and checks. '
-                  'Then run: factory start "your feature"')
+        for check in scaffold.doctor(root):
+            print(f"{check['check']}: {'ok' if check['ok'] else 'check'} {check.get('detail', '')}")
+        print('Next: review the starter instructions file and commit the factory files, then run: '
+              'factory start "your feature"')
         return 0
     if command == "upgrade":
         repo = _selected(args, check_version=False, register=False)

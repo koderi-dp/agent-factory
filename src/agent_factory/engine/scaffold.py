@@ -3,6 +3,7 @@
 import json
 import difflib
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 import shutil
 import subprocess
@@ -149,9 +150,30 @@ def upgrade(root: Path, *, dry_run: bool = False) -> str:
                      for name, _, _ in changes) or "Already up to date."
 
 
-def check_init(root: Path) -> Path:
-    """Validate before asking for a client or writing any files."""
-    root = Path(gitops.checked("rev-parse", "--show-toplevel", cwd=root)).resolve()
+@dataclass(frozen=True)
+class Setup:
+    """What `init` found in the folder, read without writing anything."""
+    root: Path
+    repo: bool
+    branch: str | None
+    commits: bool
+    doc: str | None
+
+
+def _toplevel(root: Path) -> Path | None:
+    result = gitops.git("rev-parse", "--show-toplevel", cwd=root)
+    return Path(result.stdout.strip()).resolve() if result.returncode == 0 else None
+
+
+def _identity_configured(root: Path) -> bool:
+    return all(
+        gitops.git("config", "--get", key, cwd=root).returncode == 0
+        for key in ("user.name", "user.email"))
+
+
+def inspect(root: Path) -> Setup:
+    """Validate the folder and report its Git and doc state; never writes."""
+    root = root.resolve()
     if any((root / name).exists()
            for name in ("factory/job.py", "factory/server.py", "factory/dashboard")):
         raise ValueError("This is a v1 install; run `factory upgrade` (plan §15.6)")
@@ -160,21 +182,79 @@ def check_init(root: Path) -> Path:
         if json.loads(existing.read_text(encoding="utf-8-sig")).get("version", 1) != 2:
             raise ValueError("This is a v1 config; run `factory upgrade` (plan §15.6)")
         versioning.check(root)
-    if not gitops.branch_exists(root, "main") or gitops.git("rev-parse", "HEAD",
-                                                            cwd=root).returncode:
-        raise ValueError("factory init needs a Git repo with a main branch and at least one commit")
-    if not any((root / name).is_file() for name in ("AGENTS.md", "CLAUDE.md")):
-        raise ValueError(
-            "Add AGENTS.md or CLAUDE.md with project setup and check instructions first")
-    return root
+    top = _toplevel(root)
+    repo = top is not None
+    if repo and top != root:
+        raise ValueError(f"This folder is inside another Git repository at {top}. Run "
+                         "`factory init` from that folder, or start a separate repo here with "
+                         "`git init -b main`.")
+    branch = None
+    commits = False
+    if repo:
+        branch = gitops.git("symbolic-ref", "--short", "-q", "HEAD",
+                            cwd=root).stdout.strip() or None
+        commits = gitops.git("rev-parse", "--verify", "-q", "HEAD", cwd=root).returncode == 0
+        if branch is None:
+            raise ValueError("HEAD is detached. Switch to a branch first, for example "
+                             "`git switch -c main`, then run `factory init` again.")
+    doc = next((name for name in ("AGENTS.md", "CLAUDE.md") if (root / name).is_file()), None)
+    if (not repo or not commits) and not _identity_configured(root):
+        raise ValueError("Git needs your name and email for the first commit. Run:\n"
+                         '  git config --global user.name "Your Name"\n'
+                         '  git config --global user.email "you@example.com"\n'
+                         "then run `factory init` again.")
+    return Setup(root=root, repo=repo, branch=branch, commits=commits, doc=doc)
+
+
+def check_init(root: Path) -> Path:
+    """Validate before asking for a client or writing any files."""
+    return inspect(root).root
+
+
+def starter_doc(root: Path, provider: str) -> tuple[str, str]:
+    """Return the instructions file name for the provider and its starter content."""
+    name = "CLAUDE.md" if provider == "claude" else "AGENTS.md"
+    commands = {key: "TODO" for key in ("install", "dev", "test", "build", "lint")}
+    try:
+        package = json.loads((root / "package.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        package = None
+    if isinstance(package, dict):
+        scripts = package.get("scripts", {})
+        commands["install"] = "npm install"
+        for key in ("dev", "test", "build", "lint"):
+            if key in scripts:
+                commands[key] = f"npm run {key}"
+    text = (TEMPLATES / "AGENTS.starter.md").read_text(encoding="utf-8")
+    for key, value in commands.items():
+        text = text.replace("{" + key + "}", value)
+    return name, text
 
 
 def init(root: Path, provider: str, *, dry_run: bool = False) -> list[str]:
-    root = check_init(root)
+    """Create what is missing, or describe it when dry_run is set.
+
+    Dry runs take the same branches as real runs, so the plan shown to the user is
+    the one that would execute.
+    """
+    setup = inspect(root)
+    root = setup.root
     if provider not in {"claude", "codex", "opencode", "both"}:
         raise ValueError("Client must be claude, codex, opencode or both")
+    word = "would " if dry_run else ""
+    messages = []
+    base = setup.branch or "main"
+    if not setup.repo:
+        messages.append(f"{'would create' if dry_run else 'created'}: git repository on {base}")
+    doc_name = setup.doc
+    doc_text = None
+    if doc_name is None:
+        doc_name, doc_text = starter_doc(root, provider)
+        messages.append(f"{'would write' if dry_run else 'wrote'}: {doc_name} "
+                        "(starter; edit the TODO lines)")
     raw = template_config()
     raw["engine"] = engine_range()
+    raw["baseBranch"] = base
     if provider != "both":
         for steps in raw["pipelines"].values():
             for step in steps:
@@ -188,7 +268,18 @@ def init(root: Path, provider: str, *, dry_run: bool = False) -> list[str]:
         # "both" stays claude + codex; opencode is opted into explicitly.
         if provider == client or (provider == "both" and client in {"claude", "codex"}):
             files[path] = (TEMPLATES / f"SKILL.{client}.md").read_text(encoding="utf-8")
-    messages = []
+    needs_commit = not setup.repo or not setup.commits
+    if needs_commit:
+        messages.append(f"{'would commit' if dry_run else 'committed'}: {doc_name} "
+                        f"as the first commit on {base}")
+    if not dry_run:
+        if not setup.repo:
+            gitops.checked("init", "-q", "-b", base, cwd=root)
+        if doc_text is not None:
+            (root / doc_name).write_text(doc_text, encoding="utf-8")
+        if needs_commit:
+            gitops.checked("add", "--", doc_name, cwd=root)
+            gitops.checked("commit", "-q", "-m", "Initial commit: agent-factory setup", cwd=root)
     for name, content in files.items():
         target = root / name
         if target.exists():

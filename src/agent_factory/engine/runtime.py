@@ -261,7 +261,7 @@ class Runtime:
                 if gitops.branch_exists(root, f"factory/{job_id}"):
                     gitops.checked("worktree", "add", str(path), f"factory/{job_id}", cwd=root)
                 else:
-                    gitops.create_worktree(root, job_id)
+                    gitops.create_worktree(root, job_id, config.baseBranch)
             folder = root / "factory/jobs" / job_id
             folder.mkdir(parents=True, exist_ok=True)
             request = folder / "request.md"

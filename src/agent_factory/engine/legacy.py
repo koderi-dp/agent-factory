@@ -71,8 +71,9 @@ def action(root: Path, job_id: str, action: str, body: dict[str, Any]) -> str:
         approved = value.get("approval", {}).get("head")
         if not approved and "pipeline" not in value and action != "delete":
             approved = gitops.checked("rev-parse", value["branch"], cwd=root)
-        base = gitops.checked("rev-parse", "main", cwd=root)
-        frozen = {"sensitivePaths": load_config(root).sensitivePaths}
+        config = load_config(root)
+        base = gitops.checked("rev-parse", config.baseBranch, cwd=root)
+        frozen = {"sensitivePaths": config.sensitivePaths, "baseBranch": config.baseBranch}
         state = ("approved" if stage in {"approve", "approved", "needs-human"} else
                  "merged" if stage == "merged" else "running")
         connection.execute(

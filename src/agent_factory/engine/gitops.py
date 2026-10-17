@@ -117,11 +117,16 @@ def worktree_path(root: str | Path, job_id: str) -> Path:
     return root.parent / (root.name + "-factory") / job_id
 
 
-def create_worktree(root: str | Path, job_id: str) -> tuple[Path, str]:
+def create_worktree(root: str | Path, job_id: str, base: str = "main") -> tuple[Path, str]:
     """Fresh-checkout setup remains the first task's responsibility (§11)."""
     path = worktree_path(root, job_id)
-    checked("worktree", "add", "-b", f"factory/{job_id}", str(path), "main", cwd=root)
+    checked("worktree", "add", "-b", f"factory/{job_id}", str(path), base, cwd=root)
     return path, head(path)
+
+
+def base_branch(job: Mapping[str, Any]) -> str:
+    """The branch a job was created from; jobs made before baseBranch existed used main."""
+    return job["frozen"].get("baseBranch", "main")
 
 
 def _worktree(root: Path, job: Mapping[str, Any]) -> Path:
@@ -225,15 +230,17 @@ def merge(root: str | Path,
         detail = "Sensitive paths: " + ", ".join(matching) + "; approve with --confirm-sensitive"
         _state(connection, job_id, "needs_human", "sensitive", detail)
         raise Sensitive(detail)
+    base = base_branch(job)
     try:
         checkout = checked("branch", "--show-current", cwd=root)
-        if checkout != "main":
-            raise Busy(f"the main checkout is on {checkout or 'a detached HEAD'}, not main")
+        if checkout != base:
+            raise Busy(f"the main checkout is on {checkout or 'a detached HEAD'}, not {base}")
         if git("diff", "--cached", "--quiet", cwd=root).returncode:
             raise Busy("the main checkout has staged changes; commit or unstage them first")
         ours = set(checked("diff", "--name-only", "-z", cwd=root).split("\0")) - {""}
         theirs = set(
-            checked("diff", "--name-only", "-z", f"main...{current}", cwd=root).split("\0")) - {""}
+            checked("diff", "--name-only", "-z", f"{base}...{current}",
+                    cwd=root).split("\0")) - {""}
         clash = sorted(ours & theirs)
         if clash:
             raise Busy("you have uncommitted changes in files this job also changes: " +
@@ -265,7 +272,7 @@ def merge(root: str | Path,
         ports.release(machine, repo_id, job_id)
         with db.tx(connection):
             connection.execute("UPDATE jobs SET port_base=NULL WHERE id=?", (job_id, ))
-    return f"merged {branch} into main" + (f" ({'; '.join(notes)})" if notes else "")
+    return f"merged {branch} into {base}" + (f" ({'; '.join(notes)})" if notes else "")
 
 
 def delete(root: str | Path,

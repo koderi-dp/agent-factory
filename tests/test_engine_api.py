@@ -246,22 +246,62 @@ def test_init_exact_files_idempotent_and_dry_run(repo, provider, wrappers):
     connection.close()
 
 
-def test_init_preconditions_and_v1_do_not_write(repo):
-    (repo / "AGENTS.md").unlink()
-    with pytest.raises(ValueError, match="AGENTS.md"):
-        scaffold.init(repo, "codex")
-    assert not (repo / "factory").exists()
-    (repo / "CLAUDE.md").write_text("checks")
-    gitops.checked("branch", "-m", "other", cwd=repo)
-    with pytest.raises(ValueError, match="main branch"):
-        scaffold.init(repo, "codex")
-    assert not (repo / "factory").exists()
-    gitops.checked("branch", "-m", "main", cwd=repo)
+def test_init_v1_install_does_not_write(repo):
     (repo / "factory").mkdir()
     (repo / "factory/job.py").write_text("# legacy evidence")
     with pytest.raises(ValueError, match="factory upgrade"):
         scaffold.init(repo, "codex")
     assert not (repo / "factory/config.json").exists()
+
+
+def test_init_writes_starter_doc_and_keeps_current_branch(repo):
+    (repo / "AGENTS.md").unlink()
+    gitops.checked("branch", "-m", "trunk", cwd=repo)
+    scaffold.init(repo, "claude")
+    assert "TODO" in (repo / "CLAUDE.md").read_text(encoding="utf-8")
+    assert not (repo / "AGENTS.md").exists()
+    config = json.loads((repo / "factory/config.json").read_text(encoding="utf-8"))
+    assert config["baseBranch"] == "trunk"
+
+
+def test_init_fresh_folder_creates_repo_on_main_with_first_commit(tmp_path, monkeypatch):
+    identity = tmp_path / "gitconfig"
+    identity.write_text("[user]\n\tname = test\n\temail = test@localhost\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(identity))
+    monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
+    root = tmp_path / "empty"
+    root.mkdir()
+    (root / "package.json").write_text(json.dumps({"scripts": {
+        "dev": "vite",
+        "test": "vitest"
+    }}),
+                                       encoding="utf-8")
+    plan = scaffold.init(root, "codex", dry_run=True)
+    assert "would create: git repository on main" in plan
+    assert not (root / ".git").exists()
+    scaffold.init(root, "codex")
+    assert gitops.checked("branch", "--show-current", cwd=root) == "main"
+    assert gitops.checked("log", "--format=%s", cwd=root) == "Initial commit: agent-factory setup"
+    assert gitops.checked("show", "--name-only", "--format=", "HEAD",
+                          cwd=root).split() == ["AGENTS.md"]
+    text = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "npm run dev" in text and "npm run test" in text
+    config = json.loads((root / "factory/config.json").read_text(encoding="utf-8"))
+    assert config["baseBranch"] == "main"
+
+
+def test_init_without_git_identity_stops_before_writing(tmp_path, monkeypatch):
+    empty = tmp_path / "gitconfig"
+    empty.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(empty))
+    monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
+    root = tmp_path / "empty"
+    root.mkdir()
+    with pytest.raises(ValueError, match="git config --global user.name"):
+        scaffold.init(root, "codex")
+    assert not (root / ".git").exists()
+    assert not (root / "AGENTS.md").exists()
 
 
 def test_machine_settings_update_refreshes_every_installed_adapter(api):

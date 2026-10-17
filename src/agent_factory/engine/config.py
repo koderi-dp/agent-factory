@@ -89,6 +89,9 @@ class Timeouts(ConfigModel):
 class RepoConfig(ConfigModel):
     version: Literal[2] = 2
     engine: Nonempty
+    # Jobs branch from, and merge into, this branch. `factory init` sets it to the repo's
+    # current branch; older configs without the key keep using main.
+    baseBranch: Nonempty = "main"
     defaultPipeline: Identifier
     pipelines: dict[Identifier, Annotated[list[SingleStep | ParallelStep],
                                           Field(min_length=1, max_length=32)]]
