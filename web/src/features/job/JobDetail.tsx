@@ -7,6 +7,8 @@ import {
   frozenSteps,
   currentExecutions,
   latestAttempt,
+  jobActions,
+  type Action,
   type Execution,
 } from "@/features/board/model";
 import { layout } from "./pipeline/layout";
@@ -17,14 +19,14 @@ import { Timeline } from "./Timeline";
 import { UsagePanel } from "./UsagePanel";
 import { PauseBanner } from "./PauseBanner";
 import { PageShell } from "@/ui/page-shell";
-import { PageHeader } from "@/ui/page-header";
+import { JobHeader } from "./JobHeader";
+import { StageDetails } from "./StageDetails";
 import { Button } from "@/ui/primitives/button";
 import { Input } from "@/ui/primitives/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/primitives/tabs";
 import { Sheet, SheetContent } from "@/ui/primitives/sheet";
 import { DialogTitle, DialogDescription } from "@/ui/primitives/dialog";
 import { ConfirmDialog } from "@/ui/confirm-dialog";
-import { StatusBadge } from "@/ui/status";
 
 function ExecutionReport({
   repo,
@@ -49,7 +51,6 @@ function ExecutionReport({
   return <ReportView text={query.data} />;
 }
 const tabNames = ["Pipeline", "Reports", "Timeline", "Log", "Usage"];
-type Action = "stop" | "resume" | "approve" | "rework" | "delete";
 const labels: Record<Action, string> = {
   stop: "Stop",
   resume: "Resume",
@@ -57,7 +58,15 @@ const labels: Record<Action, string> = {
   rework: "Rework",
   delete: "Delete",
 };
-export function JobDetail({ repo, job: jobId }: { repo: string; job: string }) {
+export function JobDetail({
+  repo,
+  job: jobId,
+  name,
+}: {
+  repo: string;
+  job: string;
+  name?: string;
+}) {
   const query = useQuery({ queryKey: keys.job(repo, jobId), queryFn: () => api.job(repo, jobId) });
   const state = useQuery({ queryKey: keys.state(repo), queryFn: () => api.state(repo) });
   const location = useLocation(),
@@ -104,15 +113,11 @@ export function JobDetail({ repo, job: jobId }: { repo: string; job: string }) {
     : undefined;
   const selected = node?.execution ?? historyExecution;
   const selectedAttempts = attempts.filter((a) => a.execution_id === selected?.id);
-  const busy = executions.some((e) => ["claimed", "running"].includes(e.state));
-  const actions: Action[] = [
-    ...(job.state === "running" || job.state === "queued" ? ["stop" as const] : []),
-    ...(job.state === "paused" ? ["resume" as const] : []),
-    ...(["approved", "needs_human"].includes(job.state) && !busy
-      ? ["approve" as const, "rework" as const]
-      : []),
-    ...(!busy ? ["delete" as const] : []),
-  ];
+  const actions = jobActions(job, executions);
+  const stageStep = steps.find((s) => s.id === (node?.step ?? selected?.step_id));
+  const stageEntry = node
+    ? stageStep?.executions[node.execIndex]
+    : stageStep?.executions.find((e) => e.id === selected?.exec_id);
   const confirm = async () => {
     if (!action) return;
     setPending(true);
@@ -146,14 +151,12 @@ export function JobDetail({ repo, job: jobId }: { repo: string; job: string }) {
   );
   return (
     <PageShell gap="loose">
-      <PageHeader
-        kicker={`${job.id} · ${job.pipeline_name}`}
-        title={job.title}
-        description={job.note ?? undefined}
-      />
-      <div className="flex flex-wrap gap-2">
-        <StatusBadge state={job.state} />
-        {actions.map((a) => (
+      <JobHeader
+        job={job}
+        attempts={attempts}
+        repo={repo}
+        name={name}
+        actions={actions.map((a) => (
           <Button
             key={a}
             variant={a === "delete" ? "destructive" : "outline"}
@@ -168,7 +171,7 @@ export function JobDetail({ repo, job: jobId }: { repo: string; job: string }) {
             {labels[a]}
           </Button>
         ))}
-      </div>
+      />
       <PauseBanner job={job} executions={current} />
       <Tabs defaultValue={file ? "Reports" : "Pipeline"}>
         <TabsList aria-label="Job views">
@@ -256,7 +259,15 @@ export function JobDetail({ repo, job: jobId }: { repo: string; job: string }) {
           <DialogTitle className="pr-8 text-lg">
             {selected ? `${selected.step_id}/${selected.exec_id}` : nodeId}
           </DialogTitle>
-          <DialogDescription>Execution report, live log and attempt timeline</DialogDescription>
+          <DialogDescription>
+            Stage details, execution report, live log and attempt timeline
+          </DialogDescription>
+          <StageDetails
+            step={stageStep}
+            entry={stageEntry}
+            execution={selected}
+            attempts={attempts}
+          />
           <Tabs
             key={nodeId}
             defaultValue={

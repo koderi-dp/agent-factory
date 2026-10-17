@@ -142,7 +142,7 @@ test("dark screenshot baselines and axe contrast", async ({ page, engine }) => {
     await expect(page).toHaveScreenshot(`${name}.png`, {
       animations: "disabled",
       stylePath: screenshotStyle,
-      mask: [page.getByText(/in stage$/)],
+      mask: [page.getByText(/in stage$/), page.getByRole("timer")],
     });
   }
   await capture("overview");

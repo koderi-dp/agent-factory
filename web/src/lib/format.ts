@@ -23,3 +23,12 @@ export function relativeTime(at: string | null | undefined, now = Date.now()): s
   if (seconds < 5) return "just now";
   return `${duration(seconds)} ago`;
 }
+export function clockTime(at: string | null | undefined): string {
+  if (!at || !Number.isFinite(Date.parse(at))) return "—";
+  return new Date(at).toLocaleString("en", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

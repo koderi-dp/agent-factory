@@ -109,3 +109,48 @@ export function jobSummary(jobs: Job[]) {
 export function needsYouJobs(jobs: Job[]): Job[] {
   return jobs.filter((job) => job.state === "paused" || job.state === "needs_human");
 }
+
+export type Action = "stop" | "resume" | "approve" | "rework" | "delete";
+
+/** Actions the job's current state allows, in display order. */
+export function jobActions(job: Job, executions: Execution[]): Action[] {
+  const busy = executions.some((e) => e.state === "claimed" || e.state === "running");
+  return [
+    ...(job.state === "running" || job.state === "queued" ? ["stop" as const] : []),
+    ...(job.state === "paused" ? ["resume" as const] : []),
+    ...((job.state === "approved" || job.state === "needs_human") && !busy
+      ? ["approve" as const, "rework" as const]
+      : []),
+    ...(!busy ? ["delete" as const] : []),
+  ];
+}
+
+function parsed(at: string | null | undefined): number | undefined {
+  if (!at) return undefined;
+  const ms = Date.parse(at);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+export function jobTiming(job: Job, attempts: Attempt[], now: number) {
+  const launches = attempts.map((a) => parsed(a.t_launch)).filter((ms): ms is number => ms != null);
+  const start = launches.length ? Math.min(...launches) : parsed(job.created_at);
+  const live = job.state !== "merged" && job.state !== "cancelled";
+  const endedAt = live ? null : job.updated_at;
+  const end = live ? now : parsed(endedAt);
+  return {
+    startedAt: start == null ? null : new Date(start).toISOString(),
+    endedAt,
+    elapsedSeconds: start == null || end == null ? null : (end - start) / 1000,
+    live,
+  };
+}
+
+export function stageTiming(attempt: Attempt | undefined, now: number) {
+  const start = parsed(attempt?.t_launch);
+  const finish = parsed(attempt?.t_exit);
+  return {
+    start: attempt?.t_launch ?? null,
+    finish: attempt?.t_exit ?? null,
+    seconds: start == null ? null : ((finish ?? now) - start) / 1000,
+  };
+}

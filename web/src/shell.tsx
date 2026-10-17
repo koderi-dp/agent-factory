@@ -121,7 +121,14 @@ export function Shell() {
   )
     page = <Board repo={selected.id} name={selected.name} now={now} />;
   else if (selected && params.job)
-    page = <JobDetail key={`${repo}:${params.job}`} repo={selected.id} job={params.job} />;
+    page = (
+      <JobDetail
+        key={`${repo}:${params.job}`}
+        repo={selected.id}
+        job={params.job}
+        name={selected.name}
+      />
+    );
   else if (pathname === "/") page = <Overview repos={overview.data.repos} />;
   else if (selected && pathname.endsWith("/backlog"))
     page = <Backlog key={selected.id} repo={selected.id} />;
