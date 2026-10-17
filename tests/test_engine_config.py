@@ -337,8 +337,9 @@ def test_upgrade_omitted_pipeline_and_permissions(tmp_path, permissions, expecte
 
 def test_empty_v1_config_preserves_defaults_and_current_major(tmp_path):
     config = validate_config({}, root=tmp_path)
-    major = int(__version__.split(".", 1)[0])
-    assert config.engine == f">={major}.0,<{major + 1}"
+    # The engine range tracks the running major and covers prereleases of it.
+    assert config.engine == engine_range(__version__)
+    assert config.engine.endswith(f",<{int(__version__.split('.', 1)[0]) + 1}")
     assert config.merge == "auto"
     assert config.permissions == "auto" and config.maxRounds == 3
     assert all(e.provider == "claude" for s in config.pipelines["full"] for e in s.executions)
