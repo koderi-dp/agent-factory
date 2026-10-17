@@ -247,9 +247,10 @@ test("backlog stays locked after HTTP success until the backlog SSE arrives", as
     data: { action: "add", items: [{ text: "One" }, { text: "Two" }] },
   });
   await page.goto(`${engine.url}/#/repo/${repo}/backlog`);
+  // Queued items carry a level-2 heading; started items stay listed below with a level-3 one.
   const first = page
     .getByRole("listitem")
-    .filter({ has: page.getByRole("heading", { name: "One", exact: true }) });
+    .filter({ has: page.getByRole("heading", { level: 2, name: "One", exact: true }) });
   const response = page.waitForResponse(
     (r) => r.url().endsWith("/backlog") && r.request().method() === "POST",
   );
