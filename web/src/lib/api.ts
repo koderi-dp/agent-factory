@@ -142,10 +142,59 @@ export const overviewSchema = z.object({
       path: z.string(),
       status: z.enum(["available", "missing", "version_mismatch"]),
       detail: nullableText,
-      counts: z.object({ running: id, "needs-you": id, queued: id }),
+      counts: z.object({ running: id, "needs-you": id, queued: id, merged: id }),
+      last_event_id: id,
     }),
   ),
 });
+const crossRepo = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(["available", "missing", "version_mismatch", "unreadable"]),
+  detail: nullableText,
+});
+export const crossJobsSchema = z.object({
+  repos: z.array(crossRepo),
+  jobs: z.array(
+    z.looseObject({
+      repo_id: z.string(),
+      repo_name: z.string(),
+      id: z.string(),
+      seq: id,
+      title: z.string(),
+      state: jobSchema.shape.state,
+      pause_reason: nullableText,
+      note: nullableText,
+      current_step: nullableText,
+      pipeline_name: z.string(),
+      branch: z.string(),
+      round: id,
+      created_at: z.string(),
+      updated_at: z.string(),
+    }),
+  ),
+  truncated: z.boolean(),
+});
+export const activityFeedSchema = z.object({
+  repos: z.array(crossRepo),
+  events: z.array(
+    z.looseObject({
+      repo_id: z.string(),
+      repo_name: z.string(),
+      id,
+      job_id: nullableText,
+      job_title: nullableText,
+      type: z.string(),
+      ts: z.string(),
+      state: nullableText.optional(),
+      stage: nullableText.optional(),
+      payload: z.unknown(),
+    }),
+  ),
+  next: nullableText,
+});
+export type CrossJob = z.infer<typeof crossJobsSchema>["jobs"][number];
+export type ActivityEntry = z.infer<typeof activityFeedSchema>["events"][number];
 export const eventTypes = [
   "job.state",
   "execution.state",
@@ -198,9 +247,31 @@ export const keys = {
   overview: ["overview"] as const,
   state: (repo: string) => ["repo", repo, "state"] as const,
   job: (repo: string, job: string) => ["repo", repo, "job", job] as const,
+  jobs: (states?: readonly string[]) => ["jobs", ...(states ?? [])] as const,
+  activity: (limit?: number) => ["activity", limit ?? null] as const,
 };
 export const api = {
   overview: () => request("/overview", overviewSchema),
+  jobs: ({
+    states,
+    repo,
+    limit,
+  }: { states?: readonly string[]; repo?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    for (const state of states ?? []) query.append("state", state);
+    if (repo) query.set("repo", repo);
+    if (limit) query.set("limit", String(limit));
+    const text = query.toString();
+    return request(`/jobs${text ? `?${text}` : ""}`, crossJobsSchema);
+  },
+  activity: ({ limit, repo, cursor }: { limit?: number; repo?: string; cursor?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (limit) query.set("limit", String(limit));
+    if (repo) query.set("repo", repo);
+    if (cursor) query.set("cursor", cursor);
+    const text = query.toString();
+    return request(`/activity${text ? `?${text}` : ""}`, activityFeedSchema);
+  },
   state: (repo: string) => request(`${repoPath(repo)}/state`, stateSchema),
   job: (repo: string, job: string) =>
     request(`${repoPath(repo)}/jobs/${encodeURIComponent(job)}`, detailSchema),

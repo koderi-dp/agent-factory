@@ -103,17 +103,42 @@ export function connectRepo(
   };
 }
 
+type OverviewData = z.infer<typeof overviewSchema>;
+function overviewChanged(before: OverviewData | undefined, after: OverviewData) {
+  if (!before || before.repos.length !== after.repos.length) return true;
+  return after.repos.some((repo, index) => {
+    const old = before.repos[index];
+    return (
+      old.id !== repo.id ||
+      old.last_event_id !== repo.last_event_id ||
+      JSON.stringify(old.counts) !== JSON.stringify(repo.counts)
+    );
+  });
+}
+const invalidateCrossRepo = (client: QueryClient) =>
+  Promise.all([
+    client.invalidateQueries({ queryKey: ["jobs"] }),
+    client.invalidateQueries({ queryKey: ["activity"] }),
+  ]);
+
 export function connectOverview(client: QueryClient, onConnection?: (state: Connection) => void) {
   const source = new EventSource("/api/overview/stream");
   source.onopen = () => {
     onConnection?.("connected");
-    // Overview has no replay; refetch on every reconnect.
-    void client.fetchQuery({ queryKey: keys.overview, queryFn: api.overview, staleTime: 0 });
+    // Overview has no replay; refetch on every reconnect, and refresh the cross-repository
+    // lists because events may have been missed while disconnected.
+    void client
+      .fetchQuery({ queryKey: keys.overview, queryFn: api.overview, staleTime: 0 })
+      .catch(() => undefined)
+      .then(() => invalidateCrossRepo(client));
   };
   source.onerror = () => onConnection?.("disconnected");
   source.addEventListener("overview", (message) => {
     const parsed = overviewSchema.safeParse(JSON.parse((message as MessageEvent).data));
-    if (parsed.success) client.setQueryData(keys.overview, parsed.data);
+    if (!parsed.success) return;
+    const before = client.getQueryData<OverviewData>(keys.overview);
+    client.setQueryData(keys.overview, parsed.data);
+    if (overviewChanged(before, parsed.data)) void invalidateCrossRepo(client);
   });
   return () => source.close();
 }

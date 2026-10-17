@@ -288,7 +288,8 @@ class Runtime:
         with self.lock:
             result = []
             for repo, status, detail in self._repo_statuses():
-                counts = {"running": 0, "needs-you": 0, "queued": 0}
+                counts = {"running": 0, "needs-you": 0, "queued": 0, "merged": 0}
+                last_event_id = 0
                 if not repo.missing:
                     connection = pipeline.open_repo(repo.path)
                     try:
@@ -298,6 +299,8 @@ class Runtime:
                                 counts["needs-you"] += n
                             elif state in counts:
                                 counts[state] += n
+                        last_event_id = connection.execute(
+                            "SELECT coalesce(max(id),0) FROM events").fetchone()[0]
                     finally:
                         connection.close()
                 result.append({
@@ -306,7 +309,8 @@ class Runtime:
                     "path": repo.path,
                     "status": status,
                     "detail": detail,
-                    "counts": counts
+                    "counts": counts,
+                    "last_event_id": last_event_id
                 })
             return {"repos": result}
 

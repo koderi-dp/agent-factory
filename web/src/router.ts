@@ -4,6 +4,7 @@ import {
   createRouter,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { isSummaryKey } from "./features/overview/model";
 import { Shell } from "./shell";
 
 export function createDashboardRouter(history: RouterHistory) {
@@ -11,7 +12,15 @@ export function createDashboardRouter(history: RouterHistory) {
   const route = (path: string) => createRoute({ getParentRoute: () => root, path });
   return createRouter({
     routeTree: root.addChildren([
-      route("/"),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/",
+        validateSearch: (search: Record<string, unknown>) => ({
+          ...(typeof search.state === "string" && isSummaryKey(search.state)
+            ? { state: search.state }
+            : {}),
+        }),
+      }),
       route("/repo/$repo"),
       createRoute({
         getParentRoute: () => root,

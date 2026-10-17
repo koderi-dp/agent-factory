@@ -13,7 +13,6 @@ import {
 } from "@/lib/api";
 import { statusLabel, statusTone } from "@/ui/status-text";
 import { compactLayout } from "@/features/job/pipeline/layout";
-import { Overview } from "@/features/overview/Overview";
 import { ActivityLine } from "./ActivityLine";
 import { Board } from "./Board";
 import {
@@ -224,7 +223,7 @@ describe("activity lines", () => {
 });
 
 describe("dashboard rendering", () => {
-  async function renderRoute(path: string) {
+  async function renderRoute(path: string, extraRepos: object[] = []) {
     const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
     client.setQueryData(keys.overview, {
       repos: [
@@ -234,7 +233,8 @@ describe("dashboard rendering", () => {
           path: "C:/alpha",
           status: "available",
           detail: null,
-          counts: { running: 2, "needs-you": 3, queued: 4 },
+          counts: { running: 2, "needs-you": 3, queued: 4, merged: 1 },
+          last_event_id: 5,
         },
         {
           id: "beta",
@@ -242,10 +242,23 @@ describe("dashboard rendering", () => {
           path: "C:/beta",
           status: "available",
           detail: null,
-          counts: { running: 0, "needs-you": 2, queued: 0 },
+          counts: { running: 0, "needs-you": 2, queued: 0, merged: 0 },
+          last_event_id: 0,
         },
+        ...extraRepos,
       ],
     });
+    client.setQueryData(keys.jobs(["queued", "running", "paused", "needs_human", "approved"]), {
+      repos: [],
+      jobs: [],
+      truncated: false,
+    });
+    client.setQueryData(keys.jobs(["paused", "needs_human"]), {
+      repos: [],
+      jobs: [],
+      truncated: false,
+    });
+    client.setQueryData(keys.activity(20), { repos: [], events: [], next: null });
     for (const repo of ["alpha", "beta"]) {
       client.setQueryData(
         keys.state(repo),
@@ -269,7 +282,7 @@ describe("dashboard rendering", () => {
   }
   it("renders the overview by default and sums needs-you counts across repos", async () => {
     const html = await renderRoute("/");
-    expect(html).toContain("All your repositories");
+    expect(html).toContain("Factory overview");
     expect(html).toContain("5 need you");
     expect(html).toContain("Alpha · 3 need you");
     expect(html).toContain("Beta · 2 need you");
@@ -348,31 +361,33 @@ describe("dashboard rendering", () => {
     expect(html).not.toContain("<details open");
     client.clear();
   });
-  it("shows overview counts, unavailable repos and first-use instructions", () => {
-    const repos = [
+  it("shows overview counts, unavailable repos and first-use instructions", async () => {
+    const html = await renderRoute("/", [
       {
-        id: "a",
-        name: "A",
-        path: "C:/a",
-        status: "available" as const,
+        id: "gone",
+        name: "Gone",
+        path: "C:/gone",
+        status: "missing",
         detail: null,
-        counts: { running: 2, "needs-you": 3, queued: 4 },
+        counts: { running: 0, "needs-you": 0, queued: 0, merged: 0 },
+        last_event_id: 0,
       },
-      {
-        id: "b",
-        name: "B",
-        path: "C:/b",
-        status: "missing" as const,
-        detail: null,
-        counts: { running: 0, "needs-you": 0, queued: 0 },
-      },
-    ];
-    const html = renderToStaticMarkup(<Overview repos={repos} />);
+    ]);
     expect(html).toContain("3 need you");
     expect(html).toContain("Repository missing");
-    expect(html).toContain("#/repo/a");
-    expect(html).not.toContain("#/repo/b");
-    expect(renderToStaticMarkup(<Overview repos={[]} />)).toContain("factory init");
+    expect(html).toContain("#/repo/alpha");
+    expect(html).not.toContain("#/repo/gone");
+    const empty = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    empty.setQueryData(keys.overview, { repos: [] });
+    const router = createDashboardRouter(createMemoryHistory({ initialEntries: ["/"] }));
+    await router.load();
+    const none = renderToStaticMarkup(
+      <QueryClientProvider client={empty}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    empty.clear();
+    expect(none).toContain("factory init");
   });
   it("maps factory statuses to semantic tones and explicit labels", () => {
     expect(statusLabel("needs_human")).toBe("Needs you");

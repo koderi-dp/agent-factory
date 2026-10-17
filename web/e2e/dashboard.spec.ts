@@ -104,8 +104,10 @@ test("unsaved provider profiles survive SSE and JSON preview validates steps", a
 
 test("repo switcher, overview counts, server death and SSE reconnect", async ({ page, engine }) => {
   await page.goto(engine.url);
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-  await expect(page.getByText("0 running", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("heading", { name: "Factory overview", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Repositories" }).getByText("0 running", { exact: true }),
+  ).toHaveCount(2);
   await page.getByRole("combobox").first().selectOption(engine.repos[1]);
   await expect(page.getByRole("heading", { name: "beta", exact: true })).toBeVisible();
   await engine.stop();
@@ -124,7 +126,9 @@ test("repo switcher, overview counts, server death and SSE reconnect", async ({ 
   await page.getByRole("dialog").getByRole("button", { name: "Stop", exact: true }).click();
   await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Overview", exact: true }).click();
-  await expect(page.getByText("1 need you", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Repositories" }).getByText("1 need you", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("combobox").first().locator("option", { hasText: "beta" }),
   ).toContainText("1 need you");
@@ -132,7 +136,7 @@ test("repo switcher, overview counts, server death and SSE reconnect", async ({ 
 
 test("dark screenshot baselines and axe contrast", async ({ page, engine }) => {
   await page.goto(engine.url);
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Factory overview", exact: true })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const screenshotStyle = fileURLToPath(new URL("./screenshot.css", import.meta.url));
   async function capture(name: string) {
