@@ -83,10 +83,12 @@ function UsageTable({
   label,
   heading,
   groups,
+  name = (key) => key,
 }: {
   label: string;
   heading: string;
   groups: [string, Group][];
+  name?: (key: string) => string;
 }) {
   return (
     <section className="space-y-2" aria-label={label}>
@@ -119,7 +121,7 @@ function UsageTable({
             {groups.map(([key, g]) => (
               <tr key={key}>
                 <th scope="row" className="px-3 py-2 text-left font-medium">
-                  {key}
+                  {name(key)}
                 </th>
                 <td className="px-3 py-2 text-right tabular-nums">{g.attempts}</td>
                 <TokenCell metric={g.input} />
@@ -235,7 +237,8 @@ export function UsagePage() {
           <UsageTable
             label="Per repository"
             heading="Repository"
-            groups={group(rows, (row) => row.repo_name)}
+            groups={group(rows, (row) => row.repo_id)}
+            name={(id) => rows.find((row) => row.repo_id === id)?.repo_name ?? id}
           />
         </>
       )}
