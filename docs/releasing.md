@@ -40,6 +40,13 @@ read-only legacy jobs; `tools/upgrade_smoke.py` covers live uv replacement,
 re-adoption and rollback. There is no released v2 previous minor yet, so
 previous-minor upgrade persistence is exercised only by that tool.
 
+`tools/upgrade_smoke.py` replaces the installed tool while a job runs. Windows locks
+the modules a running service has mapped from the tool environment, so there the
+service is stopped first (`factory service stop`); the attempt is detached (base
+Python, copied wrapper) and keeps running, and the restarted service re-adopts it.
+A Windows upgrade is therefore: stop the service, replace the tool, and let the next
+command restart and re-adopt.
+
 Codex is the verified provider for this release. Claude parity (session 1.11 and
 its fresh phase review) remains deferred until Claude usage returns; do not claim
 Claude support until then.

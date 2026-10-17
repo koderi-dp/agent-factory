@@ -111,6 +111,16 @@ def smoke(distributions: Path, root: Path) -> None:
             time.sleep(0.1)
         raise AssertionError('Timed out waiting for upgrade smoke condition')
 
+    def replace(wheel: Path) -> None:
+        """Install another engine version while the fake attempt keeps running."""
+        if os.name == 'nt':
+            # Windows refuses to delete modules a running service has mapped from
+            # the tool environment. Stop it first: the attempt is detached (base
+            # Python, copied wrapper) so it keeps running, and the restarted
+            # service re-adopts it.
+            run(factory, 'service', 'stop')
+        run('uv', 'tool', 'install', '--force', '--python', sys._base_executable, str(wheel))
+
     try:
         run(factory, 'config', '--machine', f'cli.codex={launcher}')
         job_id = run(factory, 'start', 'Upgrade smoke', '--pipeline', 'fast').splitlines()[0]
@@ -122,12 +132,15 @@ def smoke(distributions: Path, root: Path) -> None:
         assert before['attempts'][0]['state'] == 'running', before
         frozen = before['job']['frozen']
         print('Replacing installed 1.0.0 with 1.1.0 while the fake attempt runs', flush=True)
-        run('uv', 'tool', 'install', '--force', '--python', sys._base_executable, str(wheels[1]))
+        replace(wheels[1])
         # This command must detect the old service and restart it gracefully.
         status = json.loads(run(factory, 'status', job_id, '--json'))
         current = json.loads(metadata.read_text())
         assert current['version'] == '1.1.0' and current['pid'] != old['pid'], current
-        assert current['port'] == old['port']
+        if os.name != 'nt':
+            # Only a POSIX service is restarted in place; Windows has to stop it
+            # first (see `replace`), so the fresh service binds a new port.
+            assert current['port'] == old['port']
         assert status['attempts'][0]['wrapper_pid'] == before['attempts'][0]['wrapper_pid']
         assert status['job']['frozen'] == frozen
         assert len(list((root / 'invocations').iterdir())) == 1, 'Attempt duplicated during upgrade'
@@ -137,7 +150,7 @@ def smoke(distributions: Path, root: Path) -> None:
         assert all(a['state'] == 'valid' for a in done['attempts']), done
         assert len(list(
             (root / 'invocations').iterdir())) == 2, 'Expected builder and approver once each'
-        run('uv', 'tool', 'install', '--force', '--python', sys._base_executable, str(wheels[0]))
+        replace(wheels[0])
         rolled_back = json.loads(run(factory, 'status', job_id, '--json'))
         assert rolled_back['job'] == done['job']
         assert json.loads(metadata.read_text())['version'] == '1.0.0'
