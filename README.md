@@ -148,7 +148,8 @@ remain repository-local and can be compared with the built-in version using
 ## Working on this repo
 
 Set up the development environment with `uv sync --locked`. The Python suite runs with
-`uv run --locked pytest`. Dashboard commands and release checks are documented in
+`uv run --locked pytest`, or in parallel with `uv run --locked pytest -n 4` (about a minute, against
+about six serially). Tests that touch the fixed sandbox port range are kept on one worker. Dashboard commands and release checks are documented in
 [`docs/releasing.md`](docs/releasing.md). The first-run work is tracked in
 [`docs/first-run-plan.md`](docs/first-run-plan.md).
 

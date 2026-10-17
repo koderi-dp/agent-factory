@@ -19,6 +19,20 @@ from agent_factory.engine.supervisor import EventUpdate, ExitOutcome, Prepared, 
 FAKE_CLI = Path(__file__).with_name("fake_cli.py").resolve()
 
 
+def _worker_span() -> tuple[int, int]:
+    """Give each pytest-xdist worker its own slice of the port space.
+
+    Two workers probing the same blocks would both see them free and then collide.
+    Without xdist this is the whole space.
+    """
+    start, end = 22000, 60000
+    count = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0").removeprefix("gw")
+    size = (end - start) // count
+    first = start + int(worker) * size
+    return first, first + size
+
+
 def free_range(blocks=2):
     """Find a real test range that the engine also treats as free.
 
@@ -26,7 +40,8 @@ def free_range(blocks=2):
     listener check uses the engine's own machine-wide oracle, which also sees IPv6
     and wildcard listeners that a 127.0.0.1 probe cannot.
     """
-    for base in range(22000, 60000, 10):
+    first, last = _worker_span()
+    for base in range(first, last - blocks * 10 + 1, 10):
         block = range(base, base + blocks * 10)
         if ports.listeners(block):
             continue

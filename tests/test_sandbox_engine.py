@@ -9,6 +9,9 @@ from tools import sandbox
 from agent_factory.engine import pipeline, ports
 from test_engine_gitops import repo, add_job, context_for
 
+# The sandbox runs share one fixed port range, so keep them on a single xdist worker.
+pytestmark = pytest.mark.xdist_group("sandbox")
+
 
 @pytest.mark.parametrize("pipeline_name, calls", [("full", 42), ("fast", 12)])
 def test_six_jobs_across_two_repos(tmp_path_factory, monkeypatch, pipeline_name, calls):

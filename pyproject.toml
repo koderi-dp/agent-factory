@@ -25,6 +25,7 @@ factory = "agent_factory.cli:main"
 dev = [
     "pytest>=8,<10",
     "pytest-asyncio>=0.24,<2",
+    "pytest-xdist>=3,<4",
     "httpx>=0.27,<1",
     "yapf==0.43.0",
 ]
@@ -44,6 +45,8 @@ artifacts = ["/src/agent_factory/dashboard_dist/**"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# Used by `pytest -n <workers>`; a no-op for serial runs.
+addopts = "--dist=loadgroup"
 
 [tool.yapf]
 based_on_style = "pep8"
