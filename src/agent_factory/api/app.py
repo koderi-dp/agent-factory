@@ -19,7 +19,7 @@ from starlette.responses import StreamingResponse
 
 from agent_factory import __version__, run_cli
 from agent_factory.api import streams
-from agent_factory.engine import backlog, db, gitops, pipeline, roles as role_files, versioning
+from agent_factory.engine import backlog, changes, db, gitops, pipeline, roles as role_files, versioning
 from agent_factory.engine.config import (MachineSettings, load_config, load_machine_settings,
                                          save_machine_settings, validate_config)
 from agent_factory.engine.runtime import Runtime
@@ -435,6 +435,28 @@ def create_app(*,
                     time.sleep(0.05)
             app.state.shutdown()
         return {"stopping": True}
+
+    def load_job(repo: str, job_id: str) -> tuple[Path, dict]:
+        with engine().lock:
+            root, writer = engine().repo(repo)
+            try:
+                job = writer.call(lambda connection: pipeline.load(connection, job_id))[0]
+            except pipeline.PipelineError as error:
+                raise HTTPException(404, "Unknown job") from error
+        return root, job
+
+    @app.get("/api/repos/{repo}/jobs/{job_id}/changes")
+    def changes_list(repo: str, job_id: str) -> dict:
+        root, job = load_job(repo, job_id)
+        return changes.list_changes(root, job)
+
+    @app.get("/api/repos/{repo}/jobs/{job_id}/changes/diff")
+    def change_diff(repo: str, job_id: str, path: Annotated[str, Query(min_length=1)]) -> dict:
+        root, job = load_job(repo, job_id)
+        try:
+            return changes.file_diff(root, job, path)
+        except changes.UnknownFile as error:
+            raise HTTPException(404, "The job did not change this file") from error
 
     @app.get("/{asset_path:path}")
     def dashboard_asset(asset_path: str):
