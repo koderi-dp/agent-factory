@@ -272,12 +272,10 @@ def test_listener_inspection_includes_ipv6_unknown_owners_and_falls_back(monkeyp
     monkeypatch.setattr(psutil, "net_connections", Mock(side_effect=psutil.AccessDenied()))
     monkeypatch.setattr(
         psutil, "process_iter", lambda: [
-            SimpleNamespace(pid=42,
-                            connections=lambda **kwargs: [
-                                SimpleNamespace(status=psutil.CONN_LISTEN,
-                                                laddr=SimpleNamespace(port=5103),
-                                                pid=42)
-                            ]),
+            SimpleNamespace(
+                pid=42,
+                connections=lambda **kwargs:
+                [SimpleNamespace(status=psutil.CONN_LISTEN, laddr=SimpleNamespace(port=5103))]),
             SimpleNamespace(pid=43, connections=Mock(side_effect=psutil.AccessDenied())),
         ])
     monkeypatch.setattr(psutil, "Process", Mock(side_effect=psutil.NoSuchProcess(42)))

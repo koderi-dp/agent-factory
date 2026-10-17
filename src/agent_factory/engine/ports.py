@@ -59,7 +59,7 @@ def _per_process_tcp_listeners() -> list[tuple[int, int | None]]:
         try:
             for connection in process.connections(kind="tcp"):
                 if connection.status == psutil.CONN_LISTEN and connection.laddr:
-                    result.append((connection.laddr.port, connection.pid))
+                    result.append((connection.laddr.port, process.pid))
         except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
             continue
     return result
