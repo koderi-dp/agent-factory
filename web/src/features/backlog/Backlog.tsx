@@ -71,6 +71,18 @@ export function Backlog({ repo }: { repo: string }) {
     mutationFn: (body: Record<string, unknown>) => api.backlog(repo, body),
     onMutate: () => setWaiting(state.data),
     onError: () => setWaiting(undefined),
+    // An edit that leaves the text as it was changes nothing, so no live update
+    // would ever release the controls: release them from the response instead.
+    onSuccess: (result) => {
+      if (!("backlog" in result)) return;
+      setWaiting((snapshot) =>
+        snapshot &&
+        JSON.stringify(snapshot.backlog) === JSON.stringify(result.backlog) &&
+        JSON.stringify(snapshot.started) === JSON.stringify(result.started)
+          ? undefined
+          : snapshot,
+      );
+    },
   });
   const metaMutation = useMutation({
     mutationFn: (body: Parameters<typeof api.backlogMeta>[1]) => api.backlogMeta(repo, body),
