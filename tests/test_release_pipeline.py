@@ -100,7 +100,7 @@ def test_ci_matrix_and_smoke_gate():
     ci = workflow('ci.yml')
     matrix = ci['jobs']['python']['strategy']['matrix']
     assert set(matrix['python']) == {'3.11', '3.12', '3.13'}
-    assert set(matrix['os']) == {'windows-latest', 'macos-latest'}
+    assert set(matrix['os']) == {'ubuntu-24.04', 'windows-latest', 'macos-latest'}
     assert ci['jobs']['smoke']['needs'] == 'package'
     assert set(ci['jobs']['package']['needs']) == {'python', 'web', 'dashboard'}
     assert ci['jobs']['dashboard']['uses'] == './.github/workflows/dashboard.yml'
