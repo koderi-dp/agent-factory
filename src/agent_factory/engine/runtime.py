@@ -506,6 +506,10 @@ class Runtime:
                     raise ValueError("action must be add, remove, move, reorder or start")
                 if action != "start":
                     run_cli.atomic_write(path, backlog.render(values))
+                if action == "remove":
+                    pruned = backlog.prune_meta(path)
+                    if pruned is not None:
+                        run_cli.atomic_write(backlog.meta_path(path), pruned)
             if action == "start":
                 title, details, key = selected
                 return self.enqueue(repo_id, title, details, body.get("pipeline"), backlog_key=key)
@@ -514,6 +518,32 @@ class Runtime:
                 with db.tx(connection):
                     pipeline._event(connection, None, pipeline._now(), "backlog",
                                     {"action": action})
+
+            writer.call(event)
+            return {"backlog": backlog.items(path)}
+
+    def edit_backlog_meta(self, repo_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        with self.lock:
+            root, writer = self.repo(repo_id)
+            versioning.check(root)
+            path = root / "factory/backlog.md"
+            item_key = body.get("key")
+            if not isinstance(item_key, str):
+                raise ValueError("key must be the backlog item key")
+            priority, status = body.get("priority"), body.get("status")
+            if priority is None and status is None:
+                raise ValueError("priority or status is required")
+            for value in (priority, status):
+                if value is not None and not isinstance(value, str):
+                    raise ValueError("priority and status must be text")
+            with self._backlog_lock(root):
+                data = backlog.update_meta(path, item_key, priority=priority, status=status)
+                run_cli.atomic_write(backlog.meta_path(path), data)
+
+            def event(connection: sqlite3.Connection) -> None:
+                with db.tx(connection):
+                    pipeline._event(connection, None, pipeline._now(), "backlog",
+                                    {"action": "meta"})
 
             writer.call(event)
             return {"backlog": backlog.items(path)}

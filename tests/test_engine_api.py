@@ -835,3 +835,55 @@ def test_stale_backlog_item_cannot_act_on_next_item(api, action):
     assert "changed" in response.json()["detail"]
     assert path.read_text() == before
     assert len(client.get(base + "/state").json()["jobs"]) == 1
+
+
+def test_backlog_meta_defaults_persist_and_prune(api):
+    client, runtime, repo_id, root = api
+    base = f"/api/repos/{repo_id}"
+    path = root / "factory/backlog.md"
+    path.write_text("# Backlog\n\n- [ ] One\n- [ ] Two\n")
+    items = client.get(base + "/backlog").json()["backlog"]
+    assert [(i["priority"], i["status"]) for i in items] == [("normal", "ready")] * 2
+    assert not (root / "factory/backlog.meta.json").exists()
+    one, two = items
+    response = client.put(base + "/backlog/meta",
+                          json={
+                              "key": one["key"],
+                              "priority": "high"
+                          },
+                          headers=headers())
+    assert response.status_code == 200
+    client.put(base + "/backlog/meta",
+               json={
+                   "key": two["key"],
+                   "status": "needs_input"
+               },
+               headers=headers())
+    state = client.get(base + "/state").json()["backlog"]
+    assert [(i["priority"], i["status"]) for i in state] == [("high", "ready"),
+                                                             ("normal", "needs_input")]
+    assert path.read_text() == "# Backlog\n\n- [ ] One\n- [ ] Two\n"
+    # Hand-removing an item keeps the other item's metadata.
+    path.write_text("# Backlog\n\n- [ ] Two\n")
+    state = client.get(base + "/backlog").json()["backlog"]
+    assert [(i["title"], i["priority"], i["status"])
+            for i in state] == [("Two", "normal", "needs_input")]
+    # Removal through the dashboard prunes the sidecar.
+    client.post(base + "/backlog",
+                json={
+                    "action": "remove",
+                    "index": 0,
+                    "key": two["key"]
+                },
+                headers=headers())
+    assert (root / "factory/backlog.meta.json").read_text().strip() == "{}"
+    bad = client.put(base + "/backlog/meta",
+                     json={
+                         "key": two["key"],
+                         "priority": "high"
+                     },
+                     headers=headers())
+    assert bad.status_code == 400
+    (root / "factory/backlog.meta.json").write_text("not json")
+    path.write_text("# Backlog\n\n- [ ] Three\n")
+    assert client.get(base + "/backlog").json()["backlog"][0]["priority"] == "normal"

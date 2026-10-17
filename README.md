@@ -131,7 +131,10 @@ resume, approve, rework and delete. The service listens on localhost only.
 
 ## What a job leaves behind
 
-The repository keeps its configuration and backlog in `factory/`. Job state, reports,
+The repository keeps its configuration and backlog in `factory/`. `factory/backlog.md` keeps
+its plain line format; backlog priority and status are committed beside it in the sidecar
+`factory/backlog.meta.json`, which may be deleted safely (items fall back to normal priority
+and ready status). Job state, reports,
 attempt logs and archived outputs live under `factory/jobs/<job-id>/`; worktrees are kept
 beside the repository until merged or deleted. The exact report set depends on the pipeline.
 The machine registry and service state live in the user data directory (or `FACTORY_HOME`).

@@ -136,7 +136,7 @@ async function renderSettingsRoute(path: string) {
     activity: [],
     last_event_id: 0,
     backlog: [
-      { index: 0, key: "item-key", title: "Feature <script>", details: "Keep the details" },
+      { index: 0, key: "item-key", title: "Feature <script>", details: "Keep the details", priority: "normal", status: "ready" },
     ],
   });
   client.setQueryData(["roles", "alpha", config], {

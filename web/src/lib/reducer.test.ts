@@ -49,7 +49,7 @@ describe("pure reducer", () => {
   it.each(eventTypes)("applies %s from its authoritative snapshot", (type) => {
     const before = Object.freeze(state());
     const next = state(2);
-    next.backlog = [{ index: 0, key: "k", title: "added", details: "" }];
+    next.backlog = [{ index: 0, key: "k", title: "added", details: "", priority: "normal", status: "ready" }];
     next.config.merge = "auto";
     expect(reduce(before, { type: "durable", payload: event(type, next) })).toEqual(next);
     expect(before.last_event_id).toBe(0);

@@ -109,8 +109,19 @@ export const configSchema = z.object({
   sensitivePaths: z.array(z.string()),
 });
 export const activitySchema = z.object({ attempt_id: id, text: nullableText, at: nullableText });
+export const backlogPrioritySchema = z.enum(["high", "normal", "low"]);
+export const backlogStatusSchema = z.enum(["ready", "in_progress", "needs_input", "completed"]);
+export type BacklogPriority = z.infer<typeof backlogPrioritySchema>;
+export type BacklogStatus = z.infer<typeof backlogStatusSchema>;
 export const backlogSchema = z.array(
-  z.object({ index: id, key: z.string(), title: z.string(), details: z.string() }),
+  z.object({
+    index: id,
+    key: z.string(),
+    title: z.string(),
+    details: z.string(),
+    priority: backlogPrioritySchema,
+    status: backlogStatusSchema,
+  }),
 );
 export const legacyJobSchema = z.object({
   id: z.string(),
@@ -306,6 +317,16 @@ export const api = {
       ]),
       { method: "POST", body: JSON.stringify(body) },
     ),
+  backlogMeta: (
+    repo: string,
+    body: { key: string; priority?: BacklogPriority; status?: BacklogStatus },
+  ) =>
+    request(`${repoPath(repo)}/backlog/meta`, z.object({ backlog: backlogSchema }), {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  backlogList: (repo: string) =>
+    request(`${repoPath(repo)}/backlog`, z.object({ backlog: backlogSchema })),
   log: (repo: string, attempt: number, offset = 0) =>
     request(
       `${repoPath(repo)}/attempts/${attempt}/log?offset=${offset}`,

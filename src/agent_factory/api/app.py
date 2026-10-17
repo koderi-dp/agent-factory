@@ -18,7 +18,7 @@ from starlette.responses import StreamingResponse
 
 from agent_factory import __version__, run_cli
 from agent_factory.api import streams
-from agent_factory.engine import db, gitops, pipeline, roles as role_files, versioning
+from agent_factory.engine import backlog, db, gitops, pipeline, roles as role_files, versioning
 from agent_factory.engine.config import (MachineSettings, load_config, load_machine_settings,
                                          save_machine_settings, validate_config)
 from agent_factory.engine.runtime import Runtime
@@ -392,6 +392,16 @@ def create_app(*,
                             **role_files.provenance(role, root=root)
                         }
             return {"roles": list(result.values())}
+
+    @app.get("/api/repos/{repo}/backlog")
+    def list_backlog(repo: str) -> dict:
+        with engine().lock:
+            root, _ = engine().repo(repo)
+            return {"backlog": backlog.items(root / "factory/backlog.md")}
+
+    @app.put("/api/repos/{repo}/backlog/meta")
+    def edit_backlog_meta(repo: str, body: dict = Body()) -> dict:
+        return engine().edit_backlog_meta(repo, body)
 
     @app.post("/api/repos/{repo}/backlog")
     def edit_backlog(repo: str, body: dict = Body()) -> dict:
