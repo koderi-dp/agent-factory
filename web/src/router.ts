@@ -30,7 +30,13 @@ export function createDashboardRouter(history: RouterHistory) {
           ...(typeof search.file === "string" ? { file: search.file } : {}),
         }),
       }),
-      route("/repo/$repo/backlog"),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/repo/$repo/backlog",
+        validateSearch: (search: Record<string, unknown>) => ({
+          ...(search.view === "board" ? { view: "board" as const } : {}),
+        }),
+      }),
       route("/repo/$repo/settings"),
       route("/settings"),
     ]),
