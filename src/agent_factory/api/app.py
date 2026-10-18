@@ -19,7 +19,7 @@ from starlette.responses import StreamingResponse
 
 from agent_factory import __version__, run_cli
 from agent_factory.api import streams
-from agent_factory.engine import (backlog, catalog, changes, db, gitops, pipeline, roles as
+from agent_factory.engine import (backlog, catalog, changes, db, gitops, library, pipeline, roles as
                                   role_files, versioning)
 from agent_factory.engine.config import (MachineSettings, load_config, load_machine_settings,
                                          preview_pipeline, save_machine_settings, validate_config)
@@ -382,6 +382,22 @@ def create_app(*,
 
             writer.call(event)
             return parsed.model_dump()
+
+    @app.get("/api/library/pipelines")
+    def library_pipelines() -> dict:
+        return {"pipelines": library.list_pipelines()}
+
+    @app.put("/api/library/pipelines/{name}")
+    def save_library_pipeline(name: str, body: dict = Body()) -> dict:
+        steps = body.get("steps")
+        if not isinstance(steps, list):
+            raise ValueError("steps must be a list of pipeline steps")
+        return library.save(name, steps)
+
+    @app.delete("/api/library/pipelines/{name}")
+    def delete_library_pipeline(name: str) -> dict:
+        library.delete(name)
+        return {"deleted": name}
 
     @app.get("/api/providers/models")
     async def provider_models(refresh: bool = False) -> dict:

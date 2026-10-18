@@ -7,6 +7,7 @@ import {
   draftPipelineNames,
   addGroupMember,
   addPipeline,
+  addPipelineSteps,
   addStage,
   canRemovePipeline,
   draftState,
@@ -142,6 +143,14 @@ describe("pipeline create and remove", () => {
     expect(entries(next.pipelines.fast[0])[0].profiles.codex.model).toBe("sol");
     expect(addPipeline(config, "fast", "fast")).toBe(config);
     expect(addPipeline(config, "docs", "missing")).toBe(config);
+  });
+  it("adds a library pipeline as an independent copy under its own name", () => {
+    const steps = structuredClone(config.pipelines.fast);
+    const next = addPipelineSteps(config, "shared", steps);
+    expect(next.pipelines.shared).toEqual(steps);
+    steps[0].id = "changed";
+    expect(next.pipelines.shared[0].id).toBe("build");
+    expect(addPipelineSteps(config, "fast", steps)).toBe(config);
   });
   it("keeps the default pipeline and the last pipeline", () => {
     const two = addPipeline(config, "docs", "fast");

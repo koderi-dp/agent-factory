@@ -496,6 +496,24 @@ export const availableRolesSchema = z.object({
   ),
 });
 export type AvailableRoles = z.infer<typeof availableRolesSchema>["roles"];
+export const librarySchema = z.object({
+  pipelines: z.array(
+    z.object({ name: z.string(), steps: z.array(z.unknown()), builtin: z.boolean() }),
+  ),
+});
+export type LibraryPipeline = z.infer<typeof librarySchema>["pipelines"][number];
+export const libraryApi = {
+  list: () => request("/library/pipelines", librarySchema),
+  save: (name: string, steps: unknown[]) =>
+    request(`/library/pipelines/${encodeURIComponent(name)}`, z.object({ name: z.string() }), {
+      method: "PUT",
+      body: JSON.stringify({ steps }),
+    }),
+  remove: (name: string) =>
+    request(`/library/pipelines/${encodeURIComponent(name)}`, z.object({ deleted: z.string() }), {
+      method: "DELETE",
+    }),
+};
 export const settingsApi = {
   machine: () => request("/machine/settings", machineSchema),
   saveMachine: (body: z.infer<typeof machineSchema>) =>

@@ -351,3 +351,11 @@ export function removePipeline(config: Config, name: string): Config {
   delete next.pipelines[name];
   return next;
 }
+
+/** A copy of a library pipeline, added under its own name. */
+export function addPipelineSteps(config: Config, name: string, steps: unknown[]): Config {
+  if (pipelineNameError(config, name)) return config;
+  const next = structuredClone(config);
+  next.pipelines[name] = structuredClone(steps) as Config["pipelines"][string];
+  return next;
+}

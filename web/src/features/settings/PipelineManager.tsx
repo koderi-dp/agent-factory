@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BookDown, BookUp, Plus, Trash2 } from "lucide-react";
+import { libraryApi } from "@/lib/api";
+import { Select } from "@/ui/primitives/select";
 import { Button } from "@/ui/primitives/button";
 import { Input } from "@/ui/primitives/input";
 import {
   addPipeline,
+  addPipelineSteps,
   canRemovePipeline,
   pipelineNameError,
   removePipeline,
@@ -23,6 +27,21 @@ export function PipelineManager({ config, name, onSelect, onChange, autoFocus }:
   const [newName, setNewName] = useState("");
   const error = newName ? pipelineNameError(config, newName) : undefined;
   const removable = canRemovePipeline(config, name);
+  const client = useQueryClient();
+  const library = useQuery({ queryKey: ["library"], queryFn: libraryApi.list });
+  const [pick, setPick] = useState("");
+  const picked = library.data?.pipelines.find((p) => p.name === pick);
+  const pickError = picked ? pipelineNameError(config, picked.name) : undefined;
+  const store = useMutation({
+    mutationFn: () => libraryApi.save(name, config.pipelines[name] ?? []),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["library"] }),
+  });
+  const addFromLibrary = () => {
+    if (!picked || pickError) return;
+    onChange(addPipelineSteps(config, picked.name, picked.steps));
+    onSelect(picked.name);
+    setPick("");
+  };
   const create = () => {
     if (pipelineNameError(config, newName)) return;
     onChange(addPipeline(config, newName, name));
@@ -72,6 +91,59 @@ export function PipelineManager({ config, name, onSelect, onChange, autoFocus }:
           Delete {name}
         </Button>
       </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="grid min-w-48 flex-1 gap-1 text-xs text-muted-foreground">
+          Add a copy from the library
+          <Select
+            aria-label="Library pipeline"
+            value={pick}
+            onChange={(e) => setPick(e.target.value)}
+          >
+            <option value="">Select…</option>
+            {library.data?.pipelines.map((p) => (
+              <option key={p.name} value={p.name}>
+                {p.name}
+                {p.builtin ? " (built-in)" : ""}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          icon={BookDown}
+          disabled={!picked || !!pickError}
+          onClick={addFromLibrary}
+        >
+          Add from library
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          icon={BookUp}
+          disabled={store.isPending}
+          onClick={() => store.mutate()}
+        >
+          Save {name} to library
+        </Button>
+      </div>
+      {pickError && (
+        <p role="alert" className="text-xs text-danger">
+          {pickError} Rename it here first, or delete it.
+        </p>
+      )}
+      {store.isSuccess && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Saved {name} to the library.
+        </p>
+      )}
+      {store.error && (
+        <p role="alert" className="text-xs text-danger">
+          Not saved to the library: {store.error.message}
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-xs text-danger">
           {error}

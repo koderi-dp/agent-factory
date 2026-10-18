@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import { useQueries } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { z } from "zod";
-import { api, keys, type configSchema, type overviewSchema } from "@/lib/api";
+import { api, keys, libraryApi, type configSchema, type overviewSchema } from "@/lib/api";
 import { PipelineSettingsForm } from "@/features/settings/PipelineSettingsForm";
 import { Badge } from "@/ui/primitives/badge";
 import { Button } from "@/ui/primitives/button";
@@ -27,6 +27,12 @@ type Editing = { repo: string; pipeline: string; focusNew: boolean };
 
 export function PipelinesPage({ repos }: z.infer<typeof overviewSchema>) {
   const [editing, setEditing] = useState<Editing>();
+  const client = useQueryClient();
+  const library = useQuery({ queryKey: ["library"], queryFn: libraryApi.list });
+  const remove = useMutation({
+    mutationFn: libraryApi.remove,
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["library"] }),
+  });
   const states = useQueries({
     queries: repos.map((repo) => ({
       queryKey: keys.state(repo.id),
@@ -40,6 +46,46 @@ export function PipelinesPage({ repos }: z.infer<typeof overviewSchema>) {
         title="Pipelines"
         description="Configured pipelines for every registered repository."
       />
+      <section aria-labelledby="pipeline-library" className="space-y-3">
+        <h2 id="pipeline-library" className="text-sm font-medium">
+          Library
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          Pipelines saved on this machine. Adding one to a repository copies it into that
+          repository&apos;s config, so the repository keeps working for anyone who clones it.
+        </p>
+        {library.error && (
+          <p role="alert" className="text-sm">
+            Could not load the library: {library.error.message}
+          </p>
+        )}
+        {remove.error && (
+          <p role="alert" className="text-sm text-danger">
+            {remove.error.message}
+          </p>
+        )}
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {library.data?.pipelines.map((item) => (
+            <li key={item.name} className="flex flex-wrap items-center gap-3 p-3 text-sm">
+              <span>{pipelineText(item.name, item.steps as Steps)}</span>
+              {item.builtin && <Badge variant="outline">built-in</Badge>}
+              {!item.builtin && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto"
+                  aria-label={`Delete library pipeline ${item.name}`}
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(item.name)}
+                >
+                  Delete
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
       {!repos.length && (
         <p className="text-sm text-muted-foreground">
           No repositories registered. Run factory init in a project to get started.
