@@ -1,6 +1,7 @@
 """`factory init` picks its starting tool from what is installed instead of asking blindly."""
 
 import json
+import subprocess
 
 import pytest
 
@@ -173,3 +174,40 @@ def test_an_explicit_provider_skips_detection(repo, monkeypatch, capsys):  # noq
     out = capsys.readouterr().out
     assert "would write: .agents/skills/factory/SKILL.md" in out
     assert ".claude/skills" not in out
+
+
+def test_starter_files_follow_the_tools_in_use(tmp_path):
+    only_claude = scaffold.starter_docs(tmp_path, {"claude"})
+    assert [name for name, _ in only_claude] == ["CLAUDE.md"]
+    assert [name for name, _ in scaffold.starter_docs(tmp_path, {"codex"})] == ["AGENTS.md"]
+    for tools in ({"claude", "codex"}, {"claude", "opencode"}, set(scaffold.PROVIDERS)):
+        docs = scaffold.starter_docs(tmp_path, tools)
+        assert [name for name, _ in docs] == ["AGENTS.md", "CLAUDE.md"]
+        assert docs[1][1] == scaffold.CLAUDE_IMPORT and "@AGENTS.md" in docs[1][1]
+        assert docs[0][1] == only_claude[0][1]  # one set of instructions, not two
+
+
+def test_a_fresh_folder_shared_by_tools_commits_both_files(tmp_path, monkeypatch):
+    identity = tmp_path / "gitconfig"
+    identity.write_text("[user]\n\tname = test\n\temail = test@localhost\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(identity))
+    monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
+    root = tmp_path / "fresh"
+    root.mkdir()
+    plan = scaffold.init(root, "both", dry_run=True, skills=("claude", "codex"))
+    assert "would write: CLAUDE.md (imports AGENTS.md for Claude Code)" in plan
+    assert "would commit: AGENTS.md, CLAUDE.md as the first commit on main" in plan
+    scaffold.init(root, "both", skills=("claude", "codex"))
+    committed = subprocess.run(["git", "show", "--name-only", "--format=", "HEAD"],
+                               cwd=root,
+                               capture_output=True,
+                               text=True,
+                               check=True).stdout.split()
+    assert sorted(committed) == ["AGENTS.md", "CLAUDE.md"]
+    assert "@AGENTS.md" in (root / "CLAUDE.md").read_text(encoding="utf-8")
+
+
+def test_an_existing_instructions_file_is_left_alone(repo):  # noqa: F811
+    # The fixture repo already has AGENTS.md; init must not add a CLAUDE.md next to it.
+    scaffold.init(repo, "both", skills=("claude", "codex"))
+    assert not (repo / "CLAUDE.md").exists()

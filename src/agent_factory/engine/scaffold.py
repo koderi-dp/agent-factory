@@ -4,7 +4,7 @@ import json
 import difflib
 import hashlib
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 import shutil
@@ -286,9 +286,20 @@ def check_init(root: Path) -> Path:
     return inspect(root).root
 
 
-def starter_doc(root: Path, provider: str) -> tuple[str, str]:
-    """Return the instructions file name for the provider and its starter content."""
-    name = "CLAUDE.md" if provider == "claude" else "AGENTS.md"
+# Claude Code reads AGENTS.md itself only on recent versions, and only when there is no
+# CLAUDE.md. A CLAUDE.md that imports it works on every version and is never read twice.
+CLAUDE_IMPORT = ("# Project instructions\n\n"
+                 "The instructions for every coding tool live in AGENTS.md.\n\n"
+                 "@AGENTS.md\n")
+
+
+def starter_docs(root: Path, tools: Collection[str]) -> list[tuple[str, str]]:
+    """The starter instructions files to create, as (name, content).
+
+    Claude Code alone gets CLAUDE.md. Any other tool reads AGENTS.md, so when Claude Code
+    shares the project with one, CLAUDE.md imports AGENTS.md (the layout Claude Code's own
+    docs recommend) instead of holding a second copy that would drift.
+    """
     commands = {key: "TODO" for key in ("install", "dev", "test", "build", "lint")}
     try:
         package = json.loads((root / "package.json").read_text(encoding="utf-8-sig"))
@@ -303,7 +314,12 @@ def starter_doc(root: Path, provider: str) -> tuple[str, str]:
     text = (TEMPLATES / "AGENTS.starter.md").read_text(encoding="utf-8")
     for key, value in commands.items():
         text = text.replace("{" + key + "}", value)
-    return name, text
+    if set(tools) == {"claude"}:
+        return [("CLAUDE.md", text)]
+    docs = [("AGENTS.md", text)]
+    if "claude" in tools:
+        docs.append(("CLAUDE.md", CLAUDE_IMPORT))
+    return docs
 
 
 def init(root: Path,
@@ -326,12 +342,15 @@ def init(root: Path,
     base = setup.branch or "main"
     if not setup.repo:
         messages.append(f"{'would create' if dry_run else 'created'}: git repository on {base}")
-    doc_name = setup.doc
-    doc_text = None
-    if doc_name is None:
-        doc_name, doc_text = starter_doc(root, provider)
-        messages.append(f"{'would write' if dry_run else 'wrote'}: {doc_name} "
-                        "(starter; edit the TODO lines)")
+    # By default "both" stays claude + codex and opencode is opted into explicitly;
+    # a caller that detected the installed tools passes exactly the ones to install.
+    wanted = set(skills) if skills is not None else (
+        {"claude", "codex"} if provider == "both" else {provider})
+    docs = starter_docs(root, wanted) if setup.doc is None else []
+    committed = [name for name, _ in docs] or [setup.doc]
+    for number, (name, _) in enumerate(docs):
+        note = "starter; edit the TODO lines" if number == 0 else "imports AGENTS.md for Claude Code"
+        messages.append(f"{'would write' if dry_run else 'wrote'}: {name} ({note})")
     raw = template_config()
     raw["engine"] = engine_range()
     raw["baseBranch"] = base
@@ -348,24 +367,20 @@ def init(root: Path,
         "factory/config.json": json.dumps(raw, indent=2) + "\n",
         "factory/backlog.md": (TEMPLATES / "backlog.md").read_text(encoding="utf-8")
     }
-    # By default "both" stays claude + codex and opencode is opted into explicitly;
-    # a caller that detected the installed tools passes exactly the ones to install.
-    wanted = set(skills) if skills is not None else (
-        {"claude", "codex"} if provider == "both" else {provider})
     for client, path in CLIENT_SKILLS.items():
         if client in wanted:
             files[path] = (TEMPLATES / f"SKILL.{client}.md").read_text(encoding="utf-8")
     needs_commit = not setup.repo or not setup.commits
     if needs_commit:
-        messages.append(f"{'would commit' if dry_run else 'committed'}: {doc_name} "
+        messages.append(f"{'would commit' if dry_run else 'committed'}: {', '.join(committed)} "
                         f"as the first commit on {base}")
     if not dry_run:
         if not setup.repo:
             gitops.checked("init", "-q", "-b", base, cwd=root)
-        if doc_text is not None:
-            (root / doc_name).write_text(doc_text, encoding="utf-8")
+        for name, text in docs:
+            (root / name).write_text(text, encoding="utf-8")
         if needs_commit:
-            gitops.checked("add", "--", doc_name, cwd=root)
+            gitops.checked("add", "--", *committed, cwd=root)
             gitops.checked("commit", "-q", "-m", "Initial commit: agent-factory setup", cwd=root)
     for name, content in files.items():
         target = root / name

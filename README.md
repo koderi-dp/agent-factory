@@ -63,8 +63,9 @@ Which tool should the pipeline use by default?
 You can change any stage later on the Pipelines page. [1]:
 Plan for C:\path\to\your-project:
   would create: git repository on main
-  would write: CLAUDE.md (starter; edit the TODO lines)
-  would commit: CLAUDE.md as the first commit on main
+  would write: AGENTS.md (starter; edit the TODO lines)
+  would write: CLAUDE.md (imports AGENTS.md for Claude Code)
+  would commit: AGENTS.md, CLAUDE.md as the first commit on main
   would write: factory/config.json
   would write: factory/backlog.md
   would write: .claude/skills/factory/SKILL.md
@@ -87,7 +88,9 @@ What init does:
   `git config` commands to run.
 - **Existing repository:** uses its current branch as the base branch and records it in
   `factory/config.json`. Nothing is renamed.
-- **No `AGENTS.md` or `CLAUDE.md`:** writes a starter with `TODO` lines. Edit them to describe
+- **No `AGENTS.md` or `CLAUDE.md`:** writes a starter with `TODO` lines. With Claude Code alone that is
+  `CLAUDE.md`. When other tools share the project it is `AGENTS.md`, plus a `CLAUDE.md` that imports
+  it, so every tool reads the same instructions. Edit them to describe
   your install, dev server and checks. If the folder has a `package.json` with `dev`, `test`,
   `build` or `lint` scripts, those commands are filled in.
 
