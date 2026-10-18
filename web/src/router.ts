@@ -11,6 +11,11 @@ import { Shell } from "./shell";
 export function createDashboardRouter(history: RouterHistory) {
   const root = createRootRoute({ component: Shell });
   const route = (path: string) => createRoute({ getParentRoute: () => root, path });
+  // Every page keeps the sidebar's repository choice in ?repo= so it survives navigation.
+  const withRepo = (search: Record<string, unknown>) =>
+    typeof search.repo === "string" && search.repo ? { repo: search.repo } : {};
+  const scoped = (path: string) =>
+    createRoute({ getParentRoute: () => root, path, validateSearch: withRepo });
   return createRouter({
     routeTree: root.addChildren([
       createRoute({
@@ -20,6 +25,7 @@ export function createDashboardRouter(history: RouterHistory) {
           ...(typeof search.state === "string" && isSummaryKey(search.state)
             ? { state: search.state }
             : {}),
+          ...withRepo(search),
         }),
       }),
       createRoute({
@@ -41,9 +47,12 @@ export function createDashboardRouter(history: RouterHistory) {
           ...(typeof search.status === "string" && search.status ? { status: search.status } : {}),
         }),
       }),
-      route("/usage"),
-      route("/pipelines"),
-      route("/repositories"),
+      scoped("/usage"),
+      scoped("/pipelines"),
+      scoped("/repositories"),
+      scoped("/board"),
+      scoped("/backlog"),
+      scoped("/repo-settings"),
       route("/repo/$repo"),
       createRoute({
         getParentRoute: () => root,
@@ -61,7 +70,7 @@ export function createDashboardRouter(history: RouterHistory) {
         }),
       }),
       route("/repo/$repo/settings"),
-      route("/settings"),
+      scoped("/settings"),
     ]),
     history,
   });

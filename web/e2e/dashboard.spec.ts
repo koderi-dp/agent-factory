@@ -116,6 +116,7 @@ test("repo switcher, overview counts, server death and SSE reconnect", async ({ 
     page.getByRole("region", { name: "Repositories" }).getByText("0 running", { exact: true }),
   ).toHaveCount(2);
   await page.getByRole("combobox").first().selectOption(engine.repos[1]);
+  await page.getByRole("link", { name: "Board", exact: true }).click();
   await expect(page.getByRole("heading", { name: "beta", exact: true })).toBeVisible();
   await engine.stop();
   await expect(page.locator("header").getByRole("status")).toContainText("Disconnected");
@@ -158,6 +159,7 @@ test("dark screenshot baselines and axe contrast", async ({ page, engine }) => {
   }
   await capture("overview");
   await page.getByRole("combobox").first().selectOption(engine.repos[0]);
+  await page.getByRole("link", { name: "Board", exact: true }).click();
   await expect(page.getByRole("heading", { name: "alpha", exact: true })).toBeVisible();
   const response = await page.request.post(`${engine.url}/api/repos/${engine.repos[0]}/jobs`, {
     headers: { "X-Factory-Token": "e2e-token" },

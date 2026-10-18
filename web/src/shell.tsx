@@ -27,7 +27,6 @@ export function Shell() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const params = useParams({ strict: false }) as { repo?: string; job?: string };
-  const repo = params.repo;
   const search = useSearch({ strict: false }) as {
     state?: string;
     repo?: string;
@@ -39,7 +38,10 @@ export function Shell() {
   });
   const [now, setNow] = useState(() => Date.now());
   const overview = useQuery({ queryKey: keys.overview, queryFn: api.overview });
-  const selected = overview.data?.repos.find((r) => r.id === repo);
+  const repos = overview.data?.repos ?? [];
+  // The sidebar choice: a repo page's path, else ?repo= on any other page, else the only repo.
+  const repo = params.repo ?? search.repo ?? (repos.length === 1 ? repos[0].id : undefined);
+  const selected = repos.find((r) => r.id === repo);
   const available = selected?.status === "available";
   useEffect(() => connectOverview(client, setOverviewConnection), [client]);
   useEffect(() => {
@@ -54,18 +56,6 @@ export function Shell() {
   useEffect(() => {
     document.title = `${needsYou ? `(${needsYou}) ` : ""}Agent Factory`;
   }, [needsYou]);
-  useEffect(() => {
-    if (
-      pathname === "/" &&
-      overview.data?.repos.length === 1 &&
-      overview.data.repos[0].status === "available"
-    )
-      void navigate({
-        to: "/repo/$repo",
-        params: { repo: overview.data.repos[0].id },
-        replace: true,
-      });
-  }, [navigate, pathname, overview.data]);
   const connection =
     overviewConnection !== "connected"
       ? overviewConnection
@@ -75,29 +65,56 @@ export function Shell() {
           : "connecting"
         : overviewConnection;
   const base = repo ? `/repo/${encodeURIComponent(repo)}` : "";
-  const nav = [
-    // With one repository, "/" redirects to its board, so Overview would be unreachable.
-    ...(overview.data?.repos.length === 1
-      ? []
-      : [{ label: "Overview", href: "/", active: pathname === "/" }]),
-    { label: "Activity", href: "/activity", active: pathname === "/activity" },
-    { label: "Jobs", href: "/jobs", active: pathname === "/jobs" },
-    { label: "Pipelines", href: "/pipelines", active: pathname === "/pipelines" },
-    { label: "Repositories", href: "/repositories", active: pathname === "/repositories" },
-    { label: "Usage", href: "/usage", active: pathname === "/usage" },
-    ...(repo
-      ? [
-          { label: "Board", href: base, active: pathname === `/repo/${repo}` },
-          { label: "Backlog", href: `${base}/backlog`, active: pathname.endsWith("/backlog") },
-          {
-            label: "Repo settings",
-            href: `${base}/settings`,
-            active: pathname.endsWith("/settings"),
-          },
-        ]
-      : []),
-    { label: "Machine settings", href: "/settings", active: pathname === "/settings" },
+  const keep: Record<string, string> = repo ? { repo } : {};
+  const onRepoPage = (suffix: string) => !!params.repo && pathname === `${base}${suffix}`;
+  // One fixed menu. Pages that need a single repository ask for one when "All" is chosen.
+  const nav: { label: string; to: string; search?: Record<string, string>; active: boolean }[] = [
+    { label: "Overview", to: "/", search: keep, active: pathname === "/" },
+    {
+      label: "Board",
+      to: repo ? base : "/board",
+      active: pathname === "/board" || onRepoPage("") || (!!params.repo && !!params.job),
+    },
+    { label: "Jobs", to: "/jobs", search: keep, active: pathname === "/jobs" },
+    {
+      label: "Backlog",
+      to: repo ? `${base}/backlog` : "/backlog",
+      active: pathname === "/backlog" || onRepoPage("/backlog"),
+    },
+    { label: "Pipelines", to: "/pipelines", search: keep, active: pathname === "/pipelines" },
+    { label: "Activity", to: "/activity", search: keep, active: pathname === "/activity" },
+    { label: "Usage", to: "/usage", search: keep, active: pathname === "/usage" },
+    {
+      label: "Repositories",
+      to: "/repositories",
+      search: keep,
+      active: pathname === "/repositories",
+    },
+    {
+      label: "Repo settings",
+      to: repo ? `${base}/settings` : "/repo-settings",
+      active: pathname === "/repo-settings" || onRepoPage("/settings"),
+    },
+    { label: "Machine settings", to: "/settings", search: keep, active: pathname === "/settings" },
   ];
+  /** Switch repository and stay on the same kind of page. */
+  function chooseRepo(next: string) {
+    const section =
+      pathname === "/backlog" || onRepoPage("/backlog")
+        ? "backlog"
+        : pathname === "/repo-settings" || onRepoPage("/settings")
+          ? "settings"
+          : pathname === "/board" || params.repo
+            ? "board"
+            : null;
+    if (section) {
+      const repoPath = { board: "", backlog: "/backlog", settings: "/settings" }[section];
+      const allPath = { board: "/board", backlog: "/backlog", settings: "/repo-settings" }[section];
+      void navigate({ to: next ? `/repo/${encodeURIComponent(next)}${repoPath}` : allPath });
+      return;
+    }
+    void navigate({ to: pathname, search: next ? { repo: next } : {} });
+  }
   let page;
   if (overview.isPending)
     page = (
@@ -112,13 +129,15 @@ export function Shell() {
         <Button onClick={() => void overview.refetch()}>Retry</Button>
       </PageShell>
     );
-  else if (repo && !selected)
+  else if (pathname === "/board" || pathname === "/backlog" || pathname === "/repo-settings")
+    page = <PickRepo repos={repos} path={pathname} />;
+  else if (params.repo && !selected)
     page = (
       <PageShell>
         <p role="alert">Repository not found.</p>
       </PageShell>
     );
-  else if (selected && !available)
+  else if (params.repo && selected && !available)
     page = (
       <PageShell>
         <p role="alert">
@@ -129,13 +148,14 @@ export function Shell() {
       </PageShell>
     );
   else if (
+    params.repo &&
     selected &&
     !params.job &&
     !pathname.endsWith("/backlog") &&
     !pathname.endsWith("/settings")
   )
     page = <Board repo={selected.id} name={selected.name} now={now} />;
-  else if (selected && params.job)
+  else if (params.repo && selected && params.job)
     page = (
       <JobDetail
         key={`${repo}:${params.job}`}
@@ -148,7 +168,7 @@ export function Shell() {
     page = (
       <JobsList
         state={search.state}
-        repo={search.repo}
+        repo={repo}
         repos={overview.data.repos}
         onFilter={(next) =>
           void navigate({
@@ -164,7 +184,7 @@ export function Shell() {
   else if (pathname === "/activity")
     page = (
       <ActivityLog
-        repo={search.repo}
+        repo={repo}
         status={search.status}
         onRepoChange={(next) =>
           void navigate({
@@ -189,12 +209,14 @@ export function Shell() {
       />
     );
   else if (pathname === "/usage") page = <UsagePage />;
-  else if (pathname === "/pipelines") page = <PipelinesPage repos={overview.data.repos} />;
+  else if (pathname === "/pipelines")
+    page = <PipelinesPage repos={selected ? [selected] : overview.data.repos} />;
   else if (pathname === "/repositories") page = <RepositoriesPage repos={overview.data.repos} />;
-  else if (pathname === "/") page = <Overview repos={overview.data.repos} />;
-  else if (selected && pathname.endsWith("/backlog"))
+  else if (pathname === "/")
+    page = <Overview repos={selected ? [selected] : overview.data.repos} />;
+  else if (params.repo && selected && pathname.endsWith("/backlog"))
     page = <Backlog key={selected.id} repo={selected.id} />;
-  else if (selected && pathname.endsWith("/settings"))
+  else if (params.repo && selected && pathname.endsWith("/settings"))
     page = <RepoSettings key={selected.id} repo={selected.id} />;
   else page = <MachineSettings />;
   return (
@@ -211,15 +233,7 @@ export function Shell() {
         </Link>
         <label className="space-y-2 text-xs text-muted-foreground">
           Repository
-          <Select
-            value={repo ?? ""}
-            onChange={(e) =>
-              void navigate({
-                to: e.target.value ? "/repo/$repo" : "/",
-                params: { repo: e.target.value },
-              })
-            }
-          >
+          <Select value={repo ?? ""} onChange={(e) => chooseRepo(e.target.value)}>
             <option value="">All repositories</option>
             {overview.data?.repos.map((r) => (
               <option key={r.id} value={r.id}>
@@ -237,7 +251,11 @@ export function Shell() {
               variant={item.active ? "secondary" : "ghost"}
               className="justify-start"
             >
-              <Link to={item.href} aria-current={item.active ? "page" : undefined}>
+              <Link
+                to={item.to}
+                search={item.search ?? {}}
+                aria-current={item.active ? "page" : undefined}
+              >
                 {item.label}
               </Link>
             </Button>
@@ -258,5 +276,45 @@ export function Shell() {
         </main>
       </div>
     </div>
+  );
+}
+
+const PICK: Record<string, { title: string; suffix: string }> = {
+  "/board": { title: "Board", suffix: "" },
+  "/backlog": { title: "Backlog", suffix: "/backlog" },
+  "/repo-settings": { title: "Repo settings", suffix: "/settings" },
+};
+
+function PickRepo({
+  repos,
+  path,
+}: {
+  repos: { id: string; name: string; status: string }[];
+  path: string;
+}) {
+  const { title, suffix } = PICK[path];
+  const usable = repos.filter((r) => r.status === "available");
+  return (
+    <PageShell>
+      <h1 className="text-2xl font-medium">{title}</h1>
+      <p className="text-sm text-muted-foreground">
+        {title} shows one repository. Pick one here or in the sidebar.
+      </p>
+      {usable.length ? (
+        <ul className="grid gap-2">
+          {usable.map((r) => (
+            <li key={r.id}>
+              <Link className="underline" to={`/repo/${encodeURIComponent(r.id)}${suffix}`}>
+                {r.name}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No repositories registered. Run factory init in a project to get started.
+        </p>
+      )}
+    </PageShell>
   );
 }

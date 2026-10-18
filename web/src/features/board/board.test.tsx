@@ -288,6 +288,25 @@ describe("dashboard rendering", () => {
     expect(html).toContain("Beta · 2 need you");
     expect(html).toContain("Connecting");
   });
+  it("keeps one menu and carries the chosen repository to every page", async () => {
+    const html = await renderRoute("/pipelines?repo=beta");
+    for (const label of ["Overview", "Board", "Jobs", "Backlog", "Pipelines", "Repo settings"])
+      expect(html).toContain(`>${label}<`);
+    expect(html).toContain('href="/repo/beta"');
+    expect(html).toContain('href="/repo/beta/backlog"');
+    expect(html).toContain('href="/jobs?repo=beta"');
+    expect(html).toContain('href="/activity?repo=beta"');
+    expect(html).toMatch(/aria-current="page"[^>]*>Pipelines/);
+    const all = await renderRoute("/pipelines");
+    expect(all).toContain(">Board<");
+    expect(all).toContain('href="/board"');
+  });
+  it("asks for a repository on repository pages when all repositories are chosen", async () => {
+    const html = await renderRoute("/backlog");
+    expect(html).toContain("Backlog shows one repository");
+    expect(html).toContain('href="/repo/alpha/backlog"');
+    expect(html).toContain('href="/repo/beta/backlog"');
+  });
   it("selects the board from the repo route and preserves shareable detail URLs", async () => {
     const html = await renderRoute("/repo/beta");
     expect(html).toContain("beta feature");
