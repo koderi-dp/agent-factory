@@ -3,6 +3,8 @@
 import json
 import difflib
 import hashlib
+import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 import shutil
@@ -22,6 +24,79 @@ CLIENT_SKILLS = {
     "codex": ".agents/skills/factory/SKILL.md",
     "opencode": ".opencode/skills/factory/SKILL.md",
 }
+
+PROVIDERS = ("claude", "codex", "opencode")
+TOOL_NAMES = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
+
+
+def credential_files(name: str) -> list[Path]:
+    """Where each tool keeps its saved sign-in. Only their presence is ever checked."""
+    home = Path.home()
+    if name == "codex":
+        return [Path(os.environ.get("CODEX_HOME", home / ".codex")) / "auth.json"]
+    if name == "claude":
+        return [home / ".claude/.credentials.json"]
+    return [home / ".local/share/opencode/auth.json"]
+
+
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    installed: bool
+    signed_in: bool
+
+
+def detect_tools(overrides: Mapping[str, str | None] | None = None) -> dict[str, Tool]:
+    """Which of the supported tools are installed, and have saved credentials.
+
+    `overrides` are machine-setting paths (`cli.<tool>`) that win over PATH.
+    """
+    overrides = overrides or {}
+    tools = {}
+    for name in PROVIDERS:
+        path = overrides.get(name) or shutil.which(name)
+        installed = bool(path and Path(path).is_file())
+        saved = any(file.is_file() for file in credential_files(name))
+        tools[name] = Tool(name, installed, installed and saved)
+    return tools
+
+
+@dataclass(frozen=True)
+class ProviderChoice:
+    provider: str | None  # the default to use; None when no tool is installed
+    options: tuple[str, ...]  # what to ask the user to pick from; empty when nothing to ask
+    skills: tuple[str, ...]  # in-chat shortcuts to install: every tool that was found
+    note: str
+    available: tuple[str, ...] = ()  # tools a stage may run on
+
+
+def choose_provider(tools: Mapping[str, Tool]) -> ProviderChoice:
+    """Pick the pipeline's starting tool from what is on this machine.
+
+    One usable tool needs no question. Several do, and then "both" (a mix) is offered
+    for any combination of the three tools.
+    """
+    installed = [name for name in PROVIDERS if tools[name].installed]
+    if not installed:
+        return ProviderChoice(
+            None, (), (), "No supported tool found. Install Claude Code, Codex or OpenCode and "
+            "sign in, then run `factory init` again. `factory doctor` shows what is missing.")
+    ready = [name for name in installed if tools[name].signed_in]
+    candidates = ready or installed
+    names = [TOOL_NAMES[name] for name in candidates]
+    # Some tools keep their sign-in outside any file we can see, so an unconfirmed
+    # sign-in is a warning, never a reason to stop.
+    warning = ("" if ready else f" Could not confirm you are signed in to {', '.join(names)}; "
+               "if jobs pause, sign in and resume them.")
+    skills = tuple(installed)
+    available = tuple(candidates)
+    if len(candidates) == 1:
+        sole = "the only signed-in tool" if ready else "the only tool"
+        return ProviderChoice(candidates[0], (), skills,
+                              f"Using {names[0]} for every stage: it is {sole} found.{warning}",
+                              available)
+    return ProviderChoice(candidates[0], available + ("both", ), skills,
+                          f"Found {', '.join(names[:-1])} and {names[-1]}.{warning}", available)
 
 
 def upgrade(root: Path, *, dry_run: bool = False) -> str:
@@ -231,7 +306,12 @@ def starter_doc(root: Path, provider: str) -> tuple[str, str]:
     return name, text
 
 
-def init(root: Path, provider: str, *, dry_run: bool = False) -> list[str]:
+def init(root: Path,
+         provider: str,
+         *,
+         dry_run: bool = False,
+         skills: Sequence[str] | None = None,
+         available: Sequence[str] | None = None) -> list[str]:
     """Create what is missing, or describe it when dry_run is set.
 
     Dry runs take the same branches as real runs, so the plan shown to the user is
@@ -255,18 +335,25 @@ def init(root: Path, provider: str, *, dry_run: bool = False) -> list[str]:
     raw = template_config()
     raw["engine"] = engine_range()
     raw["baseBranch"] = base
-    if provider != "both":
-        for steps in raw["pipelines"].values():
-            for step in steps:
-                for execution in step.get("parallel", [step]):
+    for steps in raw["pipelines"].values():
+        for step in steps:
+            for execution in step.get("parallel", [step]):
+                if provider != "both":
                     execution["provider"] = provider
+                elif available and execution["provider"] not in available:
+                    # A mix keeps the template's tool per stage, and moves a stage whose
+                    # tool is not here to the first tool that is.
+                    execution["provider"] = available[0]
     files = {
         "factory/config.json": json.dumps(raw, indent=2) + "\n",
         "factory/backlog.md": (TEMPLATES / "backlog.md").read_text(encoding="utf-8")
     }
+    # By default "both" stays claude + codex and opencode is opted into explicitly;
+    # a caller that detected the installed tools passes exactly the ones to install.
+    wanted = set(skills) if skills is not None else (
+        {"claude", "codex"} if provider == "both" else {provider})
     for client, path in CLIENT_SKILLS.items():
-        # "both" stays claude + codex; opencode is opted into explicitly.
-        if provider == client or (provider == "both" and client in {"claude", "codex"}):
+        if client in wanted:
             files[path] = (TEMPLATES / f"SKILL.{client}.md").read_text(encoding="utf-8")
     needs_commit = not setup.repo or not setup.commits
     if needs_commit:
@@ -355,18 +442,15 @@ def doctor(root: Path | None = None) -> list[dict[str, Any]]:
             "fix": None if ok else "Run `factory init` in the project folder."
         })
     # CLI login stores differ by provider/version; inspect presence, never print secrets.
-    home = Path.home()
-    import os
-    codex_home = Path(os.environ.get("CODEX_HOME", home / ".codex"))
-    for name, candidates, fix in (
-        ("codex login", [codex_home / "auth.json"], "Run `codex login`."),
-        ("claude login", [home / ".claude/.credentials.json"], "Run `claude` and sign in."),
-        ("opencode login", [home / ".local/share/opencode/auth.json"],
-         "Sign in to OpenCode, then run this check again."),
+    for name, fix in (
+        ("codex", "Run `codex login`."),
+        ("claude", "Run `claude` and sign in."),
+        ("opencode", "Sign in to OpenCode, then run this check again."),
     ):
+        candidates = credential_files(name)
         present = any(path.is_file() for path in candidates)
         checks.append({
-            "check": name,
+            "check": f"{name} login",
             "ok": present,
             "detail": "saved credentials found (validity checked on use)"
             if present else "no credential file found",

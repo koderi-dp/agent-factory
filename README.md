@@ -49,21 +49,36 @@ factory doctor
 factory start "build a todo app"
 ```
 
-`factory init` asks which client to configure (Enter keeps Codex), shows the plan, and asks once
-before it changes anything:
+`factory init` looks for Claude Code, Codex and OpenCode on your machine, shows the plan, and
+asks once before it changes anything. With one usable tool it uses that tool without asking.
+With several it asks which one the pipeline should start on (Enter takes the first):
 
 ```text
-Client (claude/codex/opencode/both) [codex]: claude
+Found Claude Code, Codex and OpenCode.
+Which tool should the pipeline use by default?
+  1) Claude Code
+  2) Codex
+  3) OpenCode
+  4) Mixed: the template's choice for each stage
+You can change any stage later on the Pipelines page. [1]:
 Plan for C:\path\to\your-project:
   would create: git repository on main
-  would write: AGENTS.md (starter; edit the TODO lines)
-  would commit: AGENTS.md as the first commit on main
+  would write: CLAUDE.md (starter; edit the TODO lines)
+  would commit: CLAUDE.md as the first commit on main
   would write: factory/config.json
   would write: factory/backlog.md
   would write: .claude/skills/factory/SKILL.md
+  would write: .agents/skills/factory/SKILL.md
+  would write: .opencode/skills/factory/SKILL.md
   would update: .gitignore
 Continue? [Y/n]
 ```
+
+The answer sets the tool every stage starts on; each stage can use a different tool afterwards, on
+the Pipelines page. "Mixed" keeps the template's tool for each stage and moves a stage to your
+first tool when its own is not installed. `init` installs the in-chat shortcut (`/factory` or
+`$factory`) for every tool it found. If none is installed it stops and says how to install one;
+`--provider claude|codex|opencode|both` skips detection, for scripts.
 
 What init does:
 

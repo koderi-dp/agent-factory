@@ -55,7 +55,9 @@ def build_parser() -> argparse.ArgumentParser:
         return sub
 
     init = command("init", "12.2")
-    init.add_argument("--provider", choices=["claude", "codex", "opencode", "both"])
+    init.add_argument("--provider",
+                      choices=["claude", "codex", "opencode", "both"],
+                      help="Start every stage on this tool instead of detecting one")
     init.add_argument("--dry-run", action="store_true")
     command("upgrade", "15.4").add_argument("--dry-run", action="store_true")
     eject = command("eject", "5.3")
@@ -198,6 +200,42 @@ def _print_checks(checks: list[dict]) -> None:
                 print(f"    fix: {check['fix']}")
 
 
+def _cli_overrides() -> dict[str, str | None]:
+    """Tool paths set in machine settings, read without creating or changing anything."""
+    database = machine_dir() / "machine.db"
+    if not database.is_file():
+        return {}
+    connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)
+    try:
+        rows = connection.execute(
+            "SELECT key, value FROM settings WHERE key LIKE 'cli.%'").fetchall()
+        return {key.removeprefix("cli."): json.loads(value) for key, value in rows}
+    except (sqlite3.Error, ValueError):
+        return {}
+    finally:
+        connection.close()
+
+
+def _pick_provider(choice: scaffold.ProviderChoice, interactive: bool) -> str:
+    """Ask which tool the pipeline starts on, but only when there is a real choice."""
+    assert choice.provider is not None
+    if not choice.options:
+        return choice.provider
+    if not interactive:
+        print(f"No terminal: starting the pipeline on {scaffold.TOOL_NAMES[choice.provider]}.")
+        return choice.provider
+    labels = {**scaffold.TOOL_NAMES, "both": "Mixed: the template's choice for each stage"}
+    print("Which tool should the pipeline use by default?")
+    for number, option in enumerate(choice.options, 1):
+        print(f"  {number}) {labels[option]}")
+    answer = _ask("You can change any stage later on the Pipelines page. [1]: ", "1", interactive)
+    if answer.isdigit() and 1 <= int(answer) <= len(choice.options):
+        return choice.options[int(answer) - 1]
+    if answer in choice.options:
+        return answer
+    raise ValueError(f"Pick a number from 1 to {len(choice.options)}.")
+
+
 def _ask(prompt: str, default: str, interactive: bool) -> str:
     """Prompt only with a terminal; scripted runs take the default instead of crashing."""
     if not interactive:
@@ -215,9 +253,17 @@ def _run(args: argparse.Namespace) -> int:
     if command == "init":
         root = Path(args.repo or Path.cwd()).resolve()
         interactive = sys.stdin.isatty()
-        provider = args.provider or _ask("Client (claude/codex/opencode/both) [codex]: ", "codex",
-                                         interactive)
-        plan = scaffold.init(root, provider, dry_run=True)
+        provider = args.provider
+        skills = available = None
+        if provider is None:
+            choice = scaffold.choose_provider(scaffold.detect_tools(_cli_overrides()))
+            if choice.provider is None:
+                raise ValueError(choice.note)
+            print(choice.note)
+            provider = _pick_provider(choice, interactive)
+            skills = choice.skills
+            available = choice.available
+        plan = scaffold.init(root, provider, dry_run=True, skills=skills, available=available)
         print("Plan for " + str(root) + ":")
         for message in plan:
             print("  " + message)
@@ -228,7 +274,7 @@ def _run(args: argparse.Namespace) -> int:
         elif _ask("Continue? [Y/n] ", "y", interactive).lower() not in {"y", "yes"}:
             print("Cancelled. Nothing changed.")
             return 1
-        for message in scaffold.init(root, provider):
+        for message in scaffold.init(root, provider, skills=skills, available=available):
             print(message)
         _print_checks(scaffold.doctor(root))
         print('Next: review the starter instructions file and commit the factory files, then run: '
