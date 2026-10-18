@@ -464,6 +464,38 @@ export const pipelinePreviewSchema = z.object({
   ),
 });
 export type PipelinePreview = z.infer<typeof pipelinePreviewSchema>;
+export const providerModelsSchema = z.object({
+  providers: z.record(
+    z.string(),
+    z.object({
+      source: z.enum(["cli", "builtin"]),
+      models: z.array(
+        z.object({
+          id: z.string(),
+          efforts: z.array(z.string()),
+          defaultEffort: z.string().nullable(),
+        }),
+      ),
+      efforts: z.array(z.string()),
+      detail: z.string().nullable(),
+    }),
+  ),
+});
+export type ProviderModels = z.infer<typeof providerModelsSchema>["providers"];
+export const availableRolesSchema = z.object({
+  roles: z.record(
+    z.string(),
+    z.array(
+      z.object({
+        name: z.string(),
+        type: z.string(),
+        description: z.string(),
+        custom: z.boolean(),
+      }),
+    ),
+  ),
+});
+export type AvailableRoles = z.infer<typeof availableRolesSchema>["roles"];
 export const settingsApi = {
   machine: () => request("/machine/settings", machineSchema),
   saveMachine: (body: z.infer<typeof machineSchema>) =>
@@ -478,6 +510,10 @@ export const settingsApi = {
       { method: "POST", body: JSON.stringify(body) },
     ),
   roles: (repo: string) => request(`${repoPath(repo)}/roles`, rolesSchema),
+  availableRoles: (repo: string) =>
+    request(`${repoPath(repo)}/roles/available`, availableRolesSchema),
+  providerModels: (refresh = false) =>
+    request(`/providers/models${refresh ? "?refresh=true" : ""}`, providerModelsSchema),
 };
 export async function report(repo: string, job: string, path: string): Promise<string> {
   const encoded = path.split("/").map(encodeURIComponent).join("/");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ApiError, configSchema } from "@/lib/api";
 import { PipelineView } from "@/features/job/pipeline/PipelineView";
+import { PipelineEditor } from "./PipelineEditor";
 import {
   draftPipelineNames,
   addGroupMember,
@@ -149,6 +150,58 @@ describe("pipeline create and remove", () => {
     expect(canRemovePipeline(config, "fast")).toBe(false);
     expect(Object.keys(removePipeline(two, "docs").pipelines)).toEqual(["fast"]);
     expect(removePipeline(two, "fast")).toBe(two);
+  });
+});
+
+describe("pipeline editor choices", () => {
+  const catalog = {
+    codex: {
+      source: "cli" as const,
+      detail: null,
+      efforts: ["low", "medium", "ultra"],
+      models: [{ id: "sol-2", efforts: ["low", "medium", "ultra"], defaultEffort: "low" }],
+    },
+  };
+  const available = {
+    codex: [
+      { name: "builder", type: "task", description: "", custom: false },
+      { name: "docs-writer", type: "task", description: "", custom: true },
+      { name: "approver", type: "approval", description: "", custom: false },
+    ],
+  };
+  const render = (props = {}) =>
+    renderToStaticMarkup(
+      <PipelineEditor
+        config={config}
+        name="fast"
+        errors={[]}
+        roles={roles}
+        catalog={catalog}
+        availableRoles={available}
+        onChange={() => {}}
+        {...props}
+      />,
+    );
+  it("lists the available roles with their type, and marks the repository's own", () => {
+    const html = render();
+    expect(html).toContain("builder · task");
+    expect(html).toContain("docs-writer · task · custom");
+    expect(html).toContain("approver · approval");
+  });
+  it("offers the model's own efforts, and says when a saved value is not in the tool's list", () => {
+    const html = render();
+    expect(html).toContain("ultra");
+    expect(html).toContain("Not in this tool&#x27;s model list on this machine.");
+  });
+  it("falls back to built-in choices and says why when a tool could not be read", () => {
+    const html = render({
+      catalog: {
+        codex: { source: "builtin", detail: "codex is not installed.", efforts: [], models: [] },
+      },
+      availableRoles: undefined,
+    });
+    expect(html).toContain("Built-in choices. codex is not installed.");
+    expect(html).toContain("builder");
   });
 });
 

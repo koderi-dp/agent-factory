@@ -7,13 +7,17 @@ type Props = {
   label: string;
   value: string;
   options: readonly string[];
+  /** Text to show for an option when it differs from its value. */
+  labels?: Record<string, string>;
+  /** A short note shown under the field. */
+  hint?: string;
   onChange: (value: string) => void;
   "aria-describedby"?: string;
   "aria-invalid"?: boolean;
 };
 
 /** A dropdown of known values. "Custom…" reveals a text box for anything else. */
-export function ChoiceSelect({ label, value, options, onChange, ...a11y }: Props) {
+export function ChoiceSelect({ label, value, options, labels, hint, onChange, ...a11y }: Props) {
   const [custom, setCustom] = useState(false);
   const list = choiceList(options, value);
   return (
@@ -35,17 +39,18 @@ export function ChoiceSelect({ label, value, options, onChange, ...a11y }: Props
         {!custom &&
           list.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {labels?.[option] ?? option}
             </option>
           ))}
         {custom &&
           options.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {labels?.[option] ?? option}
             </option>
           ))}
         <option value={CUSTOM_CHOICE}>Custom…</option>
       </Select>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {custom && (
         <Input
           {...a11y}

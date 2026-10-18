@@ -48,6 +48,18 @@ export function PipelineSettingsForm({
     queryKey: ["roles", repo, state.data?.config],
     queryFn: () => settingsApi.roles(repo),
   });
+  // Asked of the installed tools, so give it time before asking again.
+  const models = useQuery({
+    queryKey: ["provider-models"],
+    queryFn: () => settingsApi.providerModels(),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+  const available = useQuery({
+    queryKey: ["roles-available", repo, state.data?.config],
+    queryFn: () => settingsApi.availableRoles(repo),
+    enabled: !!state.data,
+  });
   const [draft, setDraft] = useState<{ text: string; base: string }>();
   const [kept, setKept] = useState("");
   const [pipeline, setPipeline] = useState(initialPipeline);
@@ -216,6 +228,8 @@ export function PipelineSettingsForm({
                   errors={errors}
                   preview={validation?.text === text ? validation.preview?.[name] : undefined}
                   roles={roles.data?.roles ?? []}
+                  catalog={models.data?.providers}
+                  availableRoles={available.data?.roles}
                   onChange={update}
                 />
               </>

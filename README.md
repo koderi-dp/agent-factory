@@ -132,6 +132,13 @@ flow. Configure roles, providers, model and effort per execution, retry limits, 
 policy. Jobs retain a snapshot of their pipeline and role instructions, so later settings
 changes affect new jobs only.
 
+In the pipeline editor, Role, Model and Effort are dropdowns. Roles are the built-in ones plus any in
+`factory/roles/`. Models and efforts are read from your installed tools, `codex debug models` and
+`opencode models`, which only list metadata and never call a model. The answers are cached for ten
+minutes. Claude Code has no such command, so it offers its aliases. If a tool is missing or does not
+answer, the dropdown falls back to built-in choices and says why. "Custom..." accepts any other value.
+A saved model that is not in a tool's list is kept and flagged.
+
 ## When a job needs you
 
 Jobs pause when an agent is blocked, a review requests changes beyond the retry limit, the

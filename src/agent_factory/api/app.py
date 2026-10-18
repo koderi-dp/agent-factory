@@ -19,7 +19,8 @@ from starlette.responses import StreamingResponse
 
 from agent_factory import __version__, run_cli
 from agent_factory.api import streams
-from agent_factory.engine import backlog, changes, db, gitops, pipeline, roles as role_files, versioning
+from agent_factory.engine import (backlog, catalog, changes, db, gitops, pipeline, roles as
+                                  role_files, versioning)
 from agent_factory.engine.config import (MachineSettings, load_config, load_machine_settings,
                                          preview_pipeline, save_machine_settings, validate_config)
 from agent_factory.engine.runtime import Runtime
@@ -381,6 +382,23 @@ def create_app(*,
 
             writer.call(event)
             return parsed.model_dump()
+
+    @app.get("/api/providers/models")
+    async def provider_models(refresh: bool = False) -> dict:
+
+        def read() -> dict:
+            with engine().lock:
+                settings = engine().scheduler.machine.call(load_machine_settings)
+            # The tools run outside the engine lock: OpenCode can take seconds to answer.
+            return catalog.discover(settings.cli.model_dump(), refresh=refresh)
+
+        return {"providers": await asyncio.to_thread(read)}
+
+    @app.get("/api/repos/{repo}/roles/available")
+    def available_roles(repo: str) -> dict:
+        with engine().lock:
+            root, _ = engine().repo(repo)
+            return {"roles": role_files.available_roles(root)}
 
     @app.get("/api/repos/{repo}/roles")
     def roles(repo: str) -> dict:

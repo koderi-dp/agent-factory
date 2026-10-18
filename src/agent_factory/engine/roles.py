@@ -118,6 +118,42 @@ def resolve_role(name: str,
                     "\n".join(str(path) for path in paths))
 
 
+_TYPE_ORDER = {"task": 0, "review": 1, "approval": 2}
+
+
+def available_roles(root: str | Path) -> dict[str, list[dict[str, str | bool]]]:
+    """Every role a stage could use, per provider: the built-ins and the repository's own.
+
+    A role that fails to load is left out of the list rather than failing the whole call;
+    `resolve_role` still reports the exact error when a stage names it.
+    """
+    repo_roles = Path(root).resolve() / "factory" / "roles"
+    providers = get_args(Provider)
+    names = set()
+    for directory in (BUILTIN_DIR, repo_roles):
+        for path in directory.glob("*.md") if directory.is_dir() else []:
+            stem = path.stem
+            for provider in providers:
+                stem = stem.removesuffix(f".{provider}")
+            if NAME.fullmatch(stem):
+                names.add(stem)
+    result: dict[str, list[dict[str, str | bool]]] = {provider: [] for provider in providers}
+    for provider in providers:
+        for name in sorted(names):
+            try:
+                role = resolve_role(name, provider, root=root)
+            except RoleError:
+                continue
+            result[provider].append({
+                "name": role.name,
+                "type": role.type,
+                "description": role.description,
+                "custom": role.path.parent == repo_roles
+            })
+        result[provider].sort(key=lambda item: (_TYPE_ORDER[str(item["type"])], str(item["name"])))
+    return result
+
+
 def provenance(role: Role, *, root: Path) -> dict[str, str | bool | None]:
     """Compare eject provenance, not customised text, with today's built-in."""
     origin = role.ejected_from

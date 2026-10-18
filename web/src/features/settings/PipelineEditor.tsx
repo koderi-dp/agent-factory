@@ -1,6 +1,6 @@
 import { useId, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, Group, Plus, Trash2, Ungroup } from "lucide-react";
-import type { PipelinePreview } from "@/lib/api";
+import type { AvailableRoles, PipelinePreview, ProviderModels } from "@/lib/api";
 import { Badge } from "@/ui/primitives/badge";
 import { Button } from "@/ui/primitives/button";
 import { Card } from "@/ui/primitives/card";
@@ -29,7 +29,7 @@ import {
   type FieldError,
 } from "./model";
 import { ChoiceSelect } from "./ChoiceSelect";
-import { choicesFor } from "./providers";
+import { effortChoices, modelChoices, replacementEffort } from "./providers";
 
 type Role = { name: string; provider: string; type: string };
 type Props = {
@@ -38,6 +38,10 @@ type Props = {
   errors: FieldError[];
   preview?: PipelinePreview;
   roles: Role[];
+  /** What the installed tools report; built-in choices are used until it arrives. */
+  catalog?: ProviderModels;
+  /** Every role a stage could use, per provider. */
+  availableRoles?: AvailableRoles;
   onChange: (next: Config) => void;
 };
 
@@ -77,7 +81,16 @@ function Field({
   );
 }
 
-export function PipelineEditor({ config, name, errors, preview, roles, onChange }: Props) {
+export function PipelineEditor({
+  config,
+  name,
+  errors,
+  preview,
+  roles,
+  catalog,
+  availableRoles,
+  onChange,
+}: Props) {
   const steps: Entry[] = config.pipelines[name] ?? [];
   const kinds = stageKinds(steps, preview, roles);
   const listId = useId();
@@ -97,11 +110,6 @@ export function PipelineEditor({ config, name, errors, preview, roles, onChange 
     );
   return (
     <div className="grid gap-3">
-      <datalist id={`${listId}-roles`}>
-        {[...new Set(roles.map((role) => role.name))].map((role) => (
-          <option key={role} value={role} />
-        ))}
-      </datalist>
       <ol aria-label="Pipeline stages" className="grid gap-3">
         {steps.map((step, i) => {
           const group = isGroup(step);
@@ -213,8 +221,53 @@ export function PipelineEditor({ config, name, errors, preview, roles, onChange 
                   const entryPath = group ? `${path}.parallel.${j}` : path;
                   const profile = entry.profiles[entry.provider] ?? { model: "", effort: "" };
                   const profilePath = `${entryPath}.profiles.${entry.provider}`;
-                  const change = (field: "uses" | "provider" | "model" | "effort", value: string) =>
-                    onChange(editExecution(config, name, i, j, field, value));
+                  const change = (
+                    field: "uses" | "provider" | "model" | "effort",
+                    value: string,
+                  ) => {
+                    let next = editExecution(config, name, i, j, field, value);
+                    if (field === "model") {
+                      const effort = replacementEffort(
+                        catalog,
+                        entry.provider,
+                        value,
+                        profile.effort,
+                      );
+                      if (effort) next = editExecution(next, name, i, j, "effort", effort);
+                    }
+                    onChange(next);
+                  };
+                  const available = availableRoles?.[entry.provider] ?? [];
+                  const roleNames = available.length
+                    ? available.map((role) => role.name)
+                    : [...new Set(roles.map((role) => role.name))];
+                  const roleLabels = Object.fromEntries(
+                    available.map((role) => [
+                      role.name,
+                      `${role.name} · ${role.type}${role.custom ? " · custom" : ""}`,
+                    ]),
+                  );
+                  const models = modelChoices(catalog, entry.provider);
+                  const efforts = effortChoices(catalog, entry.provider, profile.model);
+                  const detail = catalog?.[entry.provider]?.detail;
+                  const roleHint =
+                    available.length && entry.uses && !roleNames.includes(entry.uses)
+                      ? "Not an available role for this tool."
+                      : undefined;
+                  const modelHint =
+                    models.authoritative && profile.model && !models.options.includes(profile.model)
+                      ? "Not in this tool's model list on this machine."
+                      : !models.authoritative && entry.provider !== "claude" && detail
+                        ? `Built-in choices. ${detail}`
+                        : undefined;
+                  const effortHint = replacementEffort(
+                    catalog,
+                    entry.provider,
+                    profile.model,
+                    profile.effort,
+                  )
+                    ? "This model does not list that effort."
+                    : undefined;
                   return (
                     <div
                       key={j}
@@ -242,12 +295,15 @@ export function PipelineEditor({ config, name, errors, preview, roles, onChange 
                       )}
                       <Field label="Role" messages={errorsAt(errors, `${entryPath}.uses`)}>
                         {(a11y) => (
-                          <Input
+                          <ChoiceSelect
                             {...a11y}
-                            aria-label={`${entry.id} role`}
-                            list={`${listId}-roles`}
+                            key={entry.provider}
+                            label={`${entry.id} role`}
                             value={entry.uses}
-                            onChange={(e) => change("uses", e.target.value)}
+                            options={roleNames}
+                            labels={roleLabels}
+                            hint={roleHint}
+                            onChange={(value) => change("uses", value)}
                           />
                         )}
                       </Field>
@@ -274,11 +330,12 @@ export function PipelineEditor({ config, name, errors, preview, roles, onChange 
                       <Field label="Model" messages={errorsAt(errors, `${profilePath}.model`)}>
                         {(a11y) => (
                           <ChoiceSelect
-                            key={entry.provider}
                             {...a11y}
+                            key={entry.provider}
                             label={`${entry.id} model`}
                             value={profile.model}
-                            options={choicesFor(entry.provider, "models")}
+                            options={models.options}
+                            hint={modelHint}
                             onChange={(value) => change("model", value)}
                           />
                         )}
@@ -286,11 +343,12 @@ export function PipelineEditor({ config, name, errors, preview, roles, onChange 
                       <Field label="Effort" messages={errorsAt(errors, `${profilePath}.effort`)}>
                         {(a11y) => (
                           <ChoiceSelect
-                            key={entry.provider}
                             {...a11y}
+                            key={entry.provider}
                             label={`${entry.id} effort`}
                             value={profile.effort}
-                            options={choicesFor(entry.provider, "efforts")}
+                            options={efforts}
+                            hint={effortHint}
                             onChange={(value) => change("effort", value)}
                           />
                         )}
