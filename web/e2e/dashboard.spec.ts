@@ -1,6 +1,13 @@
+import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
 import { fileURLToPath } from "node:url";
+
+// The model field is a dropdown; "Custom..." reveals a text box for a value outside the list.
+async function setCustomValue(page: Page, label: string, value: string) {
+  await page.getByLabel(label, { exact: true }).selectOption("__custom__");
+  await page.getByLabel(`${label} custom`, { exact: true }).fill(value);
+}
 
 test("backlog, live board and nodes, activity, Stop/Resume, reports and keyboard", async ({
   page,
@@ -78,7 +85,7 @@ test("unsaved provider profiles survive SSE and JSON preview validates steps", a
     });
   });
   await page.goto(`${engine.url}/#/repo/${repo}/settings`);
-  await page.getByLabel("build model", { exact: true }).fill("unsaved-model");
+  await setCustomValue(page, "build model", "unsaved-model");
   await page.getByLabel("build provider", { exact: true }).selectOption("claude");
   await expect(page.getByLabel("build model", { exact: true })).toHaveValue("saved-profile");
   // A real durable event refreshes the settings snapshot while the form is dirty.
@@ -190,7 +197,7 @@ for (const confirm of [false, true]) {
   }) => {
     const path = `${engine.url}/#/repo/${engine.repos[0]}`;
     await page.goto(`${path}/settings`);
-    await page.getByLabel("build model", { exact: true }).fill("keep-my-edit");
+    await setCustomValue(page, "build model", "keep-my-edit");
     await page.getByRole("link", { name: "Board", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Discard unsaved changes?");
@@ -202,7 +209,9 @@ for (const confirm of [false, true]) {
       await expect(page.getByRole("heading", { name: "alpha", exact: true })).toBeVisible();
     } else {
       await expect(page).toHaveURL(`${path}/settings`);
-      await expect(page.getByLabel("build model", { exact: true })).toHaveValue("keep-my-edit");
+      await expect(page.getByLabel("build model custom", { exact: true })).toHaveValue(
+        "keep-my-edit",
+      );
     }
   });
 }

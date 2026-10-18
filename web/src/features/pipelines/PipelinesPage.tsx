@@ -1,7 +1,12 @@
+import { useState } from "react";
+import { Plus } from "lucide-react";
 import { useQueries } from "@tanstack/react-query";
 import type { z } from "zod";
 import { api, keys, type configSchema, type overviewSchema } from "@/lib/api";
+import { PipelineSettingsForm } from "@/features/settings/PipelineSettingsForm";
 import { Badge } from "@/ui/primitives/badge";
+import { Button } from "@/ui/primitives/button";
+import { Card } from "@/ui/primitives/card";
 import { PageHeader } from "@/ui/page-header";
 import { PageShell } from "@/ui/page-shell";
 
@@ -18,7 +23,10 @@ function pipelineText(name: string, steps: Steps) {
   }`;
 }
 
+type Editing = { repo: string; pipeline: string; focusNew: boolean };
+
 export function PipelinesPage({ repos }: z.infer<typeof overviewSchema>) {
+  const [editing, setEditing] = useState<Editing>();
   const states = useQueries({
     queries: repos.map((repo) => ({
       queryKey: keys.state(repo.id),
@@ -47,12 +55,15 @@ export function PipelinesPage({ repos }: z.infer<typeof overviewSchema>) {
                 {repo.name}
               </h2>
               {repo.status === "available" && (
-                <a
-                  className="text-sm underline"
-                  href={`#/repo/${encodeURIComponent(repo.id)}/settings`}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  icon={Plus}
+                  onClick={() => setEditing({ repo: repo.id, pipeline: "", focusNew: true })}
                 >
-                  Edit in settings
-                </a>
+                  New pipeline
+                </Button>
               )}
             </div>
             {repo.status !== "available" ? (
@@ -76,9 +87,31 @@ export function PipelinesPage({ repos }: z.infer<typeof overviewSchema>) {
                     {name === query.data.config.defaultPipeline && (
                       <Badge variant="outline">default</Badge>
                     )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto"
+                      aria-label={`Edit pipeline ${name}`}
+                      onClick={() => setEditing({ repo: repo.id, pipeline: name, focusNew: false })}
+                    >
+                      Edit
+                    </Button>
                   </li>
                 ))}
               </ul>
+            )}
+            {editing?.repo === repo.id && (
+              <Card className="grid gap-4 p-4">
+                <h3 className="text-sm font-medium">Edit pipelines · {repo.name}</h3>
+                <PipelineSettingsForm
+                  key={`${editing.repo}:${editing.pipeline}:${editing.focusNew}`}
+                  repo={repo.id}
+                  initialPipeline={editing.pipeline}
+                  focusNew={editing.focusNew}
+                  onClose={() => setEditing(undefined)}
+                />
+              </Card>
             )}
           </section>
         );

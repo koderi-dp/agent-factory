@@ -128,17 +128,8 @@ export const startedBacklogSchema = z.array(
   z.object({ key: z.string(), title: z.string(), details: z.string(), job: z.string() }),
 );
 export type StartedBacklogItem = z.infer<typeof startedBacklogSchema>[number];
-export const legacyJobSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  stage: z.string(),
-  read_only: z.literal(true),
-  reports: z.array(z.string()),
-});
-export type LegacyJob = z.infer<typeof legacyJobSchema>;
 export const stateSchema = z.object({
   jobs: z.array(jobSchema),
-  legacy_jobs: z.array(legacyJobSchema).optional(),
   executions: z.array(executionSchema),
   backlog: backlogSchema,
   started: startedBacklogSchema.default([]),

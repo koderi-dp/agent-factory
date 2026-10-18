@@ -3,3 +3,12 @@
 .pipeline-node button > div:nth-child(3) {
   visibility: hidden;
 }
+
+/* Elapsed and start times change width between runs and shift the next column. */
+time,
+[role="timer"] {
+  display: inline-block;
+  width: 14ch;
+  overflow: hidden;
+  white-space: nowrap;
+}

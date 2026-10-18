@@ -3,7 +3,6 @@ import { api, keys } from "@/lib/api";
 import { PageHeader } from "@/ui/page-header";
 import { PageShell } from "@/ui/page-shell";
 import { Badge } from "@/ui/primitives/badge";
-import { LegacyJobCard } from "./LegacyJobCard";
 import { JobCard } from "./JobCard";
 import { StartFeature } from "./StartFeature";
 import { FactorySummary } from "./FactorySummary";
@@ -66,15 +65,6 @@ export function Board({ repo, name, now }: { repo: string; name: string; now: nu
           </section>
         );
       })}
-      <details className="rounded-lg bg-card p-4 shadow-[var(--shadow-border)]">
-        <summary className="cursor-pointer text-sm font-medium">Legacy jobs · read-only</summary>
-        {(state.legacy_jobs ?? []).map((job) => (
-          <LegacyJobCard key={job.id} repo={repo} job={job} />
-        ))}
-        {!state.legacy_jobs?.length && (
-          <p className="mt-3 text-sm text-muted-foreground">No legacy jobs.</p>
-        )}
-      </details>
     </PageShell>
   );
 }

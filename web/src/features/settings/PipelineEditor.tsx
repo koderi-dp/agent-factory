@@ -28,6 +28,8 @@ import {
   type Entry,
   type FieldError,
 } from "./model";
+import { ChoiceSelect } from "./ChoiceSelect";
+import { choicesFor } from "./providers";
 
 type Role = { name: string; provider: string; type: string };
 type Props = {
@@ -271,21 +273,25 @@ export function PipelineEditor({ config, name, errors, preview, roles, onChange 
                       </Field>
                       <Field label="Model" messages={errorsAt(errors, `${profilePath}.model`)}>
                         {(a11y) => (
-                          <Input
+                          <ChoiceSelect
+                            key={entry.provider}
                             {...a11y}
-                            aria-label={`${entry.id} model`}
+                            label={`${entry.id} model`}
                             value={profile.model}
-                            onChange={(e) => change("model", e.target.value)}
+                            options={choicesFor(entry.provider, "models")}
+                            onChange={(value) => change("model", value)}
                           />
                         )}
                       </Field>
                       <Field label="Effort" messages={errorsAt(errors, `${profilePath}.effort`)}>
                         {(a11y) => (
-                          <Input
+                          <ChoiceSelect
+                            key={entry.provider}
                             {...a11y}
-                            aria-label={`${entry.id} effort`}
+                            label={`${entry.id} effort`}
                             value={profile.effort}
-                            onChange={(e) => change("effort", e.target.value)}
+                            options={choicesFor(entry.provider, "efforts")}
+                            onChange={(value) => change("effort", value)}
                           />
                         )}
                       </Field>

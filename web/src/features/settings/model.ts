@@ -316,3 +316,38 @@ export function draftState(server: string, draft: SettingsDraft | undefined, kep
     conflict: dirty && draft.base !== server && kept !== server,
   };
 }
+
+export const PIPELINE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/** Why `name` cannot be a new pipeline's name, or undefined when it can. */
+export function pipelineNameError(config: Config, name: string): string | undefined {
+  if (!name) return "Enter a name for the new pipeline.";
+  if (!PIPELINE_NAME_PATTERN.test(name))
+    return "Use lowercase letters, digits and dashes, starting with a letter or digit, up to 32 characters.";
+  if (Object.hasOwn(config.pipelines, name)) return `A pipeline named ${name} already exists.`;
+  return undefined;
+}
+
+/** A new pipeline that starts as a copy of `source`, so it is valid from the first save. */
+export function addPipeline(config: Config, name: string, source: string): Config {
+  if (pipelineNameError(config, name) || !config.pipelines[source]) return config;
+  const next = structuredClone(config);
+  next.pipelines[name] = structuredClone(config.pipelines[source]);
+  return next;
+}
+
+/** The default pipeline and the last remaining pipeline cannot be removed. */
+export function canRemovePipeline(config: Config, name: string): boolean {
+  return (
+    name in config.pipelines &&
+    name !== config.defaultPipeline &&
+    Object.keys(config.pipelines).length > 1
+  );
+}
+
+export function removePipeline(config: Config, name: string): Config {
+  if (!canRemovePipeline(config, name)) return config;
+  const next = structuredClone(config);
+  delete next.pipelines[name];
+  return next;
+}

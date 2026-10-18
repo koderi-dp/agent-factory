@@ -232,8 +232,15 @@ def serve(port: int | None = None, *, open_browser: bool = False) -> int:
         import uvicorn
         from agent_factory.api.app import create_app
         app = create_app(port=port, token=data["token"])
+        # The dashboard keeps live-update streams open, and uvicorn waits for open
+        # connections before it exits. Cut them after a short grace period so Ctrl+C
+        # stops the service even with a browser tab connected.
         server = uvicorn.Server(
-            uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+            uvicorn.Config(app,
+                           host="127.0.0.1",
+                           port=port,
+                           log_level="warning",
+                           timeout_graceful_shutdown=3))
         app.state.shutdown = lambda: setattr(server, "should_exit", True)
         print(url(data), flush=True)
         if open_browser:

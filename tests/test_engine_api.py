@@ -2,9 +2,12 @@
 
 import json
 from pathlib import Path
+import signal
 import subprocess
 import sys
+import threading
 import time
+import urllib.request
 
 from fastapi.testclient import TestClient
 import psutil
@@ -509,6 +512,47 @@ def test_real_service_auto_start_second_serve_and_restart(tmp_path, monkeypatch)
         if service.healthy(current):
             service.stop(current)
     assert not (machine_dir() / "service.json").exists()
+
+
+def test_ctrl_c_stops_the_service_while_a_live_stream_is_open(tmp_path, monkeypatch):
+    """A dashboard tab keeps streams open; an interrupt must not wait for them forever."""
+    monkeypatch.setenv("FACTORY_HOME", str(tmp_path / "machine"))
+    monkeypatch.setenv("FACTORY_PORT", "0")
+    monkeypatch.chdir(tmp_path)
+    child = subprocess.Popen([sys.executable, "-m", "agent_factory.cli", "serve"],
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL,
+                             text=True,
+                             creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    try:
+        assert child.stdout.readline().startswith("http://127.0.0.1:")
+        data = service.info()
+        opened = threading.Event()
+
+        def hold():
+            request = urllib.request.Request(service.url(data) + "/api/overview/stream",
+                                             headers={"X-Factory-Token": data["token"]})
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            try:
+                with opener.open(request, timeout=30) as response:
+                    opened.set()
+                    while response.read(64):
+                        pass
+            except OSError:
+                pass
+
+        threading.Thread(target=hold, daemon=True).start()
+        assert opened.wait(10)
+        started = time.monotonic()
+        # Windows only delivers Ctrl+Break to a child in its own process group.
+        child.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
+        # uvicorn re-raises the signal once it has shut down, so the code is not 0.
+        child.wait(timeout=15)
+        assert time.monotonic() - started < 12
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=10)
 
 
 def test_service_version_mismatch_restarts_real_process(tmp_path, monkeypatch):

@@ -5,7 +5,9 @@ import { PipelineView } from "@/features/job/pipeline/PipelineView";
 import {
   draftPipelineNames,
   addGroupMember,
+  addPipeline,
   addStage,
+  canRemovePipeline,
   draftState,
   editExecution,
   errorsAt,
@@ -21,7 +23,9 @@ import {
   fieldErrors,
   invalidSteps,
   parseDraft,
+  pipelineNameError,
   previewDraft,
+  removePipeline,
 } from "./model";
 
 const config = configSchema.parse({
@@ -117,6 +121,34 @@ describe("pipeline edit operations", () => {
     expect(errorsAt(errors, "pipelines.fast.0.id")).toEqual(["duplicate"]);
     expect(errorsUnder(errors, "pipelines.fast.0")).toEqual(["duplicate", "other"]);
     expect(errorsUnder(errors, "pipelines.fast.1")).toEqual([]);
+  });
+});
+
+describe("pipeline create and remove", () => {
+  it("rejects names that are empty, malformed or taken, and accepts a fresh one", () => {
+    expect(pipelineNameError(config, "")).toMatch(/Enter a name/);
+    expect(pipelineNameError(config, "Docs")).toMatch(/lowercase/);
+    expect(pipelineNameError(config, "-docs")).toMatch(/lowercase/);
+    expect(pipelineNameError(config, "a".repeat(33))).toMatch(/32 characters/);
+    expect(pipelineNameError(config, "fast")).toMatch(/already exists/);
+    expect(pipelineNameError(config, "docs-only")).toBeUndefined();
+  });
+  it("starts a new pipeline as an independent copy of the source", () => {
+    const next = addPipeline(config, "docs", "fast");
+    expect(Object.keys(next.pipelines)).toEqual(["fast", "docs"]);
+    expect(next.pipelines.docs).toEqual(config.pipelines.fast);
+    entries(next.pipelines.docs[0])[0].profiles.codex.model = "changed";
+    expect(entries(next.pipelines.fast[0])[0].profiles.codex.model).toBe("sol");
+    expect(addPipeline(config, "fast", "fast")).toBe(config);
+    expect(addPipeline(config, "docs", "missing")).toBe(config);
+  });
+  it("keeps the default pipeline and the last pipeline", () => {
+    const two = addPipeline(config, "docs", "fast");
+    expect(canRemovePipeline(two, "docs")).toBe(true);
+    expect(canRemovePipeline(two, "fast")).toBe(false);
+    expect(canRemovePipeline(config, "fast")).toBe(false);
+    expect(Object.keys(removePipeline(two, "docs").pipelines)).toEqual(["fast"]);
+    expect(removePipeline(two, "fast")).toBe(two);
   });
 });
 
